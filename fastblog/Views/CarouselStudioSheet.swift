@@ -721,10 +721,9 @@ enum CarouselPIPThumbMaskStyle: String, CaseIterable, Identifiable {
     }
 }
 
-/// Pill-shaped backdrop behind a text block. Tapping the block in the editor
-/// cycles through these states (default → dark → light → default …). Purely
-/// visual — dragging the block never changes this (see tap-vs-drag threshold
-/// in `DraggableTextBlock`).
+/// How much readable contrast sits behind carousel text on busy photos.
+/// In Carousel Studio, tap a **selected** text block to cycle **Off → Dark → Light → Off**.
+/// Same values are stored in `TextBlockStyle.background` for export / previews.
 enum StudioTextBackground: String, CaseIterable {
     case none, darkPill, lightPill
 
@@ -743,19 +742,19 @@ private enum PlaceSlideCaptionTarget { case none }
 /// Categories in the bottom style tab bar. Selecting one opens a drop-up panel
 /// with horizontally-scrollable options for that category.
 private enum StyleCategory: String, CaseIterable, Identifiable {
-    case color  = "Color"
-    case font   = "Font Style"
-    case format = "Format"
-    case size   = "Font Size"
+    case color   = "Color"
+    case font    = "Font Style"
+    case format  = "Format"
+    case size    = "Font Size"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .color:  return "paintpalette.fill"
-        case .font:   return "textformat"
-        case .size:   return "textformat.size"
-        case .format: return "bold.italic.underline"
+        case .color:    return "paintpalette.fill"
+        case .font:     return "textformat"
+        case .size:     return "textformat.size"
+        case .format:   return "bold.italic.underline"
         }
     }
 }
@@ -846,9 +845,9 @@ struct TextBlockStyle: Equatable {
     var isStrikethrough: Bool = false
     var textCase: StudioTextCase = .none
     var alignment: StudioTextAlignment = .natural
-    /// Pill backdrop behind the text. Default `.none` preserves the original
-    /// "text only" look for every pre-existing slide; cycled by tapping the
-    /// block in the editor.
+    /// Extra contrast behind the text on busy photos (gradient bar; see
+    /// `StudioTextReadableBehindModifier`). Default `.none`. Tap the **selected**
+    /// block in Carousel Studio to cycle Off / Dark / Light.
     var background: StudioTextBackground = .none
     /// Normalized displacement from the block's natural anchor position, expressed as
     /// a fraction of the slide's own dimensions (e.g. `width = 0.10` ⇒ 10% of the slide
@@ -957,11 +956,10 @@ private func studioFontWeight(base: Font.Weight, isBold: Bool) -> Font.Weight {
     }
 }
 
-/// Resolves the foreground color for a text layer. When the block's pill
-/// backdrop is active we force white (on dark pill) or black (on light pill)
-/// regardless of the user's picked `textColor`, so the text stays readable
-/// against the pill. `naturalOpacity` preserves the per-row hierarchy (e.g.
-/// subtitle at 0.8) whether or not a pill is showing.
+/// Resolves the foreground color for a text layer. When a **behind-text**
+/// contrast fill is on, we force white (on dark) or black (on light) so the
+/// label stays readable on the frosted bar. `naturalOpacity` keeps caption
+/// hierarchy (e.g. subtitle at 0.85) when fill is off.
 private func studioEffectiveForegroundColor(_ style: TextBlockStyle,
                                             naturalOpacity: Double = 1.0) -> Color {
     switch style.background {
@@ -971,11 +969,14 @@ private func studioEffectiveForegroundColor(_ style: TextBlockStyle,
     }
 }
 
-/// Paints a rounded-rect pill behind text content when the block's
-/// `background` is set. When `.none`, the modifier is a no-op (no padding,
-/// no fill) so slides that have never touched the pill feature render
-/// identically to before.
-private struct StudioTextPillBackground: ViewModifier {
+/// Soft gradient + hairline behind carousel text. Tap the **selected** block
+/// on the slide to cycle Off / Dark / Light. Avoids flat “pill” blocks and
+/// avoids `Material` (which can render inconsistently in `ImageRenderer` exports).
+///
+/// **Padding is always applied** (same as Dark/Light) even when the mode is **Off**, so
+/// the block’s layout size / `naturalRect` does not change when toggling the bar —
+/// that keeps drag clamping and committed offsets stable.
+private struct StudioTextReadableBehindModifier: ViewModifier {
     let style: TextBlockStyle
     let cornerRadius: CGFloat
     let hPadding: CGFloat
@@ -983,8 +984,8 @@ private struct StudioTextPillBackground: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .padding(.horizontal, style.background == .none ? 0 : hPadding)
-            .padding(.vertical, style.background == .none ? 0 : vPadding)
+            .padding(.horizontal, hPadding)
+            .padding(.vertical, vPadding)
             .background(fill)
     }
 
@@ -995,24 +996,50 @@ private struct StudioTextPillBackground: ViewModifier {
             Color.clear
         case .darkPill:
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.black.opacity(0.75))
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.50),
+                            Color.black.opacity(0.76),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
+                )
         case .lightPill:
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.white.opacity(0.75))
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.55),
+                            Color.white.opacity(0.86),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color.black.opacity(0.12), lineWidth: 1)
+                )
         }
     }
 }
 
 private extension View {
-    /// Apply the optional rounded-pill backdrop for a text block.
+    /// Optional frosted bar behind block text (busy-photo readability).
     func studioTextPill(_ style: TextBlockStyle,
                         cornerRadius: CGFloat,
                         hPadding: CGFloat,
                         vPadding: CGFloat) -> some View {
-        modifier(StudioTextPillBackground(style: style,
-                                          cornerRadius: cornerRadius,
-                                          hPadding: hPadding,
-                                          vPadding: vPadding))
+        modifier(StudioTextReadableBehindModifier(style: style,
+                                                  cornerRadius: cornerRadius,
+                                                  hPadding: hPadding,
+                                                  vPadding: vPadding))
     }
 }
 
@@ -1631,8 +1658,8 @@ private func buildPlaceCarouselSlideForStudio(
 private let studioSlideCoordSpace = "studio.slide.space"
 
 /// Edge inset (in points) used in two places that **must stay in sync**:
-/// 1. `DraggableTextBlock.clamped(proposed:)` shrinks the allowed slide area so the
-///    block's visual rect stays inside the slide.
+/// 1. `DraggableTextBlock.softClamped(proposed:baseline:)` shrinks the allowed slide
+///    area so the block's visual rect stays inside the slide.
 /// 2. Each anchored overlay in `CarouselSlideView` pads its draggable text block by the
 ///    same amount so the block's *natural* (anchor) rect already sits inside that
 ///    clamp region — avoiding a first-tap "nudge" when `savedOffset == .zero`.
@@ -1717,9 +1744,8 @@ private struct DraggableTextBlock<Content: View>: View {
     var onDragStart: () -> Void = {}
     var onDragEnd: () -> Void = {}
     /// Fires on gesture-end when the user lifted their finger without moving
-    /// more than `tapSlop` points — i.e. it was a tap, not a drag. Used by
-    /// the editor to cycle the block's pill backdrop without reacting to
-    /// drag motion.
+    /// more than `tapSlop` points — i.e. it was a tap, not a drag. Editor uses
+    /// this to cycle the readable bar when the block was already selected.
     var onTap: () -> Void = {}
     let content: () -> Content
     /// Current `sizeScale` for this block (drives pinch baseline).
@@ -1733,9 +1759,8 @@ private struct DraggableTextBlock<Content: View>: View {
     /// used only for drag clamping. Captured once at `.zero` offset.
     @State private var naturalRect: CGRect?
     /// Snapshot of `isSelected` taken at the first `onChanged` of a gesture, used
-    /// so taps only cycle the pill backdrop when the block was *already* selected
-    /// before the finger went down. Without this, tapping an unselected block
-    /// would both select it AND cycle its pill style in one gesture.
+    /// so taps on an unselected block only select it — they must not also fire
+    /// `onTap` (which cycles the readable bar on an already-selected block).
     @State private var wasSelectedAtGestureStart: Bool = false
     /// True from first `onChanged` until `onEnded` — gates the snapshot above so
     /// we only capture on press-start, not on every drag update.
@@ -1751,13 +1776,25 @@ private struct DraggableTextBlock<Content: View>: View {
                height: savedOffset.height * slideBounds.height)
     }
 
-    /// In-slide offset actually applied (clamped every frame). Using raw `liveDrag`
-    /// here made blocks follow the finger past valid bounds, then snap inward on lift.
+    /// In-slide offset actually applied.
+    ///
+    /// Clamp only while actively dragging, and **softly** — using the pre-drag visual
+    /// position as the floor. If we hard-clamp every frame, any passive layout change
+    /// (e.g. cycling the readable bar with a tap) can change the block's size, and the very first
+    /// frame of the next drag would snap the block inward to fit `slideBounds` (the user
+    /// reads this as "tap caused a snap" or "drag-start caused a snap"). With the soft
+    /// clamp, a drag that started while the block was already extending past the slide
+    /// edge can only ever bring it *closer* to bounds — never push it further out — and
+    /// is otherwise free to move; no snap on the first finger movement.
     private var displayPointOffset: CGSize {
-        clamped(proposed: CGSize(
+        let proposed = CGSize(
             width: savedPointOffset.width + liveDrag.width,
             height: savedPointOffset.height + liveDrag.height
-        ))
+        )
+        if liveDrag != .zero {
+            return softClamped(proposed: proposed, baseline: savedPointOffset)
+        }
+        return savedPointOffset
     }
 
     var body: some View {
@@ -1766,8 +1803,14 @@ private struct DraggableTextBlock<Content: View>: View {
             .overlay(editingRing)
             .contentShape(Rectangle())
             .offset(x: displayPointOffset.width, y: displayPointOffset.height)
+            // Inherited animation must not interpolate offset when parent state
+            // updates (color/contrast bar, toolbar, etc.); that looks like drift.
+            .animation(nil, value: savedOffset)
             .highPriorityGesture(
-                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                // Slide space — not `.local`. `offset` is layout-preserving, so local gesture
+                // translations do not match finger movement after the user drags a block away from
+                // its anchor (taps can snap the block back toward the overlay edge).
+                DragGesture(minimumDistance: 0, coordinateSpace: .named(studioSlideCoordSpace))
                     .updating($liveDrag) { value, state, _ in
                         state = value.translation
                     }
@@ -1781,26 +1824,36 @@ private struct DraggableTextBlock<Content: View>: View {
                     }
                     .onEnded { value in
                         // Finger lifted with almost no movement → treat as a tap.
-                        // We route taps to `onTap` (e.g. cycle pill backdrop) and
-                        // *don't* rewrite `savedOffset`, so a tap can never nudge
-                        // the block's committed position.
-                        let tapSlop: CGFloat = 6
+                        // We route small motions to `onTap` when the block was already
+                        // selected, and *don't* rewrite `savedOffset`, so a tap never
+                        // commits a position change. Readable bar: tap block when selected.
+                        // 12pt matches UITapGestureRecognizer's tolerance; 6pt was
+                        // too small and caused normal taps to commit a position change.
+                        let tapSlop: CGFloat = 12
                         let moved = max(abs(value.translation.width),
                                         abs(value.translation.height))
                         let beganSelected = wasSelectedAtGestureStart
                         didBeginGesture = false
                         wasSelectedAtGestureStart = false
                         if moved < tapSlop {
-                            // Only cycle the pill backdrop if the block was already
-                            // selected before this tap. A first tap on an unselected
-                            // block just selects it — it must not also flip the style.
+                            // Tap cycles readable bar only if block was already selected.
                             if beganSelected { onTap() }
                         } else {
                             let proposedPoints = CGSize(
                                 width: savedPointOffset.width + value.translation.width,
                                 height: savedPointOffset.height + value.translation.height
                             )
-                            let clampedPoints = clamped(proposed: proposedPoints)
+                            // Hard-clamp at commit (not soft). The soft clamp is only there
+                            // to keep the visual smooth during a drag whose *baseline* was
+                            // already extending past the slide (e.g. after enabling readable bar).
+                            // Persisting that overflow into `savedOffset` would leave the
+                            // next gesture's baseline overflowing too, which then blocks any
+                            // drag in the overflow direction — the user reads that as the
+                            // block being "stuck" on one side until they cycle the pill to
+                            // shrink the natural rect. Hard-clamping here keeps the saved
+                            // position inside `slideBounds` so every fresh drag starts from
+                            // a clean state.
+                            let clampedPoints = clampedToBounds(proposed: proposedPoints)
                             // Store back in normalized form so the offset survives rendering
                             // at the smaller preview / export sizes (Story/Reel previews are
                             // ~62% of the editor slide width, so absolute points would drift).
@@ -1876,8 +1929,19 @@ private struct DraggableTextBlock<Content: View>: View {
     ///
     /// We recapture on every size/bounds change (not just once) because the slide can
     /// resize mid-session on 9:16 formats when the toolbar grows or collapses. A stale
-    /// natural rect makes `clamped(proposed:)` reject otherwise-valid drags and causes
-    /// committed offsets to render in the wrong spot, which reads as "my move didn't save."
+    /// natural rect makes `softClamped(proposed:baseline:)` reject otherwise-valid drags
+    /// and causes committed offsets to render in the wrong spot, which reads as "my move
+    /// didn't save."
+    ///
+    /// IMPORTANT: do NOT mutate `savedOffset` here. Cycling the readable bar
+    /// or other intrinsic layout change fires this callback — any silent rewrite
+    /// of `savedOffset` reads to the user as the block "snapping to another position"
+    /// right after that change, and (because the rewrite has to be scheduled on the
+    /// next runloop tick) can also land mid-gesture when the user immediately tries
+    /// to drag, causing the block to jump under the finger. If contrast-bar padding pushes the
+    /// block slightly off-bounds at its committed offset, accept the temporary overflow —
+    /// `softClamped` then lets the next drag move *toward* bounds without first snapping
+    /// inward, and the user can recover the position simply by dragging.
     private func captureNaturalRect(from geo: GeometryProxy) {
         let current = geo.frame(in: .named(studioSlideCoordSpace))
         guard current.width > 0, current.height > 0 else { return }
@@ -1900,8 +1964,59 @@ private struct DraggableTextBlock<Content: View>: View {
         }
     }
 
-    /// Constrains the proposed offset so the block's visual rect stays inside `slideBounds`.
-    private func clamped(proposed: CGSize) -> CGSize {
+    /// Constrains the proposed offset so the block's visual rect cannot overflow
+    /// `slideBounds` *more* than the baseline already does. When the baseline is fully
+    /// inside `slideBounds` this collapses to a strict clamp at the slide edges; when
+    /// the baseline already extends past an edge (e.g. because tapping a positioned
+    /// block grew its contrast bar beyond the slide), that overflow becomes the cap on
+    /// that side, so the user can freely drag *toward* bounds without the first finger
+    /// movement snapping the block inward.
+    ///
+    /// Used only during an active drag (`displayPointOffset`). Drag-end commit goes
+    /// through `clampedToBounds(proposed:)` instead, so the stored offset is always
+    /// fully inside `slideBounds` — preventing the next gesture from inheriting a
+    /// stuck-on-one-edge baseline.
+    ///
+    /// Oversized axes (block intrinsically wider/taller than the slide) skip the clamp
+    /// entirely on that axis so the user can still slide them around without the two
+    /// edge corrections fighting each other and producing a "trapped" feel.
+    private func softClamped(proposed: CGSize, baseline: CGSize) -> CGSize {
+        guard let natural = naturalRect,
+              slideBounds.width > 0, slideBounds.height > 0
+        else { return proposed }
+
+        let bounds = slideBounds.insetBy(dx: studioTextBlockEdgeInset,
+                                         dy: studioTextBlockEdgeInset)
+        let baselineVisual = natural.offsetBy(dx: baseline.width, dy: baseline.height)
+        let visual = natural.offsetBy(dx: proposed.width, dy: proposed.height)
+
+        var dx: CGFloat = 0
+        if natural.width <= bounds.width {
+            let leftLimit = min(bounds.minX, baselineVisual.minX)
+            let rightLimit = max(bounds.maxX, baselineVisual.maxX)
+            if visual.minX < leftLimit { dx = leftLimit - visual.minX }
+            if visual.maxX > rightLimit { dx = rightLimit - visual.maxX }
+        }
+        var dy: CGFloat = 0
+        if natural.height <= bounds.height {
+            let topLimit = min(bounds.minY, baselineVisual.minY)
+            let bottomLimit = max(bounds.maxY, baselineVisual.maxY)
+            if visual.minY < topLimit { dy = topLimit - visual.minY }
+            if visual.maxY > bottomLimit { dy = bottomLimit - visual.maxY }
+        }
+        return CGSize(width: proposed.width + dx, height: proposed.height + dy)
+    }
+
+    /// Strict clamp: forces the block's visual rect fully inside `slideBounds` regardless
+    /// of where it sits coming in. Used at drag-end commit so the stored `savedOffset`
+    /// can never be off-bounds — every new gesture then starts from a clean baseline,
+    /// and `softClamped` reduces to a standard clamp.
+    ///
+    /// The (small) trade-off is that lifting after only a partial recovery from a
+    /// readable-bar overflow can look like the block "settles in" by a few points at lift.
+    /// That's a single, user-initiated event; far less disruptive than a baseline that
+    /// stays overflowing and blocks subsequent drags in the overflow direction.
+    private func clampedToBounds(proposed: CGSize) -> CGSize {
         guard let natural = naturalRect,
               slideBounds.width > 0, slideBounds.height > 0
         else { return proposed }
@@ -1912,10 +2027,14 @@ private struct DraggableTextBlock<Content: View>: View {
 
         var dx: CGFloat = 0
         var dy: CGFloat = 0
-        if visual.minX < bounds.minX { dx += bounds.minX - visual.minX }
-        if visual.minY < bounds.minY { dy += bounds.minY - visual.minY }
-        if visual.maxX > bounds.maxX { dx -= visual.maxX - bounds.maxX }
-        if visual.maxY > bounds.maxY { dy -= visual.maxY - bounds.maxY }
+        if natural.width <= bounds.width {
+            if visual.minX < bounds.minX { dx = bounds.minX - visual.minX }
+            if visual.maxX > bounds.maxX { dx = bounds.maxX - visual.maxX }
+        }
+        if natural.height <= bounds.height {
+            if visual.minY < bounds.minY { dy = bounds.minY - visual.minY }
+            if visual.maxY > bounds.maxY { dy = bounds.maxY - visual.maxY }
+        }
         return CGSize(width: proposed.width + dx, height: proposed.height + dy)
     }
 }
@@ -2006,8 +2125,8 @@ struct CarouselSlideView: View {
     var onBlockDragStart: (() -> Void)? = nil
     /// Fires on drag-end — the editor uses it to release the paging lock.
     var onBlockDragEnd: (() -> Void)? = nil
-    /// Fires on a true tap (no drag motion) — the editor uses it to cycle
-    /// the block's pill backdrop without reacting to accidental drag motion.
+    /// Fires on a true tap (no drag motion) — cycles readable bar Off / Dark / Light when
+    /// the block was already selected (`CarouselStudioSheet` / `SlideEditPage`).
     var onBlockTap: ((SlideBlockID) -> Void)? = nil
     /// Edit-mode write-back: commit a new PIP cluster offset. Nil in read-only (preview/export) use.
     var onUpdatePIPOffset: ((CGSize) -> Void)? = nil
@@ -2570,6 +2689,7 @@ struct CarouselSlideView: View {
             }
         }
         .frame(width: width, height: height)
+        .coordinateSpace(name: studioSlideCoordSpace)
         .clipCarouselPostcardOutline(
             clipsFloatingContentToRoundedSlideOutline && !pipClusterNeedsUnclippedFloatingChrome
         )
@@ -3536,14 +3656,13 @@ private struct SlideEditPage: View {
             onBlockDragStart: { locksHorizontalSlidePaging = true },
             onBlockDragEnd: { locksHorizontalSlidePaging = false },
             onBlockTap: { id in
-                // Tap-to-cycle: default → dark pill → light pill → default.
-                // Guarded by the drag-vs-tap threshold in `DraggableTextBlock`
-                // so drags never flip the backdrop mid-reposition. PIP taps
-                // don't cycle anything — their tap is already consumed by
-                // `onSelect` on the cluster, which routes through `onSelectBlock`.
+                // Tap-to-cycle readable bar: Off → Dark → Light → Off. Only when the
+                // block was already selected (see `DraggableTextBlock` tap vs drag).
                 guard id == .primary || id == .secondary else { return }
                 recordUndoSnapshot()
-                withAnimation(.easeInOut(duration: 0.18)) {
+                var txn = Transaction()
+                txn.disablesAnimations = true
+                withTransaction(txn) {
                     if id == .primary {
                         slide.textStyle.primary.background =
                             slide.textStyle.primary.background.next()
@@ -3624,7 +3743,6 @@ private struct SlideEditPage: View {
             showPoweredByBloggoMapWatermark: showPoweredByBloggoMapWatermark,
             pipBackgroundRemovalLoadingSlots: pipBackgroundRemovalLoadingSlots
         )
-        .coordinateSpace(.named(studioSlideCoordSpace))
         .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 6)
         .padding(.horizontal, 20)
         // Tap anywhere on the slide outside a text block deselects. Omit when the cover
@@ -8537,8 +8655,6 @@ struct SlideTextEditorView: View {
                             .fill(tc.color)
                             .frame(width: 36, height: 36)
                             .overlay {
-                                // For very light fills we'd lose the edge against the dark
-                                // panel; a thin outline keeps every swatch readable.
                                 Circle().strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
                             }
                             .overlay {
@@ -8547,8 +8663,6 @@ struct SlideTextEditorView: View {
                                 }
                             }
                             .shadow(color: .black.opacity(0.35), radius: 3)
-                            // `.padding(4)` reserves the halo space in layout so the
-                            // active-state ring doesn't get clipped by the ScrollView.
                             .padding(4)
                             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isActive)
                     }
@@ -8816,7 +8930,7 @@ struct SlideTextEditorView: View {
     // MARK: Category tab bar
 
     /// The category tab bar is horizontally scrollable so additional
-    /// categories (now 4: Color / Font Style / Font Size / Format) can grow
+    /// categories (Color / Font Style / Font Size / Format) can grow
     /// without cramping the buttons. Buttons use a fixed intrinsic width so
     /// their labels never truncate; if the row doesn't fit on narrower
     /// devices (e.g. iPhone SE), users scroll horizontally.
