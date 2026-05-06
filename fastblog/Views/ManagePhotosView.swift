@@ -505,12 +505,12 @@ private struct ManagePhotoDetailView: View {
                             .clipped()
                             .scaleEffect(zoomScale)
 
-                            // Subtle in-blog badge — bottom-left pill, no overlay
+                            // Subtle in-blog badge — centered pill
                             if photo.isIncluded {
                                 HStack(spacing: 4) {
                                     Image(systemName: "checkmark")
                                         .font(.system(size: 10, weight: .bold))
-                                    Text("In Blog")
+                                    Text("Photo included in blog")
                                         .font(.system(size: 12, weight: .semibold))
                                 }
                                 .foregroundColor(.white)
@@ -518,9 +518,6 @@ private struct ManagePhotoDetailView: View {
                                 .padding(.vertical, 5)
                                 .background(Color.blue.opacity(0.85))
                                 .appChromeCornerRadius(12)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                                .padding(.leading, 12)
-                                .padding(.bottom, 12)
                                 .allowsHitTesting(false)
                                 .transaction { $0.animation = nil }
                             }

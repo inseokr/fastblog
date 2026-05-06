@@ -39,6 +39,7 @@ struct PlacesVisitedStandaloneView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .preferredColorScheme(.dark)
+        .dynamicTypeSize(.large)
     }
 }
 
@@ -367,6 +368,7 @@ struct PlacesVisitedView: View {
         }
         .toolbar((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
         .toolbarBackground((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
+        .dynamicTypeSize(.large)
         .onChange(of: selectedYear) { _, _ in
             // If the user switches years, drop any category that doesn't exist for the new year.
             if let selectedCategory,
@@ -654,23 +656,18 @@ private struct PlaceVisitedCard: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
                     .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
-
-                    VStack {
-                        HStack {
-                            Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(.black.opacity(0.55))
-                                .clipShape(Capsule())
-                            Spacer()
-                        }
-                        Spacer(minLength: 0)
+                    .overlay(alignment: .topLeading) {
+                        Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.black.opacity(0.55))
+                            .clipShape(Capsule())
+                            .padding(10)
+                            .allowsHitTesting(false)
                     }
-                    .padding(10)
-                    .allowsHitTesting(false)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 150)
@@ -1374,6 +1371,7 @@ private struct PlacesVisitedMapView: View {
         }
         .toolbar((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
         .toolbarBackground((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
+        .dynamicTypeSize(.large)
     }
 
     private func placesVisitedMapCategoryChip(raw: String, isSelected: Bool, action: @escaping () -> Void) -> some View {

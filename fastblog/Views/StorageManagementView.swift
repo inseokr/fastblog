@@ -36,7 +36,7 @@ struct StorageManagementView: View {
     @State private var pendingPhone: [RecapPhoto] = []
     @State private var deletedAny = false
     @State private var showInAppAlert = false
-    @State private var showPhoneAlert = false
+    @State private var showPhoneDeleteFailedAlert = false
 
     // MARK: - Triage state
 
@@ -166,22 +166,17 @@ struct StorageManagementView: View {
             Button("Delete", role: .destructive) { executeDeleteInApp() }
             Button("No", role: .cancel) {
                 pendingInApp = []
-                if !pendingPhone.isEmpty { showPhoneAlert = true }
+                if !pendingPhone.isEmpty {
+                    executeDeletePhone()
+                }
             }
         } message: {
             Text("Removes from Bloggo gallery.")
         }
-        .alert(
-            "Delete \(pendingPhone.count) Photo\(pendingPhone.count == 1 ? "" : "s") From Phone?",
-            isPresented: $showPhoneAlert
-        ) {
-            Button("Delete", role: .destructive) { executeDeletePhone() }
-            Button("No", role: .cancel) {
-                pendingPhone = []
-                finishDeleteFlow()
-            }
+        .alert("Couldn’t Delete From Photos", isPresented: $showPhoneDeleteFailedAlert) {
+            Button("OK", role: .cancel) {}
         } message: {
-            Text("Save storage by cleaning up unwanted photos.")
+            Text("We couldn’t delete this photo from the Photos app. Please try again.")
         }
     }
 
@@ -222,10 +217,9 @@ struct StorageManagementView: View {
             !lid.isEmpty && !lid.hasPrefix(AppCapturePhotoService.prefix)
         }
         guard !identifiers.isEmpty else { return }
-        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
-        PHPhotoLibrary.shared().performChanges({
-            PHAssetChangeRequest.deleteAssets(fetchResult)
-        }, completionHandler: { _, _ in })
+        Task {
+            try? await deletePhotoLibraryAssets(localIdentifiers: identifiers)
+        }
     }
 
     private func flushPendingTriageUndoPhysically() {
@@ -237,38 +231,10 @@ struct StorageManagementView: View {
     }
 
     private func beginDeleteFromTriage(_ photo: RecapPhoto) {
-        flushPendingTriageUndoPhysically()
-        guard let placement = photoPlacement(for: photo.id) else { return }
-
-        triageUndoSnapshot = TriageUndoState(
-            photo: photo,
-            dayIndex: placement.day,
-            stopIndex: placement.stop,
-            insertionIndex: placement.index
-        )
-        removeFromDraft([photo])
-        onSave()
-
-        let remaining = Set(visiblePhotos.map(\.photo.id))
-        selectedPhotoIds = selectedPhotoIds.intersection(remaining)
-        if visiblePhotos.isEmpty {
-            isSelectMode = false
-            selectedPhotoIds = []
-            activeDayFilter = nil
-        }
-
-        let photoCopy = photo
         triagePhysicalDeletionTask?.cancel()
-        triagePhysicalDeletionTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(5))
-            guard !Task.isCancelled else { return }
-            guard triageUndoSnapshot?.photo.id == photoCopy.id else { return }
-            performPhysicalDeletionOnly(for: [photoCopy])
-            triageUndoSnapshot = nil
-            if visiblePhotos.isEmpty {
-                triageStartPhotoId = nil
-            }
-        }
+        triagePhysicalDeletionTask = nil
+        triageUndoSnapshot = nil
+        queueDeletion(for: [photo])
     }
 
     private func performTriageUndo() {
@@ -375,7 +341,12 @@ struct StorageManagementView: View {
     private var navigationToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigationBarLeading) {
             if triageStartPhotoId != nil {
-                EmptyView()
+                Button {
+                    dismissTriage()
+                } label: {
+                    Image(systemName: "xmark")
+                        .fontWeight(.semibold)
+                }
             } else if isSelectMode {
                 Button("Cancel") { exitSelectMode() }
             } else {
@@ -388,14 +359,7 @@ struct StorageManagementView: View {
             }
         }
         ToolbarItem(placement: .navigationBarTrailing) {
-            if triageStartPhotoId != nil {
-                Button {
-                    dismissTriage()
-                } label: {
-                    Image(systemName: "xmark")
-                        .fontWeight(.semibold)
-                }
-            } else if isSelectMode {
+            if triageStartPhotoId == nil, isSelectMode {
                 Button(allVisiblePhotosAreSelected ? "Deselect All" : "Select All") {
                     if allVisiblePhotosAreSelected {
                         deselectAll()
@@ -403,7 +367,7 @@ struct StorageManagementView: View {
                         selectAll()
                     }
                 }
-            } else {
+            } else if triageStartPhotoId == nil {
                 Button("Select") { enterSelectMode() }
             }
         }
@@ -498,7 +462,7 @@ struct StorageManagementView: View {
         if !pendingInApp.isEmpty {
             showInAppAlert = true
         } else if !pendingPhone.isEmpty {
-            showPhoneAlert = true
+            executeDeletePhone()
         }
     }
 
@@ -608,7 +572,7 @@ struct StorageManagementView: View {
         pendingInApp = []
 
         if !pendingPhone.isEmpty {
-            showPhoneAlert = true
+            executeDeletePhone()
         } else {
             finishDeleteFlow()
         }
@@ -619,24 +583,75 @@ struct StorageManagementView: View {
         let identifiers = photos.compactMap(\.localIdentifier).filter { lid in
             !lid.isEmpty && !lid.hasPrefix(AppCapturePhotoService.prefix)
         }
+
         guard !identifiers.isEmpty else {
-            removeFromDraft(photos)
-            deletedAny = true
             pendingPhone = []
-            finishDeleteFlow()
+            showPhoneDeleteFailedAlert = true
             return
         }
-        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
-        PHPhotoLibrary.shared().performChanges({
-            PHAssetChangeRequest.deleteAssets(fetchResult)
-        }, completionHandler: { _, _ in
-            DispatchQueue.main.async {
-                removeFromDraft(photos)
-                deletedAny = true
-                pendingPhone = []
-                finishDeleteFlow()
+
+        Task {
+            do {
+                try await deletePhotoLibraryAssets(localIdentifiers: identifiers)
+                await MainActor.run {
+                    removeFromDraft(photos)
+                    deletedAny = true
+                    pendingPhone = []
+                    finishDeleteFlow()
+                }
+            } catch PhotoDeletionError.userCancelled {
+                await MainActor.run {
+                    pendingPhone = []
+                }
+            } catch {
+                await MainActor.run {
+                    pendingPhone = []
+                    showPhoneDeleteFailedAlert = true
+                }
             }
-        })
+        }
+    }
+
+    private enum PhotoDeletionError: Error {
+        case notAuthorized
+        case noAssetsFound
+        case failedToDelete
+        case userCancelled
+    }
+
+    private func deletePhotoLibraryAssets(localIdentifiers: [String]) async throws {
+        let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        let status: PHAuthorizationStatus
+        if current == .notDetermined {
+            status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+        } else {
+            status = current
+        }
+
+        guard status == .authorized || status == .limited else {
+            throw PhotoDeletionError.notAuthorized
+        }
+
+        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil)
+        guard fetchResult.count > 0 else {
+            throw PhotoDeletionError.noAssetsFound
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges({
+                PHAssetChangeRequest.deleteAssets(fetchResult)
+            }, completionHandler: { success, error in
+                if success {
+                    continuation.resume()
+                } else if let nsError = error as NSError?,
+                          nsError.domain == "PHPhotosErrorDomain",
+                          nsError.code == 3072 {
+                    continuation.resume(throwing: PhotoDeletionError.userCancelled)
+                } else {
+                    continuation.resume(throwing: PhotoDeletionError.failedToDelete)
+                }
+            })
+        }
     }
 
     private func removeFromDraft(_ photos: [RecapPhoto]) {
@@ -860,13 +875,7 @@ private struct UnusedPhotoTriageView: View {
             VStack(spacing: 0) {
                 // Custom top bar
                 HStack {
-                    Button { onDismiss() } label: {
-                        Image(systemName: "xmark")
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
-                    }
-                    .buttonStyle(.plain)
+                    Color.clear.frame(width: 44, height: 44)
 
                     Spacer()
 
@@ -1050,7 +1059,6 @@ private struct UnusedPhotoTriageView: View {
     private func triggerDelete() {
         guard let photo = currentPhoto else { return }
         onDelete(photo)
-        advance()
     }
 
     private func triggerKeep() {

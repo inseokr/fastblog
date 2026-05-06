@@ -24,6 +24,7 @@ struct PlaceMapMarker: Identifiable {
     let coordinate: CLLocationCoordinate2D
     let firstPhoto: RecapPhoto
     let placeTitle: String
+    var placeCategory: String?
 }
 
 /// Map for one day: one marker per place (first photo as marker image), place name below, route line in visit order. Tap to open full-screen map when onTap provided.
@@ -65,7 +66,8 @@ struct MapDayView: View {
                         title: marker.placeTitle,
                         placeNumber: placeNumber,
                         isFirst: isFirst,
-                        isLast: isLast
+                        isLast: isLast,
+                        placeCategory: marker.placeCategory
                     )
                     .onTapGesture {
                         onAnnotationTap?(marker.id)
@@ -132,7 +134,8 @@ struct MapDayView: View {
                 id: stop.id,
                 coordinate: coordinate,
                 firstPhoto: first,
-                placeTitle: stop.placeTitle
+                placeTitle: stop.placeTitle,
+                placeCategory: stop.placeCategory
             )
         }
     }
@@ -209,6 +212,7 @@ private struct PlaceMarkerView: View {
     let placeNumber: Int
     let isFirst: Bool
     let isLast: Bool
+    var placeCategory: String? = nil
 
     private var orderLabel: String {
         switch placeNumber {
@@ -251,6 +255,19 @@ private struct PlaceMarkerView: View {
                         .background(Circle().fill(Color.blue.opacity(0.9)))
                         .overlay(Circle().stroke(Color.white, lineWidth: 1))
                         .offset(x: -4, y: -4)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if let raw = placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+                    let presentation = PlacePOICategoryPresentation.presentation(forRaw: raw)
+                    Image(systemName: presentation.symbol)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(presentation.color))
+                        .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1))
+                        .offset(x: 4, y: -2)
+                        .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
                 }
             }
 
