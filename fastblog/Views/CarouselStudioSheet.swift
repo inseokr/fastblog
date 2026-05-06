@@ -257,6 +257,11 @@ private func isCarouselStudioMapKind(_ kind: CarouselSlideKind) -> Bool {
     kind == .mapRoute || kind == .placeIntroMap
 }
 
+/// Raw index of the first `.mapRoute` / `.placeIntroMap` slide (Studio map watermark target).
+private func indexOfFirstCarouselStudioMapSlide(in slides: [CarouselSlide]) -> Int? {
+    slides.firstIndex(where: { isCarouselStudioMapKind($0.kind) })
+}
+
 // MARK: - Text Style Models
 
 enum StudioFontDesign: String, CaseIterable, Identifiable {
@@ -1255,6 +1260,8 @@ struct CarouselSlide: Identifiable {
     var splitBottomFraming: StudioImageFraming? = nil
     /// 1-based sequential stop number across all days; when set, a white POI marker is shown before the place name.
     var stopIndex: Int? = nil
+    /// Up to three photos for `.placeIntroMap` slides — portrait thumbnails along the bottom edge.
+    var placeIntroBottomPhotos: [UIImage] = []
 
     var caption: String? {
         guard kind == .placeStop, let placeStop else { return nil }
@@ -2039,6 +2046,8 @@ struct CarouselSlideView: View {
     /// When `true`, draws only imagery (hero, map snapshot, split slots) without title, captions, PIPs, or text legibility gradients.
     /// Used by the Carousel Studio download picker; export keeps the default `false` so saves include all overlays.
     var showsBackgroundOnly: Bool = false
+    /// Carousel Studio: show the Bloggo watermark only on the first map slide (`false` for later day maps / place-intro maps).
+    var showPoweredByBloggoMapWatermark: Bool = true
     /// Editor-only: stack positions (0,1,2) still awaiting Vision background removal.
     var pipBackgroundRemovalLoadingSlots: Set<Int> = []
 
@@ -2360,9 +2369,9 @@ struct CarouselSlideView: View {
                 .padding(studioTextBlockEdgeInset)
             }
         }
-        // Bloggo watermark — bottom-trailing on map slides
+        // Bloggo watermark — bottom-trailing on map slides (first Studio map only when `showPoweredByBloggoMapWatermark`).
         .overlay(alignment: .bottomTrailing) {
-            if !showsBackgroundOnly, isCarouselStudioMapKind(slide.kind) {
+            if !showsBackgroundOnly, isCarouselStudioMapKind(slide.kind), showPoweredByBloggoMapWatermark {
                 HStack(spacing: width * 0.025) {
                     Image("AppIconMark")
                         .resizable()
@@ -2390,6 +2399,29 @@ struct CarouselSlideView: View {
                 .background(.ultraThinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: width * 0.04))
                 .padding(width * 0.042)
+            }
+        }
+        // Place-intro map — compact portrait thumbnails along the bottom edge.
+        .overlay(alignment: .bottom) {
+            if !showsBackgroundOnly, slide.kind == .placeIntroMap, !slide.placeIntroBottomPhotos.isEmpty {
+                let thumbW = width * 0.166
+                let thumbH = thumbW * 4.0 / 3.0
+                HStack(spacing: width * 0.014) {
+                    ForEach(Array(slide.placeIntroBottomPhotos.prefix(3).enumerated()), id: \.offset) { _, img in
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: thumbW, height: thumbH)
+                            .clipShape(RoundedRectangle(cornerRadius: width * 0.018, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: width * 0.018, style: .continuous)
+                                    .strokeBorder(Color.white.opacity(0.92), lineWidth: max(1.5, width * 0.004))
+                            )
+                            .shadow(color: .black.opacity(0.4), radius: 5, y: 2)
+                    }
+                }
+                .padding(.horizontal, width * 0.02)
+                .padding(.bottom, width * 0.17)
             }
         }
         // Place name + caption — anchor driven by `placeZoneLayout`
@@ -3468,6 +3500,8 @@ private struct SlideEditPage: View {
     let onRequestStudioCoverPhotoPick: (() -> Void)?
     /// Which horizontal page this edit surface represents (`slides` index).
     let slidePageIndex: Int
+    /// Matches export: Bloggo watermark only on the first map slide in the deck.
+    let showPoweredByBloggoMapWatermark: Bool
     /// PIP stack slots (0…2) showing an inline spinner while Vision removes backgrounds.
     let pipBackgroundRemovalLoadingSlots: Set<Int>
     /// Index of the currently selected individual PIP photo (ungrouped mode only).
@@ -3587,6 +3621,7 @@ private struct SlideEditPage: View {
             },
             onTextPinchBegan: { recordUndoSnapshot() },
             onCoverImageTap: (slide.kind == .cover ? onRequestStudioCoverPhotoPick : nil),
+            showPoweredByBloggoMapWatermark: showPoweredByBloggoMapWatermark,
             pipBackgroundRemovalLoadingSlots: pipBackgroundRemovalLoadingSlots
         )
         .coordinateSpace(.named(studioSlideCoordSpace))
@@ -6422,6 +6457,8 @@ struct SlideTextEditorView: View {
                                                 selectedSplitSlot: selectedSplitSlot,
                                                 onRequestStudioCoverPhotoPick: onRequestStudioCoverPhotoPick,
                                                 slidePageIndex: i,
+                                                showPoweredByBloggoMapWatermark:
+                                                    indexOfFirstCarouselStudioMapSlide(in: slides) == i,
                                                 pipBackgroundRemovalLoadingSlots: pipBackgroundRemovalSlideIndex == i
                                                     ? pipBackgroundRemovalLoadingSlots
                                                     : [],
@@ -9514,6 +9551,7 @@ struct SocialPostStudioSheet: View {
 
     @ViewBuilder
     private func slideCard(slide: CarouselSlide, index: Int) -> some View {
+        let poweredByMapWatermark = indexOfFirstCarouselStudioMapSlide(in: slides) == index
         VStack(spacing: 10) {
             SwipeUpToRemoveCard(
                 slideKey: slide.id,
@@ -9544,7 +9582,8 @@ struct SocialPostStudioSheet: View {
                     onCoverImageTap: (index == 0 && slide.kind == .cover)
                         ? { showStudioCoverPicker = true }
                         : nil,
-                    clipsFloatingContentToRoundedSlideOutline: false
+                    clipsFloatingContentToRoundedSlideOutline: false,
+                    showPoweredByBloggoMapWatermark: poweredByMapWatermark
                 )
                 .frame(width: previewWidth)
                 // Extra margin before the card clip so PIP shadows / slight rotations stay visible
@@ -9915,6 +9954,7 @@ struct SocialPostStudioSheet: View {
             var markerImages: [UUID: UIImage] = [:]
             var placeSlides: [CarouselSlide] = []
             let drawableForMap = carouselDrawableStopsForStudioDay(day: day, excludedKeys: excludedSnapshot)
+            var isFirstDrawableStop = true
 
             for stop in day.placeStops {
                 let included = stop.photos.filter { $0.isIncluded }
@@ -9949,7 +9989,9 @@ struct SocialPostStudioSheet: View {
                     #endif
                 }
 
-                if let dIdx = drawableForMap.firstIndex(where: { $0.id == stop.id }),
+                // Skip the placeIntroMap for the first stop — the day map already highlights it.
+                if !isFirstDrawableStop,
+                   let dIdx = drawableForMap.firstIndex(where: { $0.id == stop.id }),
                    let introSnap = await MapSnapshotHelper.generateCarouselPlaceIntroSnapshot(
                     drawableDayStops: drawableForMap,
                     focusedDrawableIndex: dIdx,
@@ -9959,6 +10001,7 @@ struct SocialPostStudioSheet: View {
                     let teaser = [stop.placeNarrative, stop.overallStory, stop.noteText]
                         .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                         .first { !$0.isEmpty }
+                    let introBottom = Array(stopImages.compactMap { $0 }.prefix(3))
                     placeSlides.append(CarouselSlide(
                         id: "place-map-\(stop.id.uuidString)",
                         kind: .placeIntroMap,
@@ -9968,9 +10011,11 @@ struct SocialPostStudioSheet: View {
                         dayInfoLine1: stop.placeTitle,
                         dayInfoLine2: (subtitle?.isEmpty == false) ? subtitle : nil,
                         placeStop: stop,
-                        dayStory: teaser
+                        dayStory: teaser,
+                        placeIntroBottomPhotos: introBottom
                     ))
                 }
+                isFirstDrawableStop = false
 
                 for (photoIdx, photo) in included.enumerated() {
                     let hero = stopImages[photoIdx]
@@ -10000,7 +10045,8 @@ struct SocialPostStudioSheet: View {
 
             let mapSnap = await MapSnapshotHelper.generatePhotoRouteSnapshot(
                 for: day.placeStops, markerImagesByStopId: markerImages,
-                size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.015)
+                size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.015,
+                carouselDayFirstStopFocus: true)
 
             let bestStory = [day.dayNarrative, day.dayCaption]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -10049,7 +10095,7 @@ struct SocialPostStudioSheet: View {
         guard !indices.isEmpty else { return }
         isRendering = true
         defer { isRendering = false }
-        let images = renderSlides(atIndices: indices)
+        let images = await renderSlides(atIndices: indices)
         guard !images.isEmpty else { return }
         for image in images {
             UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
@@ -10064,7 +10110,7 @@ struct SocialPostStudioSheet: View {
             .appendingPathComponent("carousel-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         var urls: [URL] = []
-        for (i, image) in renderSlides().enumerated() {
+        for (i, image) in await renderSlides().enumerated() {
             guard let data = image.jpegData(compressionQuality: 0.92) else { continue }
             let url = tempDir.appendingPathComponent("slide_\(i + 1).jpg")
             try? data.write(to: url); urls.append(url)
@@ -10081,7 +10127,7 @@ struct SocialPostStudioSheet: View {
     @MainActor private func exportSlidesPDFAndShare(atIndices indices: [Int]) async {
         isRendering = true
         defer { isRendering = false }
-        let images = renderSlides(atIndices: indices)
+        let images = await renderSlides(atIndices: indices)
         guard !images.isEmpty else { return }
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("carousel-\(UUID().uuidString)", isDirectory: true)
@@ -10103,11 +10149,15 @@ struct SocialPostStudioSheet: View {
         showShareSheet = true
     }
 
-    @MainActor private func renderSlides() -> [UIImage] {
-        renderSlides(atIndices: orderedExportSlideIndices())
+    @MainActor private func renderSlides() async -> [UIImage] {
+        await renderSlides(atIndices: orderedExportSlideIndices())
     }
 
-    @MainActor private func renderSlides(atIndices indices: [Int]) -> [UIImage] {
+    /// Renders each slide with `ImageRenderer` (GPU / CAMetalLayer-backed). Yields between passes so
+    /// drawables are not retired while command buffers are still in flight — avoids
+    /// `MTLDebugDevice notifyExternalReferencesNonZeroOnDealloc` in debug when exporting many slides.
+    @MainActor private func renderSlides(atIndices indices: [Int]) async -> [UIImage] {
+        let firstMapWatermarkIndex = indexOfFirstCarouselStudioMapSlide(in: slides)
         var seen = Set<Int>()
         var images: [UIImage] = []
         for idx in indices {
@@ -10115,12 +10165,18 @@ struct SocialPostStudioSheet: View {
                   !isSlideHiddenBySiblingPIP(at: idx, in: slides) else { continue }
             seen.insert(idx)
             let slide = slides[idx]
-            let view = CarouselSlideView(slide: slide, width: exportWidth,
-                                         aspectRatio: exportRenderAspectRatio,
-                                         onToggleSelection: {}, showsSelectionChrome: false)
-            let r = ImageRenderer(content: view)
-            r.scale = 1.0
-            if let img = r.uiImage { images.append(img) }
+            let img: UIImage? = autoreleasepool {
+                let view = CarouselSlideView(slide: slide, width: exportWidth,
+                                             aspectRatio: exportRenderAspectRatio,
+                                             onToggleSelection: {}, showsSelectionChrome: false,
+                                             showPoweredByBloggoMapWatermark: firstMapWatermarkIndex == idx)
+                let r = ImageRenderer(content: view)
+                r.scale = 1.0
+                return r.uiImage
+            }
+            if let img { images.append(img) }
+            CATransaction.flush()
+            await Task.yield()
         }
         return images
     }
