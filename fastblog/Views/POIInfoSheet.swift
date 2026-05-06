@@ -5,6 +5,7 @@
 //  Bottom sheet presenting Google Search results for a tapped map POI.
 //
 
+import CoreLocation
 import MapKit
 import SwiftUI
 
@@ -13,6 +14,8 @@ struct POIInfoSheet: View {
     @Environment(\.dismiss) private var dismiss
     // Satisfies GoogleSearchEmbeddedWebView's binding contract; not read by this view.
     @State private var currentPageURL: URL? = nil
+    @State private var resolvedCity: String?
+    @State private var searchReady = false
 
     private var placeName: String {
         let t = feature.title ?? ""
@@ -20,9 +23,10 @@ struct POIInfoSheet: View {
     }
 
     private var googleSearchURL: URL {
-        let encoded = placeName.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed) ?? placeName
-        let urlString = "https://www.google.com/search?q=\(encoded)"
-        return URL(string: urlString) ?? URL(string: "https://www.google.com/search")!
+        var query = placeName
+        if let city = resolvedCity { query += " \(city)" }
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed) ?? query
+        return URL(string: "https://www.google.com/search?q=\(encoded)") ?? URL(string: "https://www.google.com/search")!
     }
 
     var body: some View {
@@ -55,9 +59,25 @@ struct POIInfoSheet: View {
 
             Divider()
 
-            GoogleSearchEmbeddedWebView(url: googleSearchURL, currentPageURL: $currentPageURL)
+            if searchReady {
+                GoogleSearchEmbeddedWebView(url: googleSearchURL, currentPageURL: $currentPageURL)
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.hidden)
+        .task {
+            let geocoder = CLGeocoder()
+            let location = CLLocation(
+                latitude: feature.coordinate.latitude,
+                longitude: feature.coordinate.longitude
+            )
+            if let placemark = try? await geocoder.reverseGeocodeLocation(location).first {
+                resolvedCity = placemark.locality ?? placemark.administrativeArea
+            }
+            searchReady = true
+        }
     }
 }
