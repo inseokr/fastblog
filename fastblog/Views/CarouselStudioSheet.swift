@@ -1151,7 +1151,9 @@ struct CarouselSlide: Identifiable {
     var isPrimaryHidden: Bool = false
     /// When true, the secondary text block (story / caption) is hidden on this slide.
     var isSecondaryHidden: Bool = false
-    /// Layout variant — only meaningful for `.placeStop` slides.
+    /// Layout variant — meaningful for `.placeStop` (single / PIP / split) and
+    /// `.placeIntroMap` (single = full‑bleed map; split = map over photo with
+    /// shared split seam + bottom framing like place slides).
     var layout: CarouselSlideLayout = .single
     /// Text block anchors vs PIP cluster for `.placeStop` slides (single / pip / split hero).
     var placeZoneLayout: CarouselPlaceZoneLayout = .textLeadingPhotosTrailing
@@ -1287,7 +1289,8 @@ struct CarouselSlide: Identifiable {
     var splitBottomFraming: StudioImageFraming? = nil
     /// 1-based sequential stop number across all days; when set, a white POI marker is shown before the place name.
     var stopIndex: Int? = nil
-    /// Up to three photos for `.placeIntroMap` slides — portrait thumbnails along the bottom edge.
+    /// Legacy full‑bleed place‑intro strip (thumbnails). New decks use `layout == .split`
+    /// with `splitBottomImage` instead; non‑empty here is shown only when `layout != .split`.
     var placeIntroBottomPhotos: [UIImage] = []
 
     var caption: String? {
@@ -2246,7 +2249,50 @@ struct CarouselSlideView: View {
                 }
 
             case .mapRoute, .placeIntroMap:
-                mapRouteBackground
+                ZStack {
+                    if slide.layout == .split {
+                        splitMapSplitBackground
+                    } else {
+                        fullBleedMapBackground
+                    }
+                    if isEditingText, slide.layout == .split {
+                        VStack(spacing: 0) {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .frame(width: width, height: height * 0.5)
+                                .highPriorityGesture(
+                                    TapGesture().onEnded { onTapSplitTopSlot?() }
+                                )
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .frame(width: width, height: height * 0.5)
+                                .highPriorityGesture(
+                                    TapGesture().onEnded { onTapSplitBottomSlot?() }
+                                )
+                        }
+                        .frame(width: width, height: height)
+                    }
+                    if isEditingText, slide.layout == .split, let slot = selectedSplitSlot {
+                        VStack(spacing: 0) {
+                            RoundedRectangle(cornerRadius: 0)
+                                .strokeBorder(
+                                    slot == .top ? Color.white.opacity(0.55) : Color.clear,
+                                    lineWidth: 2
+                                )
+                                .frame(width: width, height: height * 0.5)
+                                .allowsHitTesting(false)
+                            RoundedRectangle(cornerRadius: 0)
+                                .strokeBorder(
+                                    slot == .bottom ? Color.white.opacity(0.55) : Color.clear,
+                                    lineWidth: 2
+                                )
+                                .frame(width: width, height: height * 0.5)
+                                .allowsHitTesting(false)
+                        }
+                        .frame(width: width, height: height)
+                        .animation(.easeInOut(duration: 0.15), value: slot)
+                    }
+                }
                 if !showsBackgroundOnly {
                     if !slide.isPrimaryHidden {
                         LinearGradient(colors: [.black.opacity(0.6), .clear],
@@ -2520,9 +2566,10 @@ struct CarouselSlideView: View {
                 .padding(width * 0.042)
             }
         }
-        // Place-intro map — compact portrait thumbnails along the bottom edge.
+        // Legacy place‑intro strip (full‑bleed map + thumbnails) when not using split layout.
         .overlay(alignment: .bottom) {
-            if !showsBackgroundOnly, slide.kind == .placeIntroMap, !slide.placeIntroBottomPhotos.isEmpty {
+            if !showsBackgroundOnly, slide.kind == .placeIntroMap, slide.layout != .split,
+               !slide.placeIntroBottomPhotos.isEmpty {
                 let thumbW = width * 0.166
                 let thumbH = thumbW * 4.0 / 3.0
                 HStack(spacing: width * 0.014) {
@@ -2802,7 +2849,7 @@ struct CarouselSlideView: View {
         .frame(width: width, height: height).clipped()
     }
 
-    private var mapRouteBackground: some View {
+    private var fullBleedMapBackground: some View {
         Group {
             if let image = slide.mapSnapshot {
                 Image(uiImage: image).resizable().scaledToFill()
@@ -2811,6 +2858,114 @@ struct CarouselSlideView: View {
             }
         }
         .frame(width: width, height: height).clipped()
+    }
+
+    /// Map in the top half + optional bottom photo — mirrors place `splitPlaceStopBackground`
+    /// but the upper slot renders `mapSnapshot` (with `splitTopFraming`) instead of `heroImage`.
+    private var splitMapSplitBackground: some View {
+        let slotW = width
+        let slotH = height * 0.5
+        let useCurvedMasks = slide.splitDividerStyle == .curve
+        let seamBleed = useCurvedMasks ? min(22, max(10, slotW * 0.038)) : 0
+        return ZStack {
+            VStack(spacing: useCurvedMasks ? -seamBleed : 0) {
+                Group {
+                    if useCurvedMasks {
+                        Group {
+                            if let map = slide.mapSnapshot {
+                                SplitFramedPhotoInSlot(
+                                    image: map,
+                                    framing: slide.splitTopFraming,
+                                    slotWidth: slotW,
+                                    slotHeight: slotH
+                                )
+                            } else {
+                                Color(red: 12/255, green: 16/255, blue: 33/255)
+                                    .frame(width: slotW, height: slotH)
+                            }
+                        }
+                        .clipShape(CurvedSplitTopMaskShape())
+                        .frame(width: slotW, height: slotH + seamBleed)
+                    } else {
+                        Group {
+                            if let map = slide.mapSnapshot {
+                                SplitFramedPhotoInSlot(
+                                    image: map,
+                                    framing: slide.splitTopFraming,
+                                    slotWidth: slotW,
+                                    slotHeight: slotH
+                                )
+                            } else {
+                                Color(red: 12/255, green: 16/255, blue: 33/255)
+                                    .frame(width: slotW, height: slotH)
+                            }
+                        }
+                        .frame(width: slotW, height: slotH)
+                    }
+                }
+
+                Group {
+                    if useCurvedMasks {
+                        Group {
+                            if let bottom = slide.splitBottomImage {
+                                SplitFramedPhotoInSlot(
+                                    image: bottom,
+                                    framing: slide.splitBottomFraming,
+                                    slotWidth: slotW,
+                                    slotHeight: slotH
+                                )
+                            } else {
+                                ZStack {
+                                    Color(white: 0.13)
+                                    if isEditingText {
+                                        VStack(spacing: 6) {
+                                            Image(systemName: "plus.circle.fill")
+                                                .font(.system(size: width * 0.08, weight: .semibold))
+                                            Text("Tap to pick photo")
+                                                .font(.system(size: width * 0.04, weight: .semibold))
+                                        }
+                                        .foregroundColor(.white.opacity(0.72))
+                                    }
+                                }
+                                .frame(width: slotW, height: slotH)
+                            }
+                        }
+                        .clipShape(CurvedSplitBottomMaskShape())
+                        .frame(width: slotW, height: slotH + seamBleed)
+                    } else {
+                        Group {
+                            if let bottom = slide.splitBottomImage {
+                                SplitFramedPhotoInSlot(
+                                    image: bottom,
+                                    framing: slide.splitBottomFraming,
+                                    slotWidth: slotW,
+                                    slotHeight: slotH
+                                )
+                            } else {
+                                ZStack {
+                                    Color(white: 0.13)
+                                    if isEditingText {
+                                        VStack(spacing: 6) {
+                                            Image(systemName: "plus.circle.fill")
+                                                .font(.system(size: width * 0.08, weight: .semibold))
+                                            Text("Tap to pick photo")
+                                                .font(.system(size: width * 0.04, weight: .semibold))
+                                        }
+                                        .foregroundColor(.white.opacity(0.72))
+                                    }
+                                }
+                                .frame(width: slotW, height: slotH)
+                            }
+                        }
+                        .frame(width: slotW, height: slotH)
+                    }
+                }
+            }
+
+            splitDividerOverlay
+        }
+        .frame(width: width, height: height)
+        .clipped()
     }
 
     @ViewBuilder
@@ -3691,11 +3846,13 @@ private struct SlideEditPage: View {
                 onRequestHeroSwap(slidePageIndex)
             },
             onTapSplitBottomSlot: {
-                guard slide.kind == .placeStop, slide.layout == .split else { return }
+                guard slide.layout == .split,
+                      slide.kind == .placeStop || isCarouselStudioMapKind(slide.kind) else { return }
                 onRequestSplitBottomPick(slidePageIndex)
             },
             onTapSplitTopSlot: {
-                guard slide.kind == .placeStop, slide.layout == .split else { return }
+                guard slide.layout == .split,
+                      slide.kind == .placeStop || isCarouselStudioMapKind(slide.kind) else { return }
                 onRequestSplitTopSelect(slidePageIndex)
             },
             selectedSplitSlot: selectedSplitSlot,
@@ -3812,6 +3969,9 @@ private struct SplitPhotoRepositionCover: View {
     private var currentImage: UIImage? {
         guard slides.indices.contains(slideIndex) else { return nil }
         let s = slides[slideIndex]
+        if isCarouselStudioMapKind(s.kind) {
+            return activeSlot == .top ? s.mapSnapshot : s.splitBottomImage
+        }
         return activeSlot == .top ? s.heroImage : s.splitBottomImage
     }
 
@@ -5157,106 +5317,95 @@ struct SlideTextEditorView: View {
     /// active — Swap and Border divider controls.
     @ViewBuilder
     private var splitToolsRow: some View {
-        if let slide = currentSlide {
-            switch slide.kind {
-            case .placeStop:
-                ZStack(alignment: .trailing) {
-                    if slide.layout == .split {
-                        let canSwapSplitPhotos = slide.splitBottomPhotoID != nil
-                        HStack(spacing: 10) {
+        if let slide = currentSlide,
+           slide.layout == .split,
+           slide.kind == .placeStop || slide.kind == .placeIntroMap {
+            let canSwapSplitPhotos = slide.kind == .placeStop && slide.splitBottomPhotoID != nil
+            ZStack(alignment: .trailing) {
+                HStack(spacing: 10) {
+                    Button {
+                        let idx = editorPagerFocusedSlideIndex
+                        guard slides.indices.contains(idx), slides[idx].layout == .split else { return }
+                        pipMultiRepositionSession = nil
+                        splitRepositionSession = SplitRepositionSession(slideIndex: idx, initialSlot: .top)
+                    } label: {
+                        Label("Reposition", systemImage: "crop")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.88))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer(minLength: 8)
+
+                    Button {
+                        swapSplitTopBottom(slideIndex: editorPagerFocusedSlideIndex)
+                    } label: {
+                        Label("Swap", systemImage: "arrow.up.arrow.down")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white.opacity(canSwapSplitPhotos ? 0.88 : 0.32))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSwapSplitPhotos)
+
+                    HStack(spacing: 0) {
+                        ForEach(CarouselSplitDividerStyle.allCases) { style in
+                            let active = slide.splitDividerStyle == style
                             Button {
-                                let idx = editorPagerFocusedSlideIndex
-                                guard slides.indices.contains(idx), slides[idx].layout == .split else { return }
-                                pipMultiRepositionSession = nil
-                                splitRepositionSession = SplitRepositionSession(slideIndex: idx, initialSlot: .top)
+                                setSplitDividerStyle(style)
                             } label: {
-                                Label("Reposition", systemImage: "crop")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.white.opacity(0.88))
-                                    .lineLimit(1)
-                                    .fixedSize(horizontal: true, vertical: false)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 4)
-                            }
-                            .buttonStyle(.plain)
-
-                            Spacer(minLength: 8)
-
-                            Button {
-                                swapSplitTopBottom(slideIndex: editorPagerFocusedSlideIndex)
-                            } label: {
-                                Label("Swap", systemImage: "arrow.up.arrow.down")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.white.opacity(canSwapSplitPhotos ? 0.88 : 0.32))
-                                    .lineLimit(1)
-                                    .fixedSize(horizontal: true, vertical: false)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 4)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(!canSwapSplitPhotos)
-
-                            // Inline Straight / Curve toggle — avoids SwiftUI `Menu`’s
-                            // UIKit pull-down (label hides, popover appears, odd re-open
-                            // after selection) which felt broken next to Swap.
-                            HStack(spacing: 0) {
-                                ForEach(CarouselSplitDividerStyle.allCases) { style in
-                                    let active = slide.splitDividerStyle == style
-                                    Button {
-                                        setSplitDividerStyle(style)
-                                    } label: {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: style == .straight ? "line.3.horizontal" : "scribble")
-                                                .font(.system(size: 11, weight: .semibold))
-                                            Text(style == .straight ? "Straight" : "Curve")
-                                                .font(.system(size: 12, weight: .semibold))
-                                        }
-                                        .foregroundColor(active ? .white : .white.opacity(0.45))
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(
-                                            active
-                                                ? RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                                    .fill(studioToolbarSegmentActiveColor)
-                                                : nil
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel(
-                                        style == .straight ? "Straight border" : "Curved border"
-                                    )
+                                HStack(spacing: 4) {
+                                    Image(systemName: style == .straight ? "line.3.horizontal" : "scribble")
+                                        .font(.system(size: 11, weight: .semibold))
+                                    Text(style == .straight ? "Straight" : "Curve")
+                                        .font(.system(size: 12, weight: .semibold))
                                 }
+                                .foregroundColor(active ? .white : .white.opacity(0.45))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(
+                                    active
+                                        ? RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                            .fill(studioToolbarSegmentActiveColor)
+                                        : nil
+                                )
                             }
-                            .padding(2)
-                            .background(
-                                Capsule()
-                                    .fill(Color.white.opacity(0.10))
-                            )
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(
+                                style == .straight ? "Straight border" : "Curved border"
                             )
                         }
                     }
+                    .padding(2)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.10))
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                    )
                 }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.horizontal, 20)
-                .padding(.top, 4)
-                .padding(.bottom, 2)
-                .frame(height: splitToolsReservedHeight, alignment: .top)
-                // Hard-strip every transaction reaching this row so neither the
-                // implicit transitions on `Group { if/else }` nor any inherited
-                // animation from ancestors (keyboardHeight spring, selectedBlock
-                // easeInOut, etc.) can flash the Swap/Border buttons or replay
-                // the Menu label as the menu dismisses.
-                .transaction { transaction in
-                    transaction.animation = nil
-                    transaction.disablesAnimations = true
-                }
-            case .cover, .mapRoute, .placeIntroMap:
-                Color.clear
-                    .frame(height: splitToolsReservedHeight)
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.horizontal, 20)
+            .padding(.top, 4)
+            .padding(.bottom, 2)
+            .frame(height: splitToolsReservedHeight, alignment: .top)
+            .transaction { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+        } else {
+            Color.clear
+                .frame(height: splitToolsReservedHeight)
         }
     }
 
@@ -6294,6 +6443,7 @@ struct SlideTextEditorView: View {
     private func swapSplitTopBottom(slideIndex: Int) {
         guard slides.indices.contains(slideIndex),
               slides[slideIndex].layout == .split,
+              !isCarouselStudioMapKind(slides[slideIndex].kind),
               let bottomImage = slides[slideIndex].splitBottomImage,
               let bottomID = slides[slideIndex].splitBottomPhotoID else { return }
         pushUndoSnapshot()
@@ -7903,6 +8053,7 @@ struct SlideTextEditorView: View {
            let slide = currentSlide,
            slide.layout == .split {
             let isTop = slot == .top
+            let isMapSplitTopReplace = isTop && isCarouselStudioMapKind(slide.kind)
 
             HStack(spacing: 12) {
                 // Crop — opens the full-screen pinch/pan repositioner for the selected slot.
@@ -7922,7 +8073,7 @@ struct SlideTextEditorView: View {
                 }
                 .buttonStyle(.plain)
 
-                // Replace — hero swap for top slot; SplitBottomPhotoPicker for bottom slot.
+                // Replace — hero swap for top slot (place split); map top is the snapshot (crop only).
                 Button {
                     let idx = editorPagerFocusedSlideIndex
                     if isTop {
@@ -7943,6 +8094,8 @@ struct SlideTextEditorView: View {
                         .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
+                .disabled(isMapSplitTopReplace)
+                .opacity(isMapSplitTopReplace ? 0.35 : 1)
 
                 Spacer()
 
@@ -10116,6 +10269,9 @@ struct SocialPostStudioSheet: View {
                         .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                         .first { !$0.isEmpty }
                     let introBottom = Array(stopImages.compactMap { $0 }.prefix(3))
+                    let bottomIdx = stopImages.firstIndex(where: { $0 != nil }) ?? 0
+                    let splitBottomUIImage = stopImages[bottomIdx] ?? introBottom.first
+                    let splitBottomID = included.indices.contains(bottomIdx) ? included[bottomIdx].id : included.first?.id
                     placeSlides.append(CarouselSlide(
                         id: "place-map-\(stop.id.uuidString)",
                         kind: .placeIntroMap,
@@ -10126,7 +10282,10 @@ struct SocialPostStudioSheet: View {
                         dayInfoLine2: (subtitle?.isEmpty == false) ? subtitle : nil,
                         placeStop: stop,
                         dayStory: teaser,
-                        placeIntroBottomPhotos: introBottom
+                        layout: .split,
+                        splitBottomImage: splitBottomUIImage,
+                        splitBottomPhotoID: splitBottomID,
+                        placeIntroBottomPhotos: []
                     ))
                 }
                 isFirstDrawableStop = false
