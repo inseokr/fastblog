@@ -62,12 +62,18 @@ actor PhotoQualityScorer {
             return [:]
         }
 
+        /// Unbounded parallelism against `assetsd` (dozens of concurrent `PHImageManager` requests) reliably
+        /// triggers XPC/CoreData flakes on large trips — cap in-flight scoring work.
+        let maxConcurrentScores = 6
         var results: [String: PhotoScore] = [:]
+        var iterator = assets.makeIterator()
         await withTaskGroup(of: (String, PhotoScore?).self) { group in
-            for asset in assets {
-                group.addTask {
-                    let score = await self.scoreAsset(asset)
-                    return (asset.localIdentifier, score)
+            for _ in 0..<min(maxConcurrentScores, assets.count) {
+                if let asset = iterator.next() {
+                    group.addTask {
+                        let score = await self.scoreAsset(asset)
+                        return (asset.localIdentifier, score)
+                    }
                 }
             }
             for await (identifier, score) in group {
@@ -75,6 +81,12 @@ actor PhotoQualityScorer {
                     results[identifier] = score
                 } else {
                     print("[PQS] scorePhotos: scoreAsset returned nil for \(identifier.prefix(8))…")
+                }
+                if let next = iterator.next() {
+                    group.addTask {
+                        let s = await self.scoreAsset(next)
+                        return (next.localIdentifier, s)
+                    }
                 }
             }
         }

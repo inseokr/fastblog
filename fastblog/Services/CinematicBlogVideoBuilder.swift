@@ -1669,7 +1669,7 @@ enum CinematicBlogVideoBuilder {
             if lid.hasPrefix(AppCapturePhotoService.prefix) {
                 return AppCapturePhotoService.shared.loadImage(identifier: lid)
             }
-            return await ImageLoader.shared.loadImage(assetIdentifier: lid, targetSize: targetSize)
+            return await ImageLoader.shared.loadImageBypassingMemoryCache(assetIdentifier: lid, targetSize: targetSize)
         }
         guard let permanentURL = photo.cloudURL?.trimmingCharacters(in: .whitespacesAndNewlines),
               !permanentURL.isEmpty else { return nil }

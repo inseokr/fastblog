@@ -132,6 +132,7 @@ enum BlogVideoExportService {
         writer.startSession(atSourceTime: .zero)
 
         defer {
+            ImageLoader.shared.clearDecodedImageMemoryCache()
             if writer.status == .writing {
                 writer.cancelWriting()
             }
