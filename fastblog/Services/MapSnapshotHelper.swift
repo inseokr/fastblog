@@ -135,7 +135,9 @@ class MapSnapshotHelper {
         for placeStops: [PlaceStop],
         markerImagesByStopId: [UUID: UIImage],
         size: CGSize,
-        regionPadding: Double = 0.07
+        regionPadding: Double = 0.07,
+        /// Carousel Studio day map: tighter zoom with the viewport pulled toward the first stop.
+        carouselDayFirstStopFocus: Bool = false
     ) async -> UIImage? {
         // Keep ordering stable: route polyline + marker numbering follow the original placeStops order.
         struct MarkerEntry {
@@ -174,31 +176,38 @@ class MapSnapshotHelper {
         guard !entries.isEmpty else { return nil }
 
         let coords = entries.map(\.coord)
-        let baseRegion = region(for: coords, padding: regionPadding)
 
-        // Inflate the span proportionally so the photo markers and their place-name
-        // pills always stay comfortably inside the frame.  Markers take ~13 % of the
-        // min canvas dimension and the pill sits just below them, so we need a
-        // meaningful margin on every side regardless of how far apart the stops are.
-        let markerFraction = Double(clampMarkerDiameter(size: size) / max(1, min(size.width, size.height)))
-        let pillFraction = 0.12  // approximate pill height + gap, as a fraction of min dimension
-        // Multiplier >1 so both axes grow; applied to span, so padding scales with the trip size.
-        let inflateFactor = 1.0 + (markerFraction + pillFraction) * 2.0
-        let inflatedSpan = MKCoordinateSpan(
-            latitudeDelta: baseRegion.span.latitudeDelta * inflateFactor,
-            longitudeDelta: baseRegion.span.longitudeDelta * inflateFactor
-        )
-        let boundingRegion = MKCoordinateRegion(center: baseRegion.center, span: inflatedSpan)
-
-        // Shift the viewport center 25 % toward the first stop so the start of the
-        // route sits more prominently in frame.  The span is unchanged so all later
-        // stops remain fully inside the snapshot.
+        // Carousel Studio day map: street-level zoom centered exactly on the first stop (START POI).
         let rawDisplayRegion: MKCoordinateRegion = {
+            if carouselDayFirstStopFocus {
+                let first = entries[0].coord
+                let maxZoom = MKCoordinateSpan(latitudeDelta: 0.002, longitudeDelta: 0.002)
+                return MKCoordinateRegion(center: first, span: maxZoom)
+            }
+
+            let baseRegion = region(for: coords, padding: regionPadding)
+
+            // Inflate the span proportionally so the photo markers and their place-name
+            // pills always stay comfortably inside the frame.  Markers take ~13 % of the
+            // min canvas dimension and the pill sits just below them, so we need a
+            // meaningful margin on every side regardless of how far apart the stops are.
+            let markerFraction = Double(clampMarkerDiameter(size: size) / max(1, min(size.width, size.height)))
+            let pillFraction = 0.05  // tighter than before so POI stay legible at street-block zoom
+            // Multiplier >1 so both axes grow; applied to span, so padding scales with the trip size.
+            let inflateFactor = 1.0 + (markerFraction + pillFraction) * 2.0
+            let inflatedSpan = MKCoordinateSpan(
+                latitudeDelta: baseRegion.span.latitudeDelta * inflateFactor,
+                longitudeDelta: baseRegion.span.longitudeDelta * inflateFactor
+            )
+            let boundingRegion = MKCoordinateRegion(center: baseRegion.center, span: inflatedSpan)
+
+            // Shift the viewport center toward the first stop so the day's opening location
+            // sits prominently in frame.
             let first = entries[0].coord
             let biasedLat = boundingRegion.center.latitude
-                + (first.latitude  - boundingRegion.center.latitude)  * 0.25
+                + (first.latitude  - boundingRegion.center.latitude)  * 0.45
             let biasedLon = boundingRegion.center.longitude
-                + (first.longitude - boundingRegion.center.longitude) * 0.25
+                + (first.longitude - boundingRegion.center.longitude) * 0.45
             return MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: biasedLat, longitude: biasedLon),
                 span: boundingRegion.span
@@ -263,7 +272,16 @@ class MapSnapshotHelper {
             let markerDiameter = clampMarkerDiameter(size: snapshot.image.size)
             let markerRadius = markerDiameter / 2
 
-            for (i, entry) in entries.enumerated() {
+            // Carousel day map is centered on stop 1: paint stop 1 last so green START isn't covered by END.
+            let markerDrawIndices: [Int] = {
+                if carouselDayFirstStopFocus, entries.count > 1 {
+                    return Array(1..<entries.count) + [0]
+                }
+                return Array(entries.indices)
+            }()
+
+            for i in markerDrawIndices {
+                let entry = entries[i]
                 let isFirst = i == 0
                 let isLast = i == entries.count - 1
 
@@ -325,7 +343,8 @@ class MapSnapshotHelper {
         for (i, stop) in drawableStops.enumerated() {
             guard let coord = coordinateForCarouselIncludedStop(stop: stop) else { continue }
             let focused = focusedIndex.map { $0 == i } ?? false
-            entries.append((displayNumber: i + 1, coord: coord, placeTitle: stop.placeTitle, isFocused: focused))
+            let seq = entries.count + 1
+            entries.append((displayNumber: seq, coord: coord, placeTitle: stop.placeTitle, isFocused: focused))
         }
         return entries
     }
@@ -347,18 +366,30 @@ class MapSnapshotHelper {
             focusedIndex: focusedDrawableIndex
         )
         guard !entries.isEmpty else { return nil }
+        /// Tighter than the default snapshot floor (~110 m) so the block reads more zoomed-in.
+        let zoomSpanDegrees = 0.001
+        // Shift the map center slightly south so the POI sits a bit above frame center (helps the name pill); keep subtle so it is not hugging the top.
+        let verticalBiasDegrees = zoomSpanDegrees * 0.15
+        let mapCenter = CLLocationCoordinate2D(latitude: fc.latitude - verticalBiasDegrees, longitude: fc.longitude)
         let tight = MKCoordinateRegion(
-            center: fc,
-            span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)
+            center: mapCenter,
+            span: MKCoordinateSpan(latitudeDelta: zoomSpanDegrees, longitudeDelta: zoomSpanDegrees)
         )
-        let region = validatedSnapshotRegion(tight, fallbackCenter: fc)
+        let region = validatedSnapshotRegion(tight, fallbackCenter: fc, minSpanFloor: zoomSpanDegrees)
+        let shortest = min(logicalSize.width, logicalSize.height)
+        // `drawPlaceNamePillUnderMarker` scales type from markerRadius; anchored well above legacy 14 so names read on export cards.
+        let placeNameAnchorRadius = min(max(shortest * 0.086, 44), 78)
+        let markerRadius = min(max(shortest * 0.056, 20), 30)
         return await renderMarkedSnapshot(
             region: region,
             entries: entries,
             logicalSize: logicalSize,
             displayScale: displayScale,
             showPlaceNamePillForFocused: true,
-            showDistancePills: false
+            showDistancePills: false,
+            focusedMarkerTripRoleColors: false,
+            focusedPlaceNameMarkerRadius: placeNameAnchorRadius,
+            focusedMarkerRadius: markerRadius
         )
     }
 
@@ -370,9 +401,14 @@ class MapSnapshotHelper {
     }
 
     /// MapKit rejects non-finite, non-positive, or absurdly wide spans; clamps to snapshot-safe ranges.
-    private static func validatedSnapshotRegion(_ region: MKCoordinateRegion, fallbackCenter: CLLocationCoordinate2D) -> MKCoordinateRegion {
-        let minLatDelta = 0.002   // allow street-level zoom (~220 m)
-        let minLonDelta = 0.002
+    /// - Parameter minSpanFloor: Optional minimum lat/lon span; defaults to street-level (~220 m at mid-latitudes).
+    private static func validatedSnapshotRegion(
+        _ region: MKCoordinateRegion,
+        fallbackCenter: CLLocationCoordinate2D,
+        minSpanFloor: Double? = nil
+    ) -> MKCoordinateRegion {
+        let minLatDelta = minSpanFloor ?? 0.002
+        let minLonDelta = minSpanFloor ?? 0.002
         /// Longitude diff from naive min/max can approach 360° when a route crosses the antimeridian;
         /// `setRegion:` throws far below that; keep the portrait within MapKit limits.
         let maxLatDelta = 160.0
@@ -442,29 +478,27 @@ class MapSnapshotHelper {
     }
     
     /// Draws a neat little numbered circle marker onto the map.
-    private static func drawMarker(at point: CGPoint, number: Int, color: UIColor, context: CGContext) {
-        let radius: CGFloat = 14.0
+    private static func drawMarker(at point: CGPoint, number: Int, color: UIColor, context: CGContext, radius: CGFloat = 14) {
         let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
-        
+
         context.saveGState()
-        
-        // Shadow
-        context.setShadow(offset: CGSize(width: 0, height: 2), blur: 4, color: UIColor.black.withAlphaComponent(0.4).cgColor)
-        
-        // Fill
+
+        let shadowBlur = max(4, radius * 0.28)
+        context.setShadow(offset: CGSize(width: 0, height: max(2, radius * 0.14)), blur: shadowBlur,
+                          color: UIColor.black.withAlphaComponent(0.4).cgColor)
+
         context.setFillColor(color.cgColor)
         context.fillEllipse(in: rect)
-        
-        // Stroke
-        context.setShadow(offset: .zero, blur: 0, color: nil) // remove shadow for stroke
+
+        context.setShadow(offset: .zero, blur: 0, color: nil)
         context.setStrokeColor(UIColor.white.cgColor)
-        context.setLineWidth(2.0)
+        context.setLineWidth(max(2, radius * 0.14))
         context.strokeEllipse(in: rect)
-        
-        // Text
+
         let text = "\(number)"
+        let fontSize = max(11, min(radius * 0.96, 30))
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 14, weight: .bold),
+            .font: UIFont.systemFont(ofSize: fontSize, weight: .bold),
             .foregroundColor: UIColor.white
         ]
         
@@ -674,10 +708,12 @@ class MapSnapshotHelper {
 
         // Scale typography and spacing proportionally with the marker so everything
         // looks consistent whether rendering a small preview or a full 1080 px export.
-        let fontSize = max(13, markerRadius * 0.42).rounded()
+        let fontFloor = markerRadius >= 40 ? CGFloat(17) : CGFloat(13)
+        let fontSize = max(fontFloor, markerRadius * 0.42).rounded()
         let padH = max(10, markerRadius * 0.34)
         let padV = max(5, markerRadius * 0.22)
-        let maxLabelWidth = min(canvasSize.width * 0.44, markerRadius * 10)
+        let relativeWidthCap: CGFloat = markerRadius >= 40 ? 0.58 : 0.44
+        let maxLabelWidth = min(canvasSize.width * relativeWidthCap, markerRadius * 12)
 
         let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
         let paragraph = NSMutableParagraphStyle()
@@ -1003,7 +1039,14 @@ class MapSnapshotHelper {
         displayScale: CGFloat? = nil,
         showPlaceNamePillForFocused: Bool = false,
         showFocusedMarker: Bool = true,
-        showDistancePills: Bool = true
+        showDistancePills: Bool = true,
+        /// When true, focused marker is green for stop 1 and orange for the last stop (trip END).
+        /// When false (Carousel place-intro), last stop stays blue so END styling never steals focus from START semantics.
+        focusedMarkerTripRoleColors: Bool = true,
+        /// Scales typography + paddings under the focused marker’s place-name pill (`nil` = legacy fixed value).
+        focusedPlaceNameMarkerRadius: CGFloat? = nil,
+        /// Radius of the numbered POI disk + halo (`nil` = legacy 14 pt).
+        focusedMarkerRadius: CGFloat? = nil
     ) async -> UIImage? {
         let resolvedScale: CGFloat
         if let displayScale {
@@ -1062,18 +1105,27 @@ class MapSnapshotHelper {
             for entry in entries {
                 let pt = snapshot.point(for: entry.coord)
                 if entry.isFocused && showFocusedMarker {
-                    let color: UIColor = entry.displayNumber == 1 ? .systemGreen
-                        : (entry.displayNumber == totalCount ? .systemOrange : .systemBlue)
+                    let color: UIColor = {
+                        if focusedMarkerTripRoleColors {
+                            if entry.displayNumber == 1 { return .systemGreen }
+                            if entry.displayNumber == totalCount { return .systemOrange }
+                            return .systemBlue
+                        }
+                        return entry.displayNumber == 1 ? .systemGreen : .systemBlue
+                    }()
+                    let markerR = focusedMarkerRadius ?? 14
+                    let haloR = markerR * 1.64
                     context.saveGState()
                     context.setStrokeColor(color.withAlphaComponent(0.28).cgColor)
-                    context.setLineWidth(3)
-                    context.strokeEllipse(in: CGRect(x: pt.x - 23, y: pt.y - 23, width: 46, height: 46))
+                    context.setLineWidth(max(2.5, markerR * 0.2))
+                    context.strokeEllipse(in: CGRect(x: pt.x - haloR, y: pt.y - haloR, width: haloR * 2, height: haloR * 2))
                     context.restoreGState()
-                    drawMarker(at: pt, number: entry.displayNumber, color: color, context: context)
+                    drawMarker(at: pt, number: entry.displayNumber, color: color, context: context, radius: markerR)
                     if showPlaceNamePillForFocused {
+                        let pillRadius = focusedPlaceNameMarkerRadius ?? 14
                         drawPlaceNamePillUnderMarker(
                             at: pt,
-                            markerRadius: 14,
+                            markerRadius: pillRadius,
                             title: entry.placeTitle,
                             context: context,
                             canvasSize: snapshot.image.size

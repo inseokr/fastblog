@@ -1255,6 +1255,8 @@ struct CarouselSlide: Identifiable {
     var splitBottomFraming: StudioImageFraming? = nil
     /// 1-based sequential stop number across all days; when set, a white POI marker is shown before the place name.
     var stopIndex: Int? = nil
+    /// Up to three photos for `.placeIntroMap` slides — portrait thumbnails along the bottom edge.
+    var placeIntroBottomPhotos: [UIImage] = []
 
     var caption: String? {
         guard kind == .placeStop, let placeStop else { return nil }
@@ -2390,6 +2392,29 @@ struct CarouselSlideView: View {
                 .background(.ultraThinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: width * 0.04))
                 .padding(width * 0.042)
+            }
+        }
+        // Place-intro map — compact portrait thumbnails along the bottom edge.
+        .overlay(alignment: .bottom) {
+            if !showsBackgroundOnly, slide.kind == .placeIntroMap, !slide.placeIntroBottomPhotos.isEmpty {
+                let thumbW = width * 0.166
+                let thumbH = thumbW * 4.0 / 3.0
+                HStack(spacing: width * 0.014) {
+                    ForEach(Array(slide.placeIntroBottomPhotos.prefix(3).enumerated()), id: \.offset) { _, img in
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: thumbW, height: thumbH)
+                            .clipShape(RoundedRectangle(cornerRadius: width * 0.018, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: width * 0.018, style: .continuous)
+                                    .strokeBorder(Color.white.opacity(0.92), lineWidth: max(1.5, width * 0.004))
+                            )
+                            .shadow(color: .black.opacity(0.4), radius: 5, y: 2)
+                    }
+                }
+                .padding(.horizontal, width * 0.02)
+                .padding(.bottom, width * 0.17)
             }
         }
         // Place name + caption — anchor driven by `placeZoneLayout`
@@ -9915,6 +9940,7 @@ struct SocialPostStudioSheet: View {
             var markerImages: [UUID: UIImage] = [:]
             var placeSlides: [CarouselSlide] = []
             let drawableForMap = carouselDrawableStopsForStudioDay(day: day, excludedKeys: excludedSnapshot)
+            var isFirstDrawableStop = true
 
             for stop in day.placeStops {
                 let included = stop.photos.filter { $0.isIncluded }
@@ -9949,7 +9975,9 @@ struct SocialPostStudioSheet: View {
                     #endif
                 }
 
-                if let dIdx = drawableForMap.firstIndex(where: { $0.id == stop.id }),
+                // Skip the placeIntroMap for the first stop — the day map already highlights it.
+                if !isFirstDrawableStop,
+                   let dIdx = drawableForMap.firstIndex(where: { $0.id == stop.id }),
                    let introSnap = await MapSnapshotHelper.generateCarouselPlaceIntroSnapshot(
                     drawableDayStops: drawableForMap,
                     focusedDrawableIndex: dIdx,
@@ -9959,6 +9987,7 @@ struct SocialPostStudioSheet: View {
                     let teaser = [stop.placeNarrative, stop.overallStory, stop.noteText]
                         .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                         .first { !$0.isEmpty }
+                    let introBottom = Array(stopImages.compactMap { $0 }.prefix(3))
                     placeSlides.append(CarouselSlide(
                         id: "place-map-\(stop.id.uuidString)",
                         kind: .placeIntroMap,
@@ -9968,9 +9997,11 @@ struct SocialPostStudioSheet: View {
                         dayInfoLine1: stop.placeTitle,
                         dayInfoLine2: (subtitle?.isEmpty == false) ? subtitle : nil,
                         placeStop: stop,
-                        dayStory: teaser
+                        dayStory: teaser,
+                        placeIntroBottomPhotos: introBottom
                     ))
                 }
+                isFirstDrawableStop = false
 
                 for (photoIdx, photo) in included.enumerated() {
                     let hero = stopImages[photoIdx]
@@ -10000,7 +10031,8 @@ struct SocialPostStudioSheet: View {
 
             let mapSnap = await MapSnapshotHelper.generatePhotoRouteSnapshot(
                 for: day.placeStops, markerImagesByStopId: markerImages,
-                size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.015)
+                size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.015,
+                carouselDayFirstStopFocus: true)
 
             let bestStory = [day.dayNarrative, day.dayCaption]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
