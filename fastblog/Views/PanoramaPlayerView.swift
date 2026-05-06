@@ -817,6 +817,19 @@ struct PanoramaPlayerView: View {
         }
     }
 
+    /// Resume slideshow playback from gallery mode.
+    private func resumePlaybackFromGalleryCover() {
+        useFadeForGalleryTransition = true
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                showGallery = false
+            }
+            isPlaying = true
+            resumeSlideshowTimingIfPlaying()
+            Task { await slideshowMusic.resume() }
+        }
+    }
+
     /// Leave slideshow entirely and return to the recap blog.
     private func dismissSlideshowToBlog() {
         stopTimer()
@@ -924,15 +937,7 @@ struct PanoramaPlayerView: View {
                                     .padding(.horizontal, 24)
 
                                 Button {
-                                    useFadeForGalleryTransition = true
-                                    DispatchQueue.main.async {
-                                        withAnimation(.easeInOut(duration: 0.22)) {
-                                            showGallery = false
-                                        }
-                                        isPlaying = true
-                                        resumeSlideshowTimingIfPlaying()
-                                        Task { await slideshowMusic.resume() }
-                                    }
+                                    resumePlaybackFromGalleryCover()
                                 } label: {
                                     HStack(spacing: 8) {
                                         Image(systemName: "play.fill")
@@ -950,6 +955,10 @@ struct PanoramaPlayerView: View {
                             .frame(width: geo.size.width, height: coverHeight)
                         }
                         .frame(width: geo.size.width, height: coverHeight)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            resumePlaybackFromGalleryCover()
+                        }
                         .task(id: heroPhotoId) {
                             guard let id = heroPhotoId, loadedImages[id] == nil else { return }
                             let target = CGSize(width: geo.size.width * 2, height: coverHeight * 2)
@@ -995,8 +1004,8 @@ struct PanoramaPlayerView: View {
                     }
                 }
 
-                // Exit slideshow from gallery (word “Close” per product copy).
-                Button(action: dismissSlideshowToBlog) {
+                // Close gallery and return to slideshow playback.
+                Button(action: resumePlaybackFromGalleryCover) {
                     Text("Close")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.white)
@@ -1265,6 +1274,13 @@ struct PanoramaPlayerView: View {
 
 /// Full-screen paging viewer inside the slideshow pull-up grid; matches Bloggo gallery chrome (download; delete only for `bloggo-capture:` assets).
 private struct SlideshowGalleryPhotoDetailView: View {
+    private enum NavigationMapAppPreference: String {
+        case apple
+        case google
+    }
+    private static let navigationChooserSuppressedKey = "placePhotoNavigationChooserSuppressed"
+    private static let navigationChooserPreferredAppKey = "placePhotoNavigationPreferredApp"
+
     let photos: [PanoramaPhotoEntry]
     let initialPhotoId: String
     let cachedImages: [String: UIImage]
@@ -1275,6 +1291,10 @@ private struct SlideshowGalleryPhotoDetailView: View {
     @State private var showControls = true
     @State private var showDeleteConfirm = false
     @State private var downloadToast: String?
+    @State private var showNavigationAppChooser = false
+    @State private var navigationDoNotShowAgain = false
+    @AppStorage(Self.navigationChooserSuppressedKey) private var navigationChooserSuppressed = false
+    @AppStorage(Self.navigationChooserPreferredAppKey) private var navigationChooserPreferredAppRaw = ""
 
     init(
         photos: [PanoramaPhotoEntry],
@@ -1350,6 +1370,12 @@ private struct SlideshowGalleryPhotoDetailView: View {
                     .transition(.opacity)
                     .allowsHitTesting(false)
                 }
+            }
+
+            if showNavigationAppChooser {
+                navigationAppChooserOverlay
+                    .zIndex(30)
+                    .transition(.opacity)
             }
         }
         .preferredColorScheme(.dark)
@@ -1461,11 +1487,7 @@ private struct SlideshowGalleryPhotoDetailView: View {
 
                     if let coord = entry.location {
                         Button {
-                            let lat = coord.latitude
-                            let lon = coord.longitude
-                            if let url = URL(string: "http://maps.apple.com/?ll=\(lat),\(lon)") {
-                                UIApplication.shared.open(url)
-                            }
+                            handleNavigationTap(for: coord)
                         } label: {
                             Image(systemName: "map")
                                 .font(.system(size: 22, weight: .semibold))
@@ -1546,6 +1568,145 @@ private struct SlideshowGalleryPhotoDetailView: View {
         guard let id = currentEntry?.id, AppCapturePhotoService.uuid(from: id) != nil else { return }
         onAppCaptureDeleted(id)
         showDeleteConfirm = false
+    }
+
+    private var preferredNavigationApp: NavigationMapAppPreference? {
+        NavigationMapAppPreference(rawValue: navigationChooserPreferredAppRaw)
+    }
+
+    private func handleNavigationTap(for coordinate: PhotoCoordinate) {
+        if navigationChooserSuppressed, let preferredNavigationApp {
+            openNavigation(with: preferredNavigationApp, coordinate: coordinate)
+            return
+        }
+        navigationDoNotShowAgain = false
+        showNavigationAppChooser = true
+    }
+
+    private func chooseNavigationApp(_ app: NavigationMapAppPreference) {
+        if navigationDoNotShowAgain {
+            navigationChooserSuppressed = true
+            navigationChooserPreferredAppRaw = app.rawValue
+        } else {
+            navigationChooserSuppressed = false
+        }
+        showNavigationAppChooser = false
+        guard let coord = currentEntry?.location else { return }
+        openNavigation(with: app, coordinate: coord)
+    }
+
+    private func openNavigation(with app: NavigationMapAppPreference, coordinate: PhotoCoordinate) {
+        let lat = coordinate.latitude
+        let lon = coordinate.longitude
+
+        switch app {
+        case .apple:
+            let urlString = "http://maps.apple.com/?daddr=\(lat),\(lon)"
+            if let url = URL(string: urlString) {
+                UIApplication.shared.open(url)
+            }
+        case .google:
+            let nativeURL = URL(string: "comgooglemaps://?daddr=\(lat),\(lon)&directionsmode=driving")
+            if let nativeURL, UIApplication.shared.canOpenURL(nativeURL) {
+                UIApplication.shared.open(nativeURL)
+                return
+            }
+            let webURL = URL(string: "https://www.google.com/maps/dir/?api=1&destination=\(lat),\(lon)")
+            if let webURL {
+                UIApplication.shared.open(webURL)
+            }
+        }
+    }
+
+    private var navigationAppChooserOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    showNavigationAppChooser = false
+                }
+
+            VStack(spacing: 14) {
+                Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
+                    .font(.system(size: 44))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.green)
+                    .padding(.top, 4)
+
+                Text("Navigate")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+
+                Text("Pick your preferred map app to start directions instantly.")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.88))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 6)
+
+                Toggle(isOn: $navigationDoNotShowAgain) {
+                    Text("Do not show again")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                .tint(.green)
+                .padding(.top, 2)
+
+                VStack(spacing: 10) {
+                    Button(action: { chooseNavigationApp(.apple) }) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Apple Maps")
+                                .font(.body.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 13)
+                        .padding(.horizontal, 14)
+                        .background(Color.gray.opacity(0.42), in: RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: { chooseNavigationApp(.google) }) {
+                        HStack(spacing: 10) {
+                            googleMapsLogoBadge
+                            Text("Google Maps")
+                                .font(.body.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 13)
+                        .padding(.horizontal, 14)
+                        .background(Color.gray.opacity(0.42), in: RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 2)
+            }
+            .padding(22)
+            .background(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 12)
+            .padding(.horizontal, 26)
+        }
+    }
+
+    private var googleMapsLogoBadge: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white)
+            Text("G")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(Color(red: 0.26, green: 0.52, blue: 0.96))
+        }
+        .frame(width: 18, height: 18)
     }
 }
 

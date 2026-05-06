@@ -35,6 +35,8 @@ struct ContentView: View {
     @State private var showNoPhotosAlert = false
     /// User dismissed the limited library picker without changing which photos are shared (e.g. tapped away).
     @State private var showLimitedPickerDismissedWithoutChangeAlert = false
+    /// Enables the unchanged-selection prompt only after a prior limited scan found no trips.
+    @State private var didSeeWeakResultOnLimitedScan = false
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     /// Day index to open when navigating to a blog via the new-moments popup.
     @AppStorage("blogify.justFinishedOnboarding") private var justFinishedOnboarding = false
@@ -70,7 +72,7 @@ struct ContentView: View {
                     tripsViewModel.startDefaultScan(forceFullScan: true)
                 }
             } message: {
-                Text("Your shared photo selection didn't change. Choose photos that include location data so we can find trips, or cancel to stay on the home screen.")
+                Text("Your shared photos did not change. Add more location photos, or proceed with the current selection.")
             }
             .environmentObject(createdRecapStore)
             .sheet(isPresented: Binding(
@@ -95,6 +97,9 @@ struct ContentView: View {
                     withAnimation(.easeInOut(duration: 0.35)) {
                         showTrips = true
                     }
+                }
+                if newState == .idle {
+                    didSeeWeakResultOnLimitedScan = photoAuth.status == .limited && tripsViewModel.scanResultIsWeak
                 }
             }
             .onChange(of: dismissToLandingRequested) { _, requested in
@@ -344,9 +349,14 @@ struct ContentView: View {
                         showNoPhotosAlert = true
                         return
                     }
-                    // Match TripsView: if the user closed the picker without changing selection, do not scan or open Trips.
+                    // Only show the unchanged-selection prompt after a weak limited scan; otherwise run the first scan attempt.
                     guard countAfter != photoCountBeforePicker else {
-                        showLimitedPickerDismissedWithoutChangeAlert = true
+                        if didSeeWeakResultOnLimitedScan {
+                            showLimitedPickerDismissedWithoutChangeAlert = true
+                            return
+                        }
+                        pendingShowTripsWhenIdle = true
+                        tripsViewModel.startDefaultScan(forceFullScan: true)
                         return
                     }
                     pendingShowTripsWhenIdle = true

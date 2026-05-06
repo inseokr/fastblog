@@ -382,15 +382,15 @@ struct VoiceMemoRecorderSheet: View {
     }
 
     private func durationLabel(for url: URL) -> String? {
-        let asset = AVURLAsset(url: url)
-        let duration = CMTimeGetSeconds(asset.duration)
+        guard let player = try? AVAudioPlayer(contentsOf: url) else { return nil }
+        let duration = player.duration
         guard duration.isFinite, duration > 0 else { return nil }
         return format(duration)
     }
 
     private func durationSeconds(for url: URL) -> TimeInterval? {
-        let asset = AVURLAsset(url: url)
-        let seconds = CMTimeGetSeconds(asset.duration)
+        guard let player = try? AVAudioPlayer(contentsOf: url) else { return nil }
+        let seconds = player.duration
         guard seconds.isFinite, seconds > 0 else { return nil }
         return seconds
     }

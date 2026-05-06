@@ -6270,11 +6270,13 @@ struct SlideTextEditorView: View {
     /// Copies font design, color, and size from the current slide to every slide (all kinds),
     /// for primary and secondary separately. Does not change dragged positions.
     private func applyTypographyToAllSlides() {
-        clampCurrentIndexIfNeeded()
-        guard hasValidCurrentIndex else { return }
+        // Use editorMutationSlideIndex (not currentIndex) — scrollPageID can lead currentIndex
+        // by a frame after paging, so currentIndex may point to the previous slide.
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx) else { return }
         pushUndoSnapshot()
-        let refPrimary = slides[currentIndex].textStyle.primary
-        let refSecondary = slides[currentIndex].textStyle.secondary
+        let refPrimary = slides[idx].textStyle.primary
+        let refSecondary = slides[idx].textStyle.secondary
         var updatedSlides = slides
         for i in updatedSlides.indices {
             updatedSlides[i].textStyle.primary.mergeTypography(from: refPrimary)
@@ -6286,11 +6288,13 @@ struct SlideTextEditorView: View {
     /// Copies primary/secondary text block offsets from the current photo slide to every
     /// `placeStop` slide. No-op if the current slide is not a photo slide.
     private func applyPhotoLayoutToAllPlaceStops() {
-        clampCurrentIndexIfNeeded()
-        guard hasValidCurrentIndex, slides[currentIndex].kind == .placeStop else { return }
+        // Use editorMutationSlideIndex (not currentIndex) — scrollPageID can lead currentIndex
+        // by a frame after paging, so currentIndex may point to the previous slide.
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx), slides[idx].kind == .placeStop else { return }
         pushUndoSnapshot()
-        let refPrimary = slides[currentIndex].textStyle.primary
-        let refSecondary = slides[currentIndex].textStyle.secondary
+        let refPrimary = slides[idx].textStyle.primary
+        let refSecondary = slides[idx].textStyle.secondary
         var updatedSlides = slides
         for i in updatedSlides.indices where updatedSlides[i].kind == .placeStop {
             updatedSlides[i].textStyle.primary.mergeLayout(from: refPrimary)
@@ -7686,39 +7690,12 @@ struct SlideTextEditorView: View {
     @ViewBuilder
     private var textFormattingToolbar: some View {
         VStack(spacing: 0) {
-            // Slide-level actions: bulk-apply typography / photo text positions from the
-            // current slide (left), delete the selected block (right).
+            // Slide-level action row currently keeps only block deletion.
+            // "Apply to all" actions now live in the bottom category bar via the
+            // dedicated first-tab Apply menu.
             // Hidden while the text edit sheet is up (bottom chrome is removed then anyway).
             if !showsTextEditLine {
             HStack(spacing: 12) {
-                Menu {
-                    Button {
-                        applyTypographyToAllSlides()
-                        flashAppliedConfirmation()
-                    } label: {
-                        Label("Typography to all slides", systemImage: "textformat")
-                    }
-                    if currentSlide?.kind == .placeStop {
-                        Button {
-                            applyPhotoLayoutToAllPlaceStops()
-                            flashAppliedConfirmation()
-                        } label: {
-                            Label("Positions to all photo slides", systemImage: "arrow.up.left.and.arrow.down.right")
-                        }
-                    }
-                } label: {
-                    Label(didApplyToAll ? "Applied!" : "Apply to…",
-                          systemImage: didApplyToAll ? "checkmark" : "wand.and.stars")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14).padding(.vertical, 7)
-                        .background(didApplyToAll ? CarouselStudioChrome.accent.opacity(0.45) : Color.white.opacity(0.12))
-                        .clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(didApplyToAll ? CarouselStudioChrome.accent : Color.white.opacity(0.2), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: didApplyToAll)
-
                 Spacer()
 
                 Button {
@@ -8806,54 +8783,54 @@ struct SlideTextEditorView: View {
     /// without cramping the buttons. Buttons use a fixed intrinsic width so
     /// their labels never truncate; if the row doesn't fit on narrower
     /// devices (e.g. iPhone SE), users scroll horizontally.
-    /// Tab button for the inline text editor — styled identically to `styleCategoryButton`
-    /// so it sits naturally as the first item in the category tab bar.
-    private var textEditTabButton: some View {
-        let isActive = showsTextEditLine
-        return Button {
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                if isActive {
-                    cancelInlineTextEdit()
-                } else {
-#if DEBUG
-                    print("[CarouselStudio][TextEdit] opening sheet from Text tab")
-#endif
-                    inlineTextEditCommitted = false
-                    textEditBlockCapture = selectedBlock
-                    // Must match `currentSlide` / `currentBlockText`: `currentIndex` can lag
-                    // `scrollPageID` after swiping, which otherwise captured the wrong slide
-                    // for labels, caption visibility, and `commitInlineTextEdit`.
-                    textEditSlideIndexCapture = editorPagerFocusedSlideIndex
-                    inlineTextDraft = currentBlockText
-                    inlineCaptionDraft = currentSlide?.photoCaption ?? currentSlide?.caption ?? ""
-                    showsTextEditLine = true
+    /// First tab in the category bar: bulk-apply actions for all slides.
+    /// Uses a Menu so the interaction matches the existing drop-down affordance.
+    private var applyTabMenuButton: some View {
+        Menu {
+            Button {
+                applyTypographyToAllSlides()
+                flashAppliedConfirmation()
+            } label: {
+                Label("Typography to all slides", systemImage: "textformat")
+            }
+            if currentSlide?.kind == .placeStop {
+                Button {
+                    applyPhotoLayoutToAllPlaceStops()
+                    flashAppliedConfirmation()
+                } label: {
+                    Label("Positions to all photo slides", systemImage: "arrow.up.left.and.arrow.down.right")
                 }
             }
         } label: {
             VStack(spacing: 4) {
-                Image(systemName: "character.cursor.ibeam")
+                Image(systemName: didApplyToAll ? "checkmark" : "wand.and.stars")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(isActive ? .white : .white.opacity(0.65))
+                    .foregroundColor(didApplyToAll ? .white : .white.opacity(0.85))
                     .frame(width: 22, height: 22)
-                Text("Text")
+                Text(didApplyToAll ? "Applied" : "Apply")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(isActive ? .white : .white.opacity(0.55))
+                    .foregroundColor(didApplyToAll ? .white : .white.opacity(0.72))
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
             }
             .frame(width: Self.categoryButtonWidth)
             .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(didApplyToAll ? CarouselStudioChrome.accent.opacity(0.4) : Color.clear)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: didApplyToAll)
     }
 
     private var styleCategoryTabBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
-                textEditTabButton
+                applyTabMenuButton
                 ForEach(StyleCategory.allCases) { cat in
                     styleCategoryButton(cat)
                 }

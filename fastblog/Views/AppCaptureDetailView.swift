@@ -11,6 +11,13 @@ import SwiftUI
 import UIKit
 
 struct AppCaptureDetailView: View {
+    private enum NavigationMapAppPreference: String {
+        case apple
+        case google
+    }
+    private static let navigationChooserSuppressedKey = "placePhotoNavigationChooserSuppressed"
+    private static let navigationChooserPreferredAppKey = "placePhotoNavigationPreferredApp"
+
     @Binding var items: [AppCaptureItem]
     let initialId: UUID
     var onDelete: (UUID) -> Void
@@ -26,7 +33,11 @@ struct AppCaptureDetailView: View {
     @State private var showDeleteConfirm = false
     @State private var isGeneratingCaption = false
     @State private var downloadToast: String?
+    @State private var showNavigationAppChooser = false
+    @State private var navigationDoNotShowAgain = false
     @State private var pendingCaptionEditorClose = false
+    @AppStorage(Self.navigationChooserSuppressedKey) private var navigationChooserSuppressed = false
+    @AppStorage(Self.navigationChooserPreferredAppKey) private var navigationChooserPreferredAppRaw = ""
     @FocusState private var captionFocused: Bool
 
     // MARK: - Vibe
@@ -104,6 +115,12 @@ struct AppCaptureDetailView: View {
                     }
                     .transition(.opacity)
                     .allowsHitTesting(false)
+                }
+
+                if showNavigationAppChooser {
+                    navigationAppChooserOverlay
+                        .zIndex(20)
+                        .transition(.opacity)
                 }
             }
         }
@@ -402,6 +419,19 @@ struct AppCaptureDetailView: View {
                     }
                     .accessibilityLabel("Download Photo")
 
+                    if let location = item.location {
+                        Button {
+                            handleNavigationTap(for: location)
+                        } label: {
+                            Image(systemName: "map")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 56, height: 56)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                        }
+                        .accessibilityLabel("Open in Maps")
+                    }
+
                     Spacer()
 
                     Button {
@@ -588,6 +618,145 @@ struct AppCaptureDetailView: View {
             currentIndex = newIndex
             captionDraft = items[safe: currentIndex]?.caption ?? ""
         }
+    }
+
+    private var preferredNavigationApp: NavigationMapAppPreference? {
+        NavigationMapAppPreference(rawValue: navigationChooserPreferredAppRaw)
+    }
+
+    private func handleNavigationTap(for coordinate: PhotoCoordinate) {
+        if navigationChooserSuppressed, let preferredNavigationApp {
+            openNavigation(with: preferredNavigationApp, coordinate: coordinate)
+            return
+        }
+        navigationDoNotShowAgain = false
+        showNavigationAppChooser = true
+    }
+
+    private func chooseNavigationApp(_ app: NavigationMapAppPreference) {
+        if navigationDoNotShowAgain {
+            navigationChooserSuppressed = true
+            navigationChooserPreferredAppRaw = app.rawValue
+        } else {
+            navigationChooserSuppressed = false
+        }
+        showNavigationAppChooser = false
+        guard let coordinate = currentItem?.location else { return }
+        openNavigation(with: app, coordinate: coordinate)
+    }
+
+    private func openNavigation(with app: NavigationMapAppPreference, coordinate: PhotoCoordinate) {
+        let lat = coordinate.latitude
+        let lon = coordinate.longitude
+
+        switch app {
+        case .apple:
+            let urlString = "http://maps.apple.com/?daddr=\(lat),\(lon)"
+            if let url = URL(string: urlString) {
+                UIApplication.shared.open(url)
+            }
+        case .google:
+            let nativeURL = URL(string: "comgooglemaps://?daddr=\(lat),\(lon)&directionsmode=driving")
+            if let nativeURL, UIApplication.shared.canOpenURL(nativeURL) {
+                UIApplication.shared.open(nativeURL)
+                return
+            }
+            let webURL = URL(string: "https://www.google.com/maps/dir/?api=1&destination=\(lat),\(lon)")
+            if let webURL {
+                UIApplication.shared.open(webURL)
+            }
+        }
+    }
+
+    private var navigationAppChooserOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    showNavigationAppChooser = false
+                }
+
+            VStack(spacing: 14) {
+                Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
+                    .font(.system(size: 44))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.green)
+                    .padding(.top, 4)
+
+                Text("Navigate")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+
+                Text("Pick your preferred map app to start directions instantly.")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.88))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 6)
+
+                Toggle(isOn: $navigationDoNotShowAgain) {
+                    Text("Do not show again")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                .tint(.green)
+                .padding(.top, 2)
+
+                VStack(spacing: 10) {
+                    Button(action: { chooseNavigationApp(.apple) }) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Apple Maps")
+                                .font(.body.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 13)
+                        .padding(.horizontal, 14)
+                        .background(Color.gray.opacity(0.42), in: RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: { chooseNavigationApp(.google) }) {
+                        HStack(spacing: 10) {
+                            googleMapsLogoBadge
+                            Text("Google Maps")
+                                .font(.body.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 13)
+                        .padding(.horizontal, 14)
+                        .background(Color.gray.opacity(0.42), in: RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 2)
+            }
+            .padding(22)
+            .background(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 12)
+            .padding(.horizontal, 26)
+        }
+    }
+
+    private var googleMapsLogoBadge: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white)
+            Text("G")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(Color(red: 0.26, green: 0.52, blue: 0.96))
+        }
+        .frame(width: 18, height: 18)
     }
 
     // MARK: - Empty

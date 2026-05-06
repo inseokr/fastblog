@@ -55,6 +55,23 @@ final class AuthService: NSObject, ObservableObject {
 
     // MARK: Private
     private let userDefaultsKey = "bloggo.authUser.v1"
+    private let tooltipScopedNamespace = "bloggo.tooltipScope"
+    private let accountScopedTooltipBaseKeys: [String] = [
+        "bloggo.hasSeenPhotoGroupingTip",
+        "bloggo.hasSeenCameraTooltip",
+        "blogify.editPlaceMapTapCoachmarkSeen",
+        "bloggo.hasSeenVibeTooltip",
+        "bloggo.camera.hasSeenSaveToPhotosTooltip",
+        "bloggo.inAppCamera.hasSeenDownloadTooltip",
+        "bloggo.hasSeenUnusedPhotosTooltip",
+        "bloggo.hasSeenFirstSaveBlogSettingsCoachmark",
+        "carouselStudio.hasSeenPlaceLayoutPicker",
+        "carouselStudio.removePlacePhotoTip.dismissed",
+        "blogify.slidesManagementTip.dismissed"
+    ]
+    private var tooltipDefaultsObserver: NSObjectProtocol?
+    private var isApplyingTooltipScope = false
+    private var tooltipVisibleValueSnapshot: [String: Bool] = [:]
 
     // For Apple Sign In nonce verification
     private var currentNonce: String?
@@ -86,6 +103,7 @@ final class AuthService: NSObject, ObservableObject {
 
     private override init() {
         super.init()
+        observeTooltipFlagChanges()
         loadPersistedUser()
     }
 
@@ -93,9 +111,15 @@ final class AuthService: NSObject, ObservableObject {
 
     private func loadPersistedUser() {
         guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
-              let user = try? JSONDecoder().decode(AuthUser.self, from: data) else { return }
+              let user = try? JSONDecoder().decode(AuthUser.self, from: data) else {
+            // No persisted account: hydrate guest-scoped tooltip flags.
+            applyTooltipScope(for: nil)
+            return
+        }
         currentUser = user
         AppAnalytics.shared.currentUserId = user.id
+        // Rehydrate account-scoped tooltip flags for the restored identity.
+        applyTooltipScope(for: user.id)
     }
 
     private func persist(_ user: AuthUser?) {
@@ -130,6 +154,13 @@ final class AuthService: NSObject, ObservableObject {
 
     func signOut() {
         let defaults = UserDefaults.standard
+        let previousUserId = currentUser?.id
+
+        if let previousUserId {
+            persistCurrentTooltipState(for: previousUserId)
+        }
+        // Move UI flags to the guest scope so a newly signed-out session gets its own first-time behavior.
+        applyTooltipScope(for: nil)
 
         currentUser = nil
         AppAnalytics.shared.currentUserId = nil
@@ -140,11 +171,10 @@ final class AuthService: NSObject, ObservableObject {
         defaults.set(false, forKey: "bloggo.earlyAccess.hasRegistered")
 
         // Reset guest-session intro state so a newly signed-out user sees first-time flows again.
-        // Account-scoped tooltip keys (hasSeenPhotoGroupingTip, hasSeenCameraTooltip,
-        // editPlaceMapTapCoachmarkSeen, hasSeenVibeTooltip) are intentionally NOT cleared here
-        // so users who have already dismissed them don't see them again after logging back in.
         defaults.set(false, forKey: "blogify.tripsIntroSeen.guest")
         defaults.set(false, forKey: "blogify.captureIntroSeen.guest")
+        // First-save Blog Settings spotlight on recap: show again on next guest first save.
+        defaults.set(false, forKey: "bloggo.hasSeenFirstSaveBlogSettingsCoachmark")
         // Vibe toggle: reset to off so guest starts with default state
         defaults.set(false, forKey: "bloggo.camera.vibeEnabled")
 
@@ -685,6 +715,14 @@ extension AuthService {
     }
 
     private func finishSignIn(user: AuthUser) {
+        if let previousUserId = currentUser?.id {
+            persistCurrentTooltipState(for: previousUserId)
+        } else {
+            persistCurrentTooltipState(for: nil)
+        }
+        // Swap visible tooltip flags to this account's scoped values.
+        applyTooltipScope(for: user.id)
+
         currentUser = user
         persist(user)
         AppAnalytics.shared.currentUserId = user.id
@@ -704,6 +742,86 @@ extension AuthService {
     func isValidEmail(_ email: String) -> Bool {
         let regex = "^[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}$"
         return email.range(of: regex, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    private func scopedTooltipStorageKey(baseKey: String, userId: String?) -> String {
+        let scope = userId ?? "guest"
+        return "\(tooltipScopedNamespace).\(scope).\(baseKey)"
+    }
+
+    private func currentTooltipScopeUserId() -> String? {
+        currentUser?.id
+    }
+
+    private func persistCurrentTooltipState(for userId: String?) {
+        let defaults = UserDefaults.standard
+        for key in accountScopedTooltipBaseKeys {
+            let current = defaults.bool(forKey: key)
+            defaults.set(current, forKey: scopedTooltipStorageKey(baseKey: key, userId: userId))
+        }
+        refreshTooltipVisibleValueSnapshot()
+    }
+
+    private func applyTooltipScope(for userId: String?) {
+        let defaults = UserDefaults.standard
+        isApplyingTooltipScope = true
+        defer { isApplyingTooltipScope = false }
+
+        for key in accountScopedTooltipBaseKeys {
+            let scopedKey = scopedTooltipStorageKey(baseKey: key, userId: userId)
+            if defaults.object(forKey: scopedKey) != nil {
+                defaults.set(defaults.bool(forKey: scopedKey), forKey: key)
+            } else {
+                // Seed missing scoped storage from current visible value so restarts don't
+                // silently reset previously dismissed tips.
+                let visibleValue = defaults.bool(forKey: key)
+                defaults.set(visibleValue, forKey: scopedKey)
+            }
+        }
+        refreshTooltipVisibleValueSnapshot()
+    }
+
+    private func observeTooltipFlagChanges() {
+        tooltipDefaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: UserDefaults.standard,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                self?.persistTooltipFlagsForCurrentScope()
+            }
+        }
+    }
+
+    private func persistTooltipFlagsForCurrentScope() {
+        guard !isApplyingTooltipScope else { return }
+        let defaults = UserDefaults.standard
+        let changedKeys = accountScopedTooltipBaseKeys.filter { key in
+            let currentValue = defaults.bool(forKey: key)
+            let previousValue = tooltipVisibleValueSnapshot[key] ?? false
+            return currentValue != previousValue
+        }
+        guard !changedKeys.isEmpty else { return }
+
+        let currentScopeUserId = currentTooltipScopeUserId()
+        for key in changedKeys {
+            let currentValue = defaults.bool(forKey: key)
+            defaults.set(
+                currentValue,
+                forKey: scopedTooltipStorageKey(baseKey: key, userId: currentScopeUserId)
+            )
+            tooltipVisibleValueSnapshot[key] = currentValue
+        }
+    }
+
+    private func refreshTooltipVisibleValueSnapshot() {
+        let defaults = UserDefaults.standard
+        var snapshot: [String: Bool] = [:]
+        for key in accountScopedTooltipBaseKeys {
+            snapshot[key] = defaults.bool(forKey: key)
+        }
+        tooltipVisibleValueSnapshot = snapshot
     }
 
     // MARK: - Analytics

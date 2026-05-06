@@ -1,5 +1,5 @@
 // fastblog/Services/BlogVideoExportService.swift
-import AVFoundation
+@preconcurrency import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -40,6 +40,13 @@ struct BlogVideoExportOptions: Codable, Equatable {
 // MARK: - Service
 
 enum BlogVideoExportService {
+    /// Small box used to move `AVAssetExportSession` through `@Sendable` closures safely.
+    private final class ExportSessionBox: @unchecked Sendable {
+        let session: AVAssetExportSession
+        init(session: AVAssetExportSession) {
+            self.session = session
+        }
+    }
 
     /// Short-form vertical video must match **9:16** pixel aspect. Using `UIScreen` width ×
     /// safe-area-clamped height skews taller than 9:16 → pillarboxing in some players and
@@ -282,16 +289,16 @@ enum BlogVideoExportService {
         try compVideo.insertTimeRange(CMTimeRange(start: .zero, duration: videoDuration),
                                       of: videoTrack, at: .zero)
 
-        try await musicAsset.load(.isReadable)
+        _ = try await musicAsset.load(.isReadable)
         let musicTrackList = try await musicAsset.loadTracks(withMediaType: .audio)
         guard let musicTrack = musicTrackList.first,
               let compAudio = composition.addMutableTrack(withMediaType: .audio,
                                                           preferredTrackID: kCMPersistentTrackID_Invalid)
         else { throw ExportError.audioMixFailed }
 
-        try await musicTrack.load(.timeRange)
-        let sourceStart = musicTrack.timeRange.start
-        let musicDuration = musicTrack.timeRange.duration
+        let musicTimeRange = try await musicTrack.load(.timeRange)
+        let sourceStart = musicTimeRange.start
+        let musicDuration = musicTimeRange.duration
         guard CMTimeCompare(musicDuration, .zero) > 0 else { throw ExportError.audioMixFailed }
 
         var insertAt = CMTime.zero
@@ -316,14 +323,15 @@ enum BlogVideoExportService {
         session.timeRange = CMTimeRange(start: .zero, duration: videoDuration)
         session.shouldOptimizeForNetworkUse = true
         try Task.checkCancellation()
+        let sessionBox = ExportSessionBox(session: session)
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            session.exportAsynchronously {
-                switch session.status {
+            sessionBox.session.exportAsynchronously {
+                switch sessionBox.session.status {
                 case .completed:
                     continuation.resume()
                 case .failed:
-                    continuation.resume(throwing: session.error ?? ExportError.audioMixFailed)
+                    continuation.resume(throwing: sessionBox.session.error ?? ExportError.audioMixFailed)
                 case .cancelled:
                     continuation.resume(throwing: CancellationError())
                 default:

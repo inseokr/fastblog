@@ -46,7 +46,11 @@ final class VoiceMemoRecorder: NSObject, ObservableObject {
     /// Syncs `permissionDenied` from `AVAudioSession` (`AVAudioApplication` requests align with this state).
     /// Call when the voice-memo sheet appears and when returning from Settings / foreground.
     func refreshMicrophoneAuthorizationState() {
-        permissionDenied = (AVAudioSession.sharedInstance().recordPermission == .denied)
+        if #available(iOS 17.0, *) {
+            permissionDenied = (AVAudioApplication.shared.recordPermission == .denied)
+        } else {
+            permissionDenied = (AVAudioSession.sharedInstance().recordPermission == .denied)
+        }
     }
 
     /// Presents the system microphone alert when authorization is `.undetermined`.
@@ -70,29 +74,54 @@ final class VoiceMemoRecorder: NSObject, ObservableObject {
         guard !isRecording else { return true }
         refreshMicrophoneAuthorizationState()
 
-        switch AVAudioSession.sharedInstance().recordPermission {
-        case .granted:
-            permissionDenied = false
-            beginRecording()
-            return isRecording
+        if #available(iOS 17.0, *) {
+            switch AVAudioApplication.shared.recordPermission {
+            case .granted:
+                permissionDenied = false
+                beginRecording()
+                return isRecording
 
-        case .denied:
-            permissionDenied = true
-            return false
+            case .denied:
+                permissionDenied = true
+                return false
 
-        case .undetermined:
-            permissionDenied = false
-            let granted = await requestRecordPermissionPrompt()
-            guard granted else { return false }
-            beginRecording()
-            return isRecording
+            case .undetermined:
+                permissionDenied = false
+                let granted = await requestRecordPermissionPrompt()
+                guard granted else { return false }
+                beginRecording()
+                return isRecording
 
-        @unknown default:
-            permissionDenied = false
-            let granted = await requestRecordPermissionPrompt()
-            guard granted else { return false }
-            beginRecording()
-            return isRecording
+            @unknown default:
+                permissionDenied = false
+                let granted = await requestRecordPermissionPrompt()
+                guard granted else { return false }
+                beginRecording()
+                return isRecording
+            }
+        } else {
+            let legacyPermission = AVAudioSession.sharedInstance().recordPermission
+            switch legacyPermission {
+            case .granted:
+                permissionDenied = false
+                beginRecording()
+                return isRecording
+            case .denied:
+                permissionDenied = true
+                return false
+            case .undetermined:
+                permissionDenied = false
+                let granted = await requestRecordPermissionPrompt()
+                guard granted else { return false }
+                beginRecording()
+                return isRecording
+            @unknown default:
+                permissionDenied = false
+                let granted = await requestRecordPermissionPrompt()
+                guard granted else { return false }
+                beginRecording()
+                return isRecording
+            }
         }
     }
 

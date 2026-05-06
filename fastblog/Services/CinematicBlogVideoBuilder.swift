@@ -1190,7 +1190,7 @@ enum CinematicBlogVideoBuilder {
             let tsFont = UIFont.monospacedSystemFont(ofSize: (w * 0.028).rounded(), weight: .medium)
             let tsStr = ts as NSString
             let tsSize = tsStr.size(withAttributes: [.font: tsFont])
-            let pH: CGFloat = 10, pV: CGFloat = 5
+            let pV: CGFloat = 5
             let pillH = tsSize.height + pV * 2
             nextY += pillH + 12
         }
