@@ -2,7 +2,7 @@
 //  POIInfoSheet.swift
 //  fastblog
 //
-//  Bottom sheet presenting a Google Maps place page for a tapped map POI.
+//  Bottom sheet presenting Google Search results for a tapped map POI.
 //
 
 import MapKit
@@ -19,12 +19,10 @@ struct POIInfoSheet: View {
         return t.isEmpty ? "Nearby Place" : t
     }
 
-    private var googleMapsURL: URL {
+    private var googleSearchURL: URL {
         let encoded = placeName.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed) ?? placeName
-        let lat = feature.coordinate.latitude
-        let lng = feature.coordinate.longitude
-        let urlString = "https://www.google.com/maps/search/?api=1&query=\(encoded)&center=\(lat),\(lng)"
-        return URL(string: urlString) ?? URL(string: "https://www.google.com/maps")!
+        let urlString = "https://www.google.com/search?q=\(encoded)"
+        return URL(string: urlString) ?? URL(string: "https://www.google.com/search")!
     }
 
     var body: some View {
@@ -57,7 +55,7 @@ struct POIInfoSheet: View {
 
             Divider()
 
-            GoogleSearchEmbeddedWebView(url: googleMapsURL, currentPageURL: $currentPageURL)
+            GoogleSearchEmbeddedWebView(url: googleSearchURL, currentPageURL: $currentPageURL)
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.hidden)
