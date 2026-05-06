@@ -540,6 +540,7 @@ struct RecapBlogPageView: View {
         }
         // When Story Mode is open, drive the entire hierarchy’s color scheme (including status bar) from the story.
         .preferredColorScheme(showStoryMode ? storyStatusBarColorScheme : nil)
+        .dynamicTypeSize(.large)
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
@@ -2061,7 +2062,7 @@ struct RecapBlogPageView: View {
                         // View mode: title vertically centered on the cover; same 14pt / 6pt spacing below the title.
                         VStack(spacing: 0) {
                             Spacer()
-                                .frame(height: titleTopInset)
+                                .frame(height: max(0, titleTopInset - 10))
                             VStack(spacing: 14) {
                                 Text(draft.title)
                                     .font(.blog(selectedBlogFont, size: 30, bold: true))
@@ -2082,20 +2083,29 @@ struct RecapBlogPageView: View {
 
                                 VStack(spacing: 6) {
                                     if showHeroMetadata {
-                                        Text(tripDurationText)
+                                        let dayCount = draft.days.count
+                                        let momentCount = draft.days.flatMap(\.placeStops).count
+                                        let photoCount = draft.days
+                                            .flatMap(\.placeStops)
+                                            .flatMap(\.photos)
+                                            .filter(\.isIncluded)
+                                            .count
+
+                                        Text(tripDateText)
                                             .font(.callout)
-                                            .dynamicTypeSize(.small ... .xLarge)
                                             .foregroundColor(.white.opacity(0.92))
                                             .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
 
-                                        let placeCount = draft.days.flatMap(\.placeStops).count
-                                        if placeCount > 0 {
-                                            Text("\(placeCount) moment\(placeCount == 1 ? "" : "s")")
-                                                .font(.callout)
-                                                .dynamicTypeSize(.small ... .xLarge)
-                                                .foregroundColor(.white.opacity(0.92))
-                                                .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                                        HStack(spacing: 8) {
+                                            Text("\(dayCount) Day\(dayCount == 1 ? "" : "s")")
+                                            Text("•")
+                                            Text("\(momentCount) Moment\(momentCount == 1 ? "" : "s")")
+                                            Text("•")
+                                            Text("\(photoCount) Photo\(photoCount == 1 ? "" : "s")")
                                         }
+                                        .font(.callout)
+                                        .foregroundColor(.white.opacity(0.92))
+                                        .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
 
                                         Button {
                                             showShareYourBlogSheet = true
@@ -2121,8 +2131,10 @@ struct RecapBlogPageView: View {
                                 }
                                 .id("hero-controls-view")
                             }
+                            .offset(y: -40)
                             Spacer(minLength: 0)
                         }
+                        .dynamicTypeSize(.medium)
                         .padding(.horizontal, 24)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     }
@@ -2322,6 +2334,22 @@ struct RecapBlogPageView: View {
         }
         formatter.dateFormat = "MMM d, yyyy"
         return "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate)) · \(dayCount) day\(dayCount == 1 ? "" : "s")"
+    }
+
+    private var tripDateText: String {
+        guard let firstDate = draft.days.first?.date,
+              let lastDate = draft.days.last?.date else {
+            return ""
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        if Calendar.current.isDate(firstDate, equalTo: lastDate, toGranularity: .year) {
+            let yearFormatter = DateFormatter()
+            yearFormatter.dateFormat = "yyyy"
+            return "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate)), \(yearFormatter.string(from: lastDate))"
+        }
+        formatter.dateFormat = "MMM d, yyyy"
+        return "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
     }
 
     /// Returns a date suitable for passing to `formatDateRange` that matches the calendar
@@ -3459,6 +3487,7 @@ struct RecapBlogPageView: View {
             Spacer(minLength: 18)
         }
         .padding(.top, 26)
+        .dynamicTypeSize(.medium)
     }
 
     /// Guest prompt: same pull-up sheet, replaces the share menu (no separate full-screen overlay).

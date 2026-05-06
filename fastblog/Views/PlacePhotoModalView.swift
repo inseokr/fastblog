@@ -1887,6 +1887,7 @@ private struct PlaceDetailTopChrome: View {
                                         .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
                                 }
                                 .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
+                                .dynamicTypeSize(.xSmall ... .accessibility5)
 
                                 RightActionStack(
                                     onSparkles: { },

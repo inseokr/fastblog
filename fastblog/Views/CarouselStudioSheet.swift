@@ -6766,6 +6766,11 @@ struct SlideTextEditorView: View {
                             .simultaneousGesture(
                                 DragGesture(minimumDistance: 8)
                                     .onChanged { _ in
+                                        // Clear a stuck paging lock — can happen with 50+ slides
+                                        // when the drag-end event is dropped under load.
+                                        if locksHorizontalSlidePaging {
+                                            locksHorizontalSlidePaging = false
+                                        }
                                         guard !didClearSelectionForPagerDrag else { return }
                                         didClearSelectionForPagerDrag = true
                                         selectedBlock = nil
@@ -7440,7 +7445,7 @@ struct SlideTextEditorView: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") {
+                            Button("Close") {
                                 hasSeenPlaceLayoutPicker = true
                                 showPlaceZoneLayoutSheet = false
                             }
@@ -7451,6 +7456,7 @@ struct SlideTextEditorView: View {
                                     commitPlaceZoneLayoutFromSheet(selectedPlaceZoneLayoutInSheet)
                                 }
                                 .fontWeight(.semibold)
+                                .tint(.blue)
                             }
                         }
                     }
