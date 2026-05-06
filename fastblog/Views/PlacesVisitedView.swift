@@ -656,23 +656,23 @@ private struct PlaceVisitedCard: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
                     .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
-                    .overlay(alignment: .topLeading) {
-                        Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.black.opacity(0.55))
-                            .clipShape(Capsule())
-                            .padding(10)
-                            .allowsHitTesting(false)
-                    }
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 150)
                 .contentShape(Rectangle())
                 .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
+                .overlay(alignment: .topLeading) {
+                    Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.black.opacity(0.55))
+                        .clipShape(Capsule())
+                        .padding(10)
+                        .allowsHitTesting(false)
+                }
             }
             .buttonStyle(.plain)
 
