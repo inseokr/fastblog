@@ -1163,14 +1163,12 @@ private struct SettingsView: View {
             .sheet(item: $settingsHelpTopic) { topic in
                 SettingsHelpSheet(topic: topic)
             }
-            .sheet(isPresented: $showAuth) {
+            .fullScreenCover(isPresented: $showAuth) {
                 AuthView(onAuthenticated: {
                     showAuth = false
                     dismiss()
-                }, showsCloseButton: false)
+                })
                 .environmentObject(authService)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
             }
             .onAppear {
                 customProfileImageData = authService.profileImageData

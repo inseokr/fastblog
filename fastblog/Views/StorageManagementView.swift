@@ -7,6 +7,13 @@ import Photos
 import SwiftUI
 import UIKit
 
+private struct TriageUndoState {
+    let photo: RecapPhoto
+    let dayIndex: Int
+    let stopIndex: Int
+    let insertionIndex: Int
+}
+
 struct StorageManagementView: View {
     @Binding var draft: RecapBlogDetail
     var onSave: () -> Void
@@ -34,6 +41,9 @@ struct StorageManagementView: View {
     // MARK: - Triage state
 
     @State private var triageStartPhotoId: UUID?
+    @State private var triageUndoSnapshot: TriageUndoState?
+    @State private var triageUndoNonce: Int = 0
+    @State private var triagePhysicalDeletionTask: Task<Void, Never>?
 
     // MARK: - First-time tooltip
 
@@ -121,10 +131,12 @@ struct StorageManagementView: View {
                 UnusedPhotoTriageView(
                     photos: visiblePhotos.map(\.photo),
                     startingPhotoId: startId,
-                    onDelete: { beginDeleteFromSlideshow($0) },
-                    onDismiss: {
-                        triageStartPhotoId = nil
-                    }
+                    keepAliveForUndo: triageUndoSnapshot != nil,
+                    undoNonce: $triageUndoNonce,
+                    canUndo: triageUndoSnapshot != nil,
+                    onUndo: { performTriageUndo() },
+                    onDelete: { beginDeleteFromTriage($0) },
+                    onDismiss: { dismissTriage() }
                 )
                 .transition(.opacity)
                 .zIndex(40)
@@ -171,6 +183,113 @@ struct StorageManagementView: View {
         } message: {
             Text("Save storage by cleaning up unwanted photos.")
         }
+    }
+
+    private func photoPlacement(for photoId: UUID) -> (day: Int, stop: Int, index: Int)? {
+        for (d, day) in draft.days.enumerated() {
+            for (s, stop) in day.placeStops.enumerated() {
+                if let i = stop.photos.firstIndex(where: { $0.id == photoId }) {
+                    return (d, s, i)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Deletes capture files / Photo Library assets only. Does not mutate `draft`.
+    private func performPhysicalDeletionOnly(for photos: [RecapPhoto]) {
+        let inApp = photos.filter { !isPhotoLibraryAsset($0) }
+        let phone = photos.filter { isPhotoLibraryAsset($0) }
+
+        for photo in inApp {
+            if let lid = photo.localIdentifier,
+               lid.hasPrefix(AppCapturePhotoService.prefix),
+               let uuid = AppCapturePhotoService.uuid(from: lid) {
+                AppCapturePhotoService.shared.deleteCapture(captureId: uuid)
+            }
+        }
+        let storeIds: Set<UUID> = Set(inApp.compactMap { photo in
+            let name = photo.imageName
+            if let direct = UUID(uuidString: name) { return direct }
+            let stripped = (name as NSString).deletingPathExtension
+            return UUID(uuidString: stripped)
+        })
+        if !storeIds.isEmpty {
+            InAppCameraPhotoStore.shared.removePhotos(ids: storeIds)
+        }
+
+        let identifiers = phone.compactMap(\.localIdentifier).filter { lid in
+            !lid.isEmpty && !lid.hasPrefix(AppCapturePhotoService.prefix)
+        }
+        guard !identifiers.isEmpty else { return }
+        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
+        PHPhotoLibrary.shared().performChanges({
+            PHAssetChangeRequest.deleteAssets(fetchResult)
+        }, completionHandler: { _, _ in })
+    }
+
+    private func flushPendingTriageUndoPhysically() {
+        guard let snapshot = triageUndoSnapshot else { return }
+        triagePhysicalDeletionTask?.cancel()
+        triagePhysicalDeletionTask = nil
+        performPhysicalDeletionOnly(for: [snapshot.photo])
+        triageUndoSnapshot = nil
+    }
+
+    private func beginDeleteFromTriage(_ photo: RecapPhoto) {
+        flushPendingTriageUndoPhysically()
+        guard let placement = photoPlacement(for: photo.id) else { return }
+
+        triageUndoSnapshot = TriageUndoState(
+            photo: photo,
+            dayIndex: placement.day,
+            stopIndex: placement.stop,
+            insertionIndex: placement.index
+        )
+        removeFromDraft([photo])
+        onSave()
+
+        let remaining = Set(visiblePhotos.map(\.photo.id))
+        selectedPhotoIds = selectedPhotoIds.intersection(remaining)
+        if visiblePhotos.isEmpty {
+            isSelectMode = false
+            selectedPhotoIds = []
+            activeDayFilter = nil
+        }
+
+        let photoCopy = photo
+        triagePhysicalDeletionTask?.cancel()
+        triagePhysicalDeletionTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            guard triageUndoSnapshot?.photo.id == photoCopy.id else { return }
+            performPhysicalDeletionOnly(for: [photoCopy])
+            triageUndoSnapshot = nil
+            if visiblePhotos.isEmpty {
+                triageStartPhotoId = nil
+            }
+        }
+    }
+
+    private func performTriageUndo() {
+        guard let snapshot = triageUndoSnapshot else { return }
+        triagePhysicalDeletionTask?.cancel()
+        triagePhysicalDeletionTask = nil
+        var stop = draft.days[snapshot.dayIndex].placeStops[snapshot.stopIndex]
+        let idx = min(snapshot.insertionIndex, stop.photos.count)
+        stop.photos.insert(snapshot.photo, at: idx)
+        draft.days[snapshot.dayIndex].placeStops[snapshot.stopIndex] = stop
+        triageUndoSnapshot = nil
+        triageUndoNonce += 1
+        onSave()
+    }
+
+    private func dismissTriage() {
+        triagePhysicalDeletionTask?.cancel()
+        triagePhysicalDeletionTask = nil
+        flushPendingTriageUndoPhysically()
+        triageUndoNonce = 0
+        triageStartPhotoId = nil
     }
 
     // MARK: - Grid
@@ -255,7 +374,9 @@ struct StorageManagementView: View {
     @ToolbarContentBuilder
     private var navigationToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigationBarLeading) {
-            if isSelectMode {
+            if triageStartPhotoId != nil {
+                EmptyView()
+            } else if isSelectMode {
                 Button("Cancel") { exitSelectMode() }
             } else {
                 Button {
@@ -266,19 +387,24 @@ struct StorageManagementView: View {
                 }
             }
         }
-        if triageStartPhotoId == nil {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if isSelectMode {
-                    Button(allVisiblePhotosAreSelected ? "Deselect All" : "Select All") {
-                        if allVisiblePhotosAreSelected {
-                            deselectAll()
-                        } else {
-                            selectAll()
-                        }
-                    }
-                } else {
-                    Button("Select") { enterSelectMode() }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            if triageStartPhotoId != nil {
+                Button {
+                    dismissTriage()
+                } label: {
+                    Image(systemName: "xmark")
+                        .fontWeight(.semibold)
                 }
+            } else if isSelectMode {
+                Button(allVisiblePhotosAreSelected ? "Deselect All" : "Select All") {
+                    if allVisiblePhotosAreSelected {
+                        deselectAll()
+                    } else {
+                        selectAll()
+                    }
+                }
+            } else {
+                Button("Select") { enterSelectMode() }
             }
         }
     }
@@ -363,10 +489,6 @@ struct StorageManagementView: View {
             .filter { selectedPhotoIds.contains($0.photo.id) }
             .map(\.photo)
         queueDeletion(for: selected)
-    }
-
-    private func beginDeleteFromSlideshow(_ photo: RecapPhoto) {
-        queueDeletion(for: [photo])
     }
 
     private func queueDeletion(for photos: [RecapPhoto]) {
@@ -707,6 +829,10 @@ private struct UnusedPhotosSlideshowView: View {
 private struct UnusedPhotoTriageView: View {
     let photos: [RecapPhoto]
     let startingPhotoId: UUID
+    var keepAliveForUndo: Bool
+    @Binding var undoNonce: Int
+    var canUndo: Bool
+    var onUndo: () -> Void
     var onDelete: (RecapPhoto) -> Void
     var onDismiss: () -> Void
 
@@ -752,7 +878,17 @@ private struct UnusedPhotoTriageView: View {
 
                     Spacer()
 
-                    Color.clear.frame(width: 44, height: 44)
+                    if canUndo {
+                        Button(action: onUndo) {
+                            Text("Undo")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Color.clear.frame(width: 44, height: 44)
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
@@ -811,13 +947,21 @@ private struct UnusedPhotoTriageView: View {
                     )
                 } else {
                     Spacer()
+                    if photos.isEmpty {
+                        Text("No unused photos left")
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.45))
+                    }
+                    Spacer()
                 }
 
                 // Swipe hint
-                Text("\u{2190} delete      keep \u{2192}")
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.45))
-                    .padding(.vertical, 12)
+                if currentPhoto != nil {
+                    Text("\u{2190} delete      keep \u{2192}")
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.45))
+                        .padding(.vertical, 12)
+                }
 
                 // CTA buttons
                 HStack(spacing: 12) {
@@ -830,6 +974,7 @@ private struct UnusedPhotoTriageView: View {
                             .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .disabled(currentPhoto == nil)
 
                     Button { triggerKeep() } label: {
                         Label("Keep", systemImage: "checkmark")
@@ -840,6 +985,7 @@ private struct UnusedPhotoTriageView: View {
                             .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .disabled(currentPhoto == nil)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
@@ -864,11 +1010,17 @@ private struct UnusedPhotoTriageView: View {
             }
         }
         .onChange(of: photos.map(\.id)) { _, newIds in
-            if newIds.isEmpty { onDismiss(); return }
+            if newIds.isEmpty { return }
             guard currentQueueIndex < triageQueue.count else { return }
             let currentId = triageQueue[currentQueueIndex]
             let newIdSet = Set(newIds)
             if !newIdSet.contains(currentId) { advance() }
+        }
+        .onChange(of: undoNonce) { _, _ in
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
+                currentQueueIndex = max(0, currentQueueIndex - 1)
+                resetDrag()
+            }
         }
     }
 
@@ -890,17 +1042,19 @@ private struct UnusedPhotoTriageView: View {
     private func advance() {
         currentQueueIndex += 1
         if currentQueueIndex >= triageQueue.count {
+            if photos.isEmpty, keepAliveForUndo { return }
             onDismiss()
         }
     }
 
     private func triggerDelete() {
-        guard let photo = currentPhoto else { advance(); return }
+        guard let photo = currentPhoto else { return }
         onDelete(photo)
         advance()
     }
 
     private func triggerKeep() {
+        guard currentPhoto != nil else { return }
         advance()
     }
 

@@ -238,7 +238,7 @@ struct AuthView: View {
                 HStack(spacing: 0) {
                     Text("Already have an account? ")
                         .foregroundColor(.white.opacity(0.55))
-                    Text("Sign in")
+                    Text("Log In")
                         .foregroundColor(.white)
                         .fontWeight(.semibold)
                 }

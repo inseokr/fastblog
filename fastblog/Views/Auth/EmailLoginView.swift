@@ -83,7 +83,7 @@ struct EmailLoginView: View {
                         errorRow(err)
                     }
 
-                    primaryButton("Sign In", icon: "arrow.right.circle.fill") {
+                    primaryButton("Log In") {
                         performLogin()
                     }
                     .disabled(email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
@@ -162,20 +162,17 @@ struct EmailLoginView: View {
         .animation(.easeInOut, value: message)
     }
 
-    private func primaryButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+    private func primaryButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                Text(title)
-                    .fontWeight(.semibold)
-            }
-            .font(.system(size: 17))
-            .foregroundColor(Color(red: 0.05, green: 0.08, blue: 0.22))
-            .frame(maxWidth: .infinity)
-            .frame(height: 54)
-            .background(Color.white)
-            .appChromeCornerRadius(14)
-            .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+            Text(title)
+                .fontWeight(.semibold)
+                .font(.system(size: 17))
+                .foregroundColor(Color(red: 0.05, green: 0.08, blue: 0.22))
+                .frame(maxWidth: .infinity)
+                .frame(height: 54)
+                .background(Color.white)
+                .appChromeCornerRadius(14)
+                .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
         }
         .buttonStyle(.plain)
     }

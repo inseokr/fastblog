@@ -589,7 +589,7 @@ struct RecapBlogPageView: View {
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
         bodyContentBase(screenHeight: screenHeight)
-            .sheet(isPresented: $showAuth, onDismiss: {
+            .fullScreenCover(isPresented: $showAuth, onDismiss: {
                 if pendingEarlyAccessAfterAuth {
                     earlyAccessSheetPresented = false
                 }
@@ -602,9 +602,8 @@ struct RecapBlogPageView: View {
                         if pendingSecondSaveCommitAfterAuth {
                             pendingSecondSaveCommitAfterAuth = false
                             showAuth = false
-                            if saveDraft(suppressPostSaveOnboarding: true) {
-                                performDismiss()
-                            }
+                            // Stay on this blog after sign-in; saving must not pop the recap.
+                            _ = saveDraft(suppressPostSaveOnboarding: true)
                         } else if pendingEarlyAccessAfterAuth {
                             // Immediately return to the blog with the confirmation pull-up; register via API in the background.
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -639,8 +638,6 @@ struct RecapBlogPageView: View {
                     hostControlsDismiss: true
                 )
                 .environmentObject(authService)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showPDFPreview) {
                 if let url = pdfExportURL {
