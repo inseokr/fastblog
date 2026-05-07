@@ -1638,42 +1638,34 @@ enum CinematicBlogVideoBuilder {
         }
     }
 
+    /// Used only for `stop.visitedTimeDigitized` on the focused map overlay. That field is always
+    /// set with the correct local timezone (EXIF consensus or device-TZ fallback), so treating the
+    /// digits as wall-clock is safe here.
     private static func formattedTimestamp(_ digitized: String?) -> String? {
         guard let raw = digitized?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty else { return nil }
-        return formattedClockTimeFromDigitized(raw)
-    }
-
-    /// Same rules as thumbnail badges in ``PlaceStopRowView`` / ``photoTimeDisplayText``: prefer stored
-    /// `digitizedTime` (`yyyy:MM:dd HH:mm:ss` wall clock already in capture / place-relative timezone),
-    /// otherwise format ``RecapPhoto.timestamp`` in the stop’s resolved timezone.
-    private static func photoSlideTimeDisplayText(for photo: RecapPhoto, placeTimeZone: TimeZone) -> String {
-        if let raw = photo.digitizedTime?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !raw.isEmpty,
-           let clock = formattedClockTimeFromDigitized(raw) {
-            return clock
-        }
-        let f = DateFormatter()
-        f.dateFormat = "h:mm a"
-        f.locale = Locale.current
-        f.timeZone = placeTimeZone
-        return f.string(from: photo.timestamp)
-    }
-
-    /// Parses EXIF-style `yyyy:MM:dd HH:mm:ss` (wall-clock local time) into a 12-hour display
-    /// string. Uses `Locale.current` so AM/PM symbols match the device locale (e.g. 오전/오후).
-    private static func formattedClockTimeFromDigitized(_ digitized: String) -> String? {
         let parse = DateFormatter()
         parse.dateFormat = "yyyy:MM:dd HH:mm:ss"
         parse.locale = Locale(identifier: "en_US_POSIX")
-        // EXIF digitized time is wall-clock local — parse as UTC so the digits are preserved as-is.
         parse.timeZone = TimeZone(secondsFromGMT: 0)
-        guard let date = parse.date(from: digitized) else { return nil }
+        guard let date = parse.date(from: raw) else { return nil }
         let display = DateFormatter()
         display.dateFormat = "h:mm a"
         display.locale = Locale.current
         display.timeZone = TimeZone(secondsFromGMT: 0)
         return display.string(from: date)
+    }
+
+    /// Formats `photo.timestamp` (an absolute UTC Date from PHAsset.creationDate) using the stop’s
+    /// resolved timezone. This is always correct regardless of whether EXIF OffsetTimeOriginal was
+    /// present: `digitizedTime` can store either local or UTC digits depending on EXIF availability,
+    /// making it unreliable for display here.
+    private static func photoSlideTimeDisplayText(for photo: RecapPhoto, placeTimeZone: TimeZone) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        f.locale = Locale.current
+        f.timeZone = placeTimeZone
+        return f.string(from: photo.timestamp)
     }
 
     /// `targetSize` is in pixels so `PHImageManager` returns a full-resolution image.

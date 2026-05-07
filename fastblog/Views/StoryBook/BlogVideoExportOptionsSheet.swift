@@ -563,10 +563,14 @@ struct BlogVideoExportOptionsSheet: View {
                     Spacer()
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            options.includedPlaceCategoryRaws = nil
+                            if options.includedPlaceCategoryRaws == nil {
+                                options.includedPlaceCategoryRaws = []
+                            } else {
+                                options.includedPlaceCategoryRaws = nil
+                            }
                         }
                     } label: {
-                        Text(options.includedPlaceCategoryRaws == nil ? "All" : "Clear")
+                        Text(options.includedPlaceCategoryRaws == nil ? "Deselect All" : "Select All")
                             .font(.caption.weight(.medium))
                             .foregroundColor(.accentColor)
                     }
@@ -601,7 +605,7 @@ struct BlogVideoExportOptionsSheet: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(isSelected ? .white : .primary)
                     .lineLimit(1)
-                if isSelected, options.includedPlaceCategoryRaws != nil {
+                if isSelected {
                     Image(systemName: "checkmark")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.white.opacity(0.95))
