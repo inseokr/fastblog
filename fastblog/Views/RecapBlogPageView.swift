@@ -1160,6 +1160,9 @@ struct RecapBlogPageView: View {
                     photos: stop.includedPhotos,
                     onSave: { newTitle, newCoordinate, newCategory, subtitleLine in
                         updatePlaceTitle(stopId: stop.id, to: newTitle, category: newCategory, coordinate: newCoordinate, placeSubtitleLine: subtitleLine)
+                    },
+                    onAutoResolve: { resolvedTitle in
+                        silentlyUpdatePlaceName(stopId: stop.id, to: resolvedTitle)
                     }
                 )
             }
@@ -3423,7 +3426,7 @@ struct RecapBlogPageView: View {
                         .font(.title3.weight(.semibold))
                         .foregroundColor(.primary)
                     Text("Choose how you want to share")
-                        .font(.footnote)
+                        .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
             }
@@ -3487,7 +3490,6 @@ struct RecapBlogPageView: View {
             Spacer(minLength: 18)
         }
         .padding(.top, 26)
-        .dynamicTypeSize(.medium)
     }
 
     /// Guest prompt: same pull-up sheet, replaces the share menu (no separate full-screen overlay).
@@ -3642,10 +3644,10 @@ Your blog remains private unless you choose to share it.
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundColor(titleColor)
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundColor(subtitleColor)
                 }
                 Spacer()
@@ -4295,6 +4297,22 @@ Your blog remains private unless you choose to share it.
                 }
             }
         }
+    }
+
+    /// Persists an auto-resolved place name without dismissing the edit sheet.
+    /// Called by EditPlaceStopNameSheet when it resolves "Unknown Place" on appear.
+    private func silentlyUpdatePlaceName(stopId: UUID, to title: String) {
+        for i in draft.days.indices {
+            guard let j = draft.days[i].placeStops.firstIndex(where: { $0.id == stopId }) else { continue }
+            var day = draft.days[i]
+            var stop = day.placeStops[j]
+            stop.placeTitle = title
+            stop.placeTitleIsManual = true
+            day.placeStops[j] = stop
+            draft.days[i] = day
+            break
+        }
+        persistRecapBlogDetail()
     }
 
     private func updatePlaceTitle(stopId: UUID, to title: String, category: String? = nil, coordinate: CLLocationCoordinate2D? = nil, placeSubtitleLine: String = "") {

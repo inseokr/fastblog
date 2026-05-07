@@ -244,14 +244,6 @@ struct PlaceStopRowView: View {
         colorScheme == .dark ? .white.opacity(0.9) : .primary
     }
 
-    /// 12-hour visit time from earliest photo timestamp. Formatter: "h:mm a" (e.g. 3:42 PM).
-    private static let visitTimeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "h:mm a"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
     private static let dayDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "MMM d"
@@ -276,13 +268,18 @@ struct PlaceStopRowView: View {
         return "\(h):\(String(format: "%02d", minutes)) \(period)"
     }
 
-    /// Clock time for one photo: digitized EXIF string when present, else asset `timestamp`.
+    /// Clock time for one photo: digitized wall clock when present; else ``RecapPhoto.timestamp`` in the same
+    /// timezone chain as fullscreen photo mode (``PlaceStop.recapThumbnailTimeZone`` — not raw device TZ).
     private func photoTimeDisplayText(for photo: RecapPhoto) -> String? {
         if let d = photo.digitizedTime,
            let t = Self.formattedClockTime(fromDigitized: d) {
             return t
         }
-        return Self.visitTimeFormatter.string(from: photo.timestamp)
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = stop.recapThumbnailTimeZone
+        return f.string(from: photo.timestamp)
     }
 
     @ViewBuilder
@@ -780,7 +777,7 @@ struct PlaceStopRowView: View {
             // Category chip + sentiment — aligned with photo section edges (same POI presentation as My Places / map).
             let categoryPresent = categoryPresentForRow
             let hasCaptionText = hasCaptionTextForCategoryRow
-            if categoryPresent != nil || showAddCategoryInCategoryRow || hasCaptionText {
+            if categoryPresent != nil || showAddCategoryInCategoryRow || hasCaptionText || isEditMode {
                 HStack(alignment: .center, spacing: 8) {
                     if let cat = categoryPresent {
                         let categoryAccent = cat.color
@@ -816,7 +813,7 @@ struct PlaceStopRowView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel("Add place category")
                     }
-                    if hasCaptionText {
+                    if hasCaptionText || isEditMode {
                         UserSentimentPill(
                             sentiment: stop.sentiment,
                             isEditMode: isEditMode,

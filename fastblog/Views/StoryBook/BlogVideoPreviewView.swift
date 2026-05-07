@@ -151,9 +151,8 @@ struct BlogVideoPreviewView: View {
         generateTask = Task { @MainActor in
             defer { generateTask = nil }
             do {
-                let opts = BlogVideoExportOptions() // cinematic defaults
+                let opts = BlogVideoExportOptions()
                 let url = try await BlogVideoExportService.exportVideo(
-                    pages: [],
                     draft: draft,
                     options: opts,
                     progressHandler: { p in progress = 0.02 + p * 0.98 }

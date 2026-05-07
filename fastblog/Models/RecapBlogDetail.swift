@@ -315,6 +315,55 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     }
 }
 
+extension PlaceStop {
+    /// Infers offset-only capture `TimeZone` from the stop visit digitized string vs each photo capture instant,
+    /// using the same median-offset rounding as ``PlacePhotoModalView`` (keeps thumbnails and fullscreen in sync).
+    static func inferredCaptureTimeZone(visitedDigitized: String?, photoTimestamps: [Date]) -> TimeZone? {
+        guard let trimmed = visitedDigitized?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        let parser = DateFormatter()
+        parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(secondsFromGMT: 0)
+        guard let localAsUTC = parser.date(from: trimmed) else { return nil }
+        let offsets: [Int] = photoTimestamps.map { Int(localAsUTC.timeIntervalSince($0)) }
+        guard !offsets.isEmpty else { return nil }
+        let sorted = offsets.sorted()
+        let medianOffset: Int
+        if sorted.count.isMultiple(of: 2), sorted.count >= 2 {
+            medianOffset = (sorted[sorted.count / 2 - 1] + sorted[sorted.count / 2]) / 2
+        } else {
+            medianOffset = sorted[sorted.count / 2]
+        }
+        let roundedOffset = (medianOffset / 900) * 900
+        if roundedOffset == 0 { return nil }
+        return TimeZone(secondsFromGMT: roundedOffset)
+    }
+
+    /// Time zone for showing each photo’s capture instant on blog thumbnails when `RecapPhoto.digitizedTime` is nil.
+    /// Order: inferred from `visitedTimeDigitized`, then stored IANA identifier, then device.
+    var recapThumbnailTimeZone: TimeZone {
+        Self.inferredCaptureTimeZone(visitedDigitized: visitedTimeDigitized, photoTimestamps: photos.map(\.timestamp))
+            ?? timeZoneIdentifier.flatMap { TimeZone(identifier: $0) }
+            ?? .current
+    }
+}
+
+extension RecapBlogDetail {
+    /// Highlight moments across the whole blog, sorted by score desc then by photo count desc.
+    var highlightMomentsRanked: [PlaceStop] {
+        days.flatMap(\.placeStops)
+            .map { stop in (stop: stop, score: stop.highlightMomentScore) }
+            .sorted { a, b in
+                if a.score != b.score { return a.score > b.score }
+                if a.stop.includedPhotos.count != b.stop.includedPhotos.count {
+                    return a.stop.includedPhotos.count > b.stop.includedPhotos.count
+                }
+                return a.stop.placeTitle.localizedStandardCompare(b.stop.placeTitle) == .orderedAscending
+            }
+            .map(\.stop)
+    }
+}
+
 /// Location stored as lat/lon for Equatable. Convert to CLLocationCoordinate2D for MapKit.
 struct PhotoCoordinate: Equatable, Hashable, Codable, Sendable {
     let latitude: Double
@@ -400,5 +449,65 @@ extension String {
             return "Near \(self[routeRange])"
         }
         return self
+    }
+}
+
+// MARK: - Highlight moments (optional ranking)
+
+extension PlaceStop {
+    /// Duration of this stop inferred from included photo timestamps (seconds).
+    /// Returns 0 when there are fewer than 2 included photos.
+    var inferredVisitDurationSeconds: TimeInterval {
+        let ts = includedPhotos.map(\.timestamp).sorted()
+        guard let first = ts.first, let last = ts.last, last > first else { return 0 }
+        return last.timeIntervalSince(first)
+    }
+
+    /// Highlight score (0–100) for ranking moments. Always computed — no eligibility gate.
+    ///
+    struct HighlightScoreComponents {
+        let photo: Double       // weighted points, max 15
+        let duration: Double    // weighted points, max 10
+        let caption: Double     // weighted points, max 30
+        let sentiment: Double   // weighted points, max 45
+        var total: Double { photo + duration + caption + sentiment }
+    }
+
+    /// Scoring formula (normalized then weighted):
+    /// - photoScore (15%): grows from 0 at 3 photos to 1 at 10+ photos
+    /// - durationScore (10%): grows from 0 at 10 mins to 1 at 60+ mins
+    /// - captionScore (30%): 1 when a caption exists (place note or any photo caption)
+    /// - sentimentScore (45%): 0 at negative (1), 0.5 at neutral (2), 1 at positive (3)
+    var highlightScoreComponents: HighlightScoreComponents {
+        let photoCount = includedPhotos.count
+        let minutes = inferredVisitDurationSeconds / 60.0
+        let derivedSentiment = sentiment  // use stored value — same as what the Loved It/Neutral/Terrible pill shows
+
+        let photoScore    = min(1, max(0, (Double(photoCount) - 3.0) / 7.0))
+        let durationScore = min(1, max(0, (minutes - 10.0) / 50.0))
+        let captionScore  = hasAnyCaptionText ? 1.0 : 0.0
+        let sentimentScore = min(1, max(0, (Double(derivedSentiment) - 1.0) / 2.0))
+
+        return HighlightScoreComponents(
+            photo:    photoScore    * 15,
+            duration: durationScore * 10,
+            caption:  captionScore  * 30,
+            sentiment: sentimentScore * 45
+        )
+    }
+
+    var highlightMomentScore: Double {
+        let c = highlightScoreComponents
+        return min(100, max(0, c.total))
+    }
+
+    private var hasAnyCaptionText: Bool {
+        let placeCaptions = [noteText, overallStory, placeNarrative]
+        if placeCaptions.contains(where: { !($0 ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            return true
+        }
+        return includedPhotos.contains { photo in
+            !( photo.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 }

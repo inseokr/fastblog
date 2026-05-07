@@ -80,11 +80,24 @@ enum CinematicBlogVideoBuilder {
         logicalSize: CGSize,
         secondsPerPhoto: Double,
         showPhotoCaptions: Bool = true,
+        maxPhotosPerPlace: Int = 5,
+        includedPlaceIDs: Set<UUID>? = nil,
         progressHandler: ((Double) -> Void)? = nil,
         frameHandler: (UIImage, Double) async throws -> Void
     ) async throws {
         let pixelSize = CGSize(width: logicalSize.width * 2, height: logicalSize.height * 2)
-        let days = draft.days.filter { !$0.placeStops.isEmpty }
+        let days: [RecapBlogDay] = draft.days.compactMap { day in
+            let filteredStops: [PlaceStop]
+            if let ids = includedPlaceIDs {
+                filteredStops = day.placeStops.filter { ids.contains($0.id) }
+            } else {
+                filteredStops = day.placeStops
+            }
+            guard !filteredStops.isEmpty else { return nil }
+            var filtered = day
+            filtered.placeStops = filteredStops
+            return filtered
+        }
         let totalDays = Double(max(days.count, 1))
 
         let coverImage = await loadCoverImageForVideo(draft: draft, pixelSize: pixelSize)
@@ -308,10 +321,10 @@ enum CinematicBlogVideoBuilder {
                 }
                 var lastPhotoSlide: UIImage?
                 var lastPhotoKBLastFrame: UIImage?
-                for (photoIdx, photo) in stop.includedPhotos.prefix(5).enumerated() {
+                for (photoIdx, photo) in stop.includedPhotos.prefix(maxPhotosPerPlace).enumerated() {
                     try Task.checkCancellation()
                     if let img = await loadPhoto(photo, targetSize: pixelSize) {
-                        let timeLabel = militaryTimeDisplayString(photo: photo, placeTimeZone: placeTZ)
+                        let timeLabel = photoSlideTimeDisplayText(for: photo, placeTimeZone: placeTZ)
                         if photoIdx == 0,
                            let mapComposite = lastFocusedMapCompositeForPhotoTransition,
                            let fromCell = mapToPhotoThumbCell,
@@ -1626,41 +1639,41 @@ enum CinematicBlogVideoBuilder {
     }
 
     private static func formattedTimestamp(_ digitized: String?) -> String? {
-        guard let digitized else { return nil }
-        let parts = digitized.split(separator: " ")
-        guard parts.count == 2 else { return nil }
-        let components = String(parts[1]).split(separator: ":")
-        guard components.count >= 2,
-              let hour = Int(components[0]), let minute = Int(components[1]) else { return nil }
-        let ampm = hour >= 12 ? "PM" : "AM"
-        let h = hour % 12 == 0 ? 12 : hour % 12
-        return String(format: "%d:%02d %@", h, minute, ampm)
+        guard let raw = digitized?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+        return formattedClockTimeFromDigitized(raw)
     }
 
-    /// `HH:mm` in the photo’s capture timezone: prefers stored EXIF-style `digitizedTime` wall clock,
-    /// else formats `photo.timestamp` in the stop’s resolved place timezone (same rules as library import).
-    private static func militaryTimeDisplayString(photo: RecapPhoto, placeTimeZone: TimeZone) -> String {
-        if let hm = militaryHMFromDigitizedString(photo.digitizedTime) { return hm }
+    /// Same rules as thumbnail badges in ``PlaceStopRowView`` / ``photoTimeDisplayText``: prefer stored
+    /// `digitizedTime` (`yyyy:MM:dd HH:mm:ss` wall clock already in capture / place-relative timezone),
+    /// otherwise format ``RecapPhoto.timestamp`` in the stop’s resolved timezone.
+    private static func photoSlideTimeDisplayText(for photo: RecapPhoto, placeTimeZone: TimeZone) -> String {
+        if let raw = photo.digitizedTime?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty,
+           let clock = formattedClockTimeFromDigitized(raw) {
+            return clock
+        }
         let f = DateFormatter()
-        f.dateFormat = "HH:mm"
-        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "h:mm a"
+        f.locale = Locale.current
         f.timeZone = placeTimeZone
         return f.string(from: photo.timestamp)
     }
 
-    /// Parses `"yyyy:MM:dd HH:mm:ss"` and returns `HH:mm` using the hour/minute from the string (already local wall time).
-    private static func militaryHMFromDigitizedString(_ digitized: String?) -> String? {
-        guard let digitized else { return nil }
-        let parts = digitized.split(separator: " ")
-        guard parts.count == 2 else { return nil }
-        let timePart = String(parts[1])
-        let components = timePart.split(separator: ":")
-        guard components.count >= 2,
-              let hour = Int(String(components[0])),
-              let minute = Int(String(components[1])),
-              hour >= 0, hour < 24,
-              minute >= 0, minute < 60 else { return nil }
-        return String(format: "%02d:%02d", hour, minute)
+    /// Parses EXIF-style `yyyy:MM:dd HH:mm:ss` (wall-clock local time) into a 12-hour display
+    /// string. Uses `Locale.current` so AM/PM symbols match the device locale (e.g. 오전/오후).
+    private static func formattedClockTimeFromDigitized(_ digitized: String) -> String? {
+        let parse = DateFormatter()
+        parse.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        parse.locale = Locale(identifier: "en_US_POSIX")
+        // EXIF digitized time is wall-clock local — parse as UTC so the digits are preserved as-is.
+        parse.timeZone = TimeZone(secondsFromGMT: 0)
+        guard let date = parse.date(from: digitized) else { return nil }
+        let display = DateFormatter()
+        display.dateFormat = "h:mm a"
+        display.locale = Locale.current
+        display.timeZone = TimeZone(secondsFromGMT: 0)
+        return display.string(from: date)
     }
 
     /// `targetSize` is in pixels so `PHImageManager` returns a full-resolution image.

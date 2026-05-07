@@ -1,10 +1,8 @@
 // fastblog/Views/StoryBook/BlogVideoExportOptionsSheet.swift
 import SwiftUI
 
-/// Options sheet for exporting a blog as a video.
-/// Supports two styles:
-/// - **Cinematic Journey** (default): map animations + full-frame photo slides built from `RecapBlogDetail`.
-/// - **Story Pages**: renders the full blog layout pages (original PDF-page style).
+/// Options sheet for exporting a blog as a Cinematic Journey video.
+/// Controls captions, seconds-per-photo, photos per place, and which places to include.
 struct BlogVideoExportOptionsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -32,15 +30,12 @@ struct BlogVideoExportOptionsSheet: View {
             NavigationStack {
                 ScrollView {
                     VStack(spacing: 20) {
-                        videoStyleSection
-                        if options.videoStyle == .cinematic {
-                            photoCaptionsSection
-                        }
+                        photoCaptionsSection
                         durationSection
-                        if options.videoStyle == .storyPages {
-                            colorStyleSection
-                            fontThemeSection
-                        }
+                        photosPerPlaceSection
+                        estimatedPlayTimeSection
+                        categoryFilterSection
+                        placesSection
                         musicSection
                     }
                     .padding(20)
@@ -92,7 +87,7 @@ struct BlogVideoExportOptionsSheet: View {
                     overlayTint: .modalGrayGlass,
                     progress: progress,
                     onCancel: { cancelExport() },
-                    progressStepLabelOverride: { p in Self.exportProgressSubtitle(progress: p, videoStyle: options.videoStyle) },
+                    progressStepLabelOverride: { p in Self.exportProgressSubtitle(progress: p) },
                     useCenteredLayout: true,
                     showsTopTrailingActions: false
                 )
@@ -104,36 +99,17 @@ struct BlogVideoExportOptionsSheet: View {
         .onAppear {
             options = (try? JSONDecoder().decode(BlogVideoExportOptions.self, from: optionsData))
                 ?? BlogVideoExportOptions()
-        }
-    }
-
-    // MARK: - Video Style Section
-
-    private var videoStyleSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Video Style", icon: "film.stack")
-            VStack(spacing: 0) {
-                ForEach(VideoStyle.allCases, id: \.self) { style in
-                    optionRow(
-                        title: style.label,
-                        subtitle: style.subtitle,
-                        isSelected: options.videoStyle == style
-                    ) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            options.videoStyle = style
-                        }
-                    }
-                    if style != VideoStyle.allCases.last {
-                        Divider().padding(.leading, 52)
-                    }
+            // Reset place selection if it belongs to a different blog (stale UUIDs).
+            if let ids = options.includedPlaceIDs {
+                let currentIDs = Set(draft.days.flatMap { $0.placeStops.map { $0.id } })
+                if ids.isDisjoint(with: currentIDs) {
+                    options.includedPlaceIDs = nil
                 }
             }
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .appChromeCornerRadius(12)
         }
     }
 
-    // MARK: - Photo Captions Section (Cinematic only)
+    // MARK: - Photo Captions Section
 
     private var photoCaptionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -161,10 +137,7 @@ struct BlogVideoExportOptionsSheet: View {
 
     private var durationSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(
-                options.videoStyle == .cinematic ? "Seconds Per Photo" : "Slide Duration",
-                icon: "timer"
-            )
+            sectionHeader("Seconds Per Photo", icon: "timer")
             HStack(spacing: 8) {
                 ForEach([2.0, 3.0, 5.0], id: \.self) { secs in
                     durationPill(seconds: secs)
@@ -187,45 +160,249 @@ struct BlogVideoExportOptionsSheet: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Color Style Section (Story Pages only)
+    // MARK: - Photos Per Place Section
 
-    private var colorStyleSection: some View {
+    private var photosPerPlaceSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Color Style", icon: "circle.lefthalf.filled")
-            VStack(spacing: 0) {
-                ForEach(BlogColor.allCases, id: \.self) { style in
-                    optionRow(title: style.label, subtitle: style.subtitle,
-                              isSelected: options.colorStyle == style) {
-                        options.colorStyle = style
-                    }
-                    if style != BlogColor.allCases.last {
-                        Divider().padding(.leading, 52)
-                    }
+            sectionHeader("Maximum Photos Per Place", icon: "photo.stack")
+            HStack(spacing: 8) {
+                ForEach([1, 2, 3, 5], id: \.self) { count in
+                    photosPerPlacePill(count: count)
                 }
             }
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .appChromeCornerRadius(12)
         }
     }
 
-    // MARK: - Font Theme Section (Story Pages only)
+    private func photosPerPlacePill(count: Int) -> some View {
+        let selected = options.maxPhotosPerPlace == count
+        return Button { options.maxPhotosPerPlace = count } label: {
+            Text("\(count)")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(selected ? Color.accentColor : Color(uiColor: .secondarySystemGroupedBackground))
+                .foregroundColor(selected ? .white : .primary)
+                .appChromeCornerRadius(10)
+        }
+        .buttonStyle(.plain)
+    }
 
-    private var fontThemeSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Font Style", icon: "textformat")
-            VStack(spacing: 0) {
-                ForEach(FontTheme.allCases, id: \.self) { theme in
-                    optionRow(title: theme.label, subtitle: theme.subtitle,
-                              isSelected: options.fontTheme == theme) {
-                        options.fontTheme = theme
+    // MARK: - Places Section
+
+    private var placesSection: some View {
+        let days = filteredDaysForPlacePicker()
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                sectionHeader("Places", icon: "mappin.and.ellipse")
+                Spacer()
+                HStack(spacing: 12) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectHighlightsOnly()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("Highlights")
+                                .font(.caption.weight(.medium))
+                        }
+                        .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
                     }
-                    if theme != FontTheme.allCases.last {
-                        Divider().padding(.leading, 52)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if options.includedPlaceIDs == nil {
+                                options.includedPlaceIDs = []
+                            } else {
+                                options.includedPlaceIDs = nil
+                            }
+                        }
+                    } label: {
+                        Text(options.includedPlaceIDs == nil ? "Deselect All" : "Select All")
+                            .font(.caption.weight(.medium))
+                            .foregroundColor(.accentColor)
                     }
                 }
             }
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .appChromeCornerRadius(12)
+            if !days.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(days.enumerated()), id: \.element.id) { dayOffset, day in
+                        if dayOffset > 0 {
+                            Divider()
+                        }
+                        Text("Day \(dayOffset + 1) · \(day.dateText)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 14)
+                            .padding(.top, 10)
+                            .padding(.bottom, 4)
+                        ForEach(Array(day.placeStops.enumerated()), id: \.element.id) { stopOffset, stop in
+                            if stopOffset > 0 {
+                                Divider().padding(.leading, 52)
+                            }
+                            placeCheckRow(stop: stop)
+                        }
+                    }
+                }
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .appChromeCornerRadius(12)
+            }
+        }
+    }
+
+    private func placeCheckRow(stop: PlaceStop) -> some View {
+        let isIncluded = isPlaceIncluded(stop.id)
+        let score = stop.highlightMomentScore
+        let components = stop.highlightScoreComponents
+        let avg = averageHighlightMomentScoreForVisibleStops()
+        let isStarred = score > avg
+        return Button { togglePlace(stop.id) } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(isIncluded
+                                  ? Color.accentColor
+                                  : Color(uiColor: .tertiarySystemGroupedBackground))
+                            .frame(width: 24, height: 24)
+                        if isIncluded {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text(stop.placeTitle)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+
+                            HStack(spacing: 4) {
+                                if isStarred {
+                                    Image(systemName: "star.fill")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(Color(red: 1.0, green: 0.84, blue: 0.0))
+                                }
+                                Text("\(Int(score.rounded()))")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                            .appChromeCornerRadius(10)
+                        }
+                        if let raw = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines),
+                           !raw.isEmpty {
+                            let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
+                            Text(p.label)
+                                .font(.caption.weight(.medium))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+
+                        scoreBreakdownRow(components: components)
+                    }
+                    Spacer()
+                }
+
+                placePhotoStrip(stop: stop)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func scoreBreakdownRow(components: PlaceStop.HighlightScoreComponents) -> some View {
+        HStack(spacing: 6) {
+            scoreChip(icon: "hand.thumbsup.fill", label: "Mood",     value: components.sentiment, max: 45)
+            scoreChip(icon: "text.bubble.fill",   label: "Caption",  value: components.caption,   max: 30)
+            scoreChip(icon: "photo.fill",          label: "Photo",    value: components.photo,     max: 15)
+            scoreChip(icon: "clock.fill",          label: "Duration", value: components.duration,  max: 10)
+        }
+    }
+
+    private func scoreChip(icon: String, label: String, value: Double, max maxVal: Int) -> some View {
+        let earned = Int(value.rounded())
+        let isEmpty = earned == 0
+        return HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .semibold))
+            Text("\(earned)/\(maxVal)")
+                .font(.system(size: 10, weight: .semibold).monospacedDigit())
+        }
+        .foregroundColor(isEmpty ? .secondary.opacity(0.5) : .secondary)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color(uiColor: .tertiarySystemGroupedBackground).opacity(isEmpty ? 0.5 : 1))
+        .appChromeCornerRadius(6)
+    }
+
+    private func averageHighlightMomentScoreForVisibleStops() -> Double {
+        let stops = filteredDaysForPlacePicker().flatMap(\.placeStops)
+        guard !stops.isEmpty else { return 0 }
+        return stops.map(\.highlightMomentScore).reduce(0, +) / Double(stops.count)
+    }
+
+    private func placePhotoStrip(stop: PlaceStop) -> some View {
+        let photos = Array(stop.includedPhotos.prefix(2))
+        return HStack(spacing: 8) {
+            ForEach(photos) { photo in
+                RecapPhotoThumbnail(
+                    photo: photo,
+                    cornerRadius: 8,
+                    showIcon: false,
+                    targetSize: CGSize(width: 260, height: 260)
+                )
+                .frame(width: 42, height: 42)
+                .clipped()
+            }
+            if stop.includedPhotos.count > photos.count {
+                let overflow = stop.includedPhotos.count - photos.count
+                Text("+\(overflow)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                    .appChromeCornerRadius(12)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func selectHighlightsOnly() {
+        let stops = filteredDaysForPlacePicker().flatMap(\.placeStops)
+        let avg = stops.map(\.highlightMomentScore).reduce(0, +) / Double(max(stops.count, 1))
+        let highlightIDs = Set(stops.filter { $0.highlightMomentScore > avg }.map(\.id))
+        options.includedPlaceIDs = highlightIDs.isEmpty ? nil : highlightIDs
+    }
+
+    private func isPlaceIncluded(_ id: UUID) -> Bool {
+        guard let ids = options.includedPlaceIDs else { return true }
+        return ids.contains(id)
+    }
+
+    private func togglePlace(_ id: UUID) {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            if options.includedPlaceIDs == nil {
+                var all = Set(draft.days.flatMap { $0.placeStops.map { $0.id } })
+                all.remove(id)
+                options.includedPlaceIDs = all.isEmpty ? nil : all
+            } else if options.includedPlaceIDs!.contains(id) {
+                options.includedPlaceIDs!.remove(id)
+            } else {
+                options.includedPlaceIDs!.insert(id)
+                let allIDs = Set(draft.days.flatMap { $0.placeStops.map { $0.id } })
+                if options.includedPlaceIDs == allIDs {
+                    options.includedPlaceIDs = nil
+                }
+            }
         }
     }
 
@@ -259,26 +436,18 @@ struct BlogVideoExportOptionsSheet: View {
 
     // MARK: - Export Button
 
-    /// Subtitle under “Creating Video…” — matches trip-style progress bands (driven by 0…1 export progress).
-    private static func exportProgressSubtitle(progress p: Double, videoStyle: VideoStyle) -> String {
-        if videoStyle == .cinematic {
-            if p < 0.1  { return "Building journey…" }
-            if p < 0.50 { return "Loading places & photos…" }
-            if p < 0.72 { return "Rendering map frames…" }
-            if p < 0.86 { return "Writing video…" }
-            return "Adding music…"
-        } else {
-            if p < 0.1  { return "Building slideshow…" }
-            if p < 0.72 { return "Rendering slides…" }
-            if p < 0.86 { return "Writing video…" }
-            return "Adding music…"
-        }
+    private static func exportProgressSubtitle(progress p: Double) -> String {
+        if p < 0.1  { return "Building journey…" }
+        if p < 0.50 { return "Loading places & photos…" }
+        if p < 0.72 { return "Rendering map frames…" }
+        if p < 0.86 { return "Writing video…" }
+        return "Adding music…"
     }
 
     private var exportButton: some View {
         Button { startExport() } label: {
             HStack(spacing: 8) {
-                Image(systemName: options.videoStyle == .cinematic ? "map.fill" : "video.badge.checkmark")
+                Image(systemName: "map.fill")
                 Text("Export & Share")
                     .fontWeight(.semibold)
             }
@@ -313,26 +482,15 @@ struct BlogVideoExportOptionsSheet: View {
         exportTask = Task { @MainActor in
             defer { exportTask = nil }
             do {
-                var pages: [StoryPage] = []
-
-                if options.videoStyle == .storyPages {
-                    // Story-pages mode: build the full page layout (same as story mode / PDF export).
-                    let content = await StoryBookBuilder.build(from: draft)
-                    try Task.checkCancellation()
-                    pages = StoryPageLayout.buildPages(from: content, fontTheme: options.fontTheme)
-                    guard !pages.isEmpty else { throw BlogVideoExportService.ExportError.noPages }
-                }
                 progress = 0.1
-
+                let effective = effectiveExportOptions()
                 let url = try await BlogVideoExportService.exportVideo(
-                    pages: pages,
                     draft: draft,
-                    options: options,
+                    options: effective,
                     progressHandler: { p in
                         progress = 0.1 + p * 0.9
                     }
                 )
-
                 isExporting = false
                 dismiss()
                 onShare(url)
@@ -345,6 +503,196 @@ struct BlogVideoExportOptionsSheet: View {
                 showError = true
             }
         }
+    }
+
+    // MARK: - Estimated Play Time
+
+    private var estimatedPlayTimeSection: some View {
+        let stats = estimatedPlaybackStats()
+        return VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Estimated Play Time", icon: "clock")
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(stats.estimatedDurationText)")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primary)
+                Text("\(stats.includedPlaceCount) places · \(stats.includedPhotoCount) photos")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .appChromeCornerRadius(12)
+        }
+    }
+
+    private func estimatedPlaybackStats() -> (includedPlaceCount: Int, includedPhotoCount: Int, estimatedSeconds: Double, estimatedDurationText: String) {
+        let stops = filteredDaysForPlacePicker().flatMap(\.placeStops).filter { isPlaceIncluded($0.id) }
+        let photoCount = stops.reduce(0) { acc, stop in
+            acc + min(options.maxPhotosPerPlace, stop.includedPhotos.count)
+        }
+        let seconds = Double(photoCount) * options.secondsPerSlide
+        return (
+            includedPlaceCount: stops.count,
+            includedPhotoCount: photoCount,
+            estimatedSeconds: seconds,
+            estimatedDurationText: formatDuration(seconds: seconds)
+        )
+    }
+
+    private func formatDuration(seconds: Double) -> String {
+        let clamped = max(0, seconds)
+        let total = Int(clamped.rounded())
+        let mins = total / 60
+        let secs = total % 60
+        if mins > 0 {
+            return "\(mins)m \(String(format: "%02d", secs))s"
+        }
+        return "\(secs)s"
+    }
+
+    // MARK: - Category Filter
+
+    private var categoryFilterSection: some View {
+        let available = availableCategoryRawsForDraft()
+        guard !available.isEmpty else { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    sectionHeader("Categories", icon: "line.3.horizontal.decrease.circle")
+                    Spacer()
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            options.includedPlaceCategoryRaws = nil
+                        }
+                    } label: {
+                        Text(options.includedPlaceCategoryRaws == nil ? "All" : "Clear")
+                            .font(.caption.weight(.medium))
+                            .foregroundColor(.accentColor)
+                    }
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(available, id: \.self) { raw in
+                            categoryPill(raw: raw)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .padding(14)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .appChromeCornerRadius(12)
+            }
+        )
+    }
+
+    private func categoryPill(raw: String) -> some View {
+        let isSelected = isCategoryIncluded(raw)
+        let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
+        return Button {
+            toggleCategory(raw)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: p.symbol)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isSelected ? .white : p.color)
+                Text(p.label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isSelected ? .white : .primary)
+                    .lineLimit(1)
+                if isSelected, options.includedPlaceCategoryRaws != nil {
+                    Image(systemName: "checkmark")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.95))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(isSelected ? p.color : p.color.opacity(0.18))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(p.color.opacity(isSelected ? 0 : 0.35), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func availableCategoryRawsForDraft() -> [String] {
+        let rawSet: Set<String> = Set(draft.days.flatMap(\.placeStops).compactMap { stop in
+            stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })
+
+        let hasOthers = draft.days.flatMap(\.placeStops).contains { stop in
+            let raw = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return raw.isEmpty
+        }
+
+        return PlacePOICategoryCatalog.categoryRawsAppearingInDataForFilters(
+            dataRaws: rawSet,
+            includeOthers: hasOthers
+        )
+    }
+
+    private func isCategoryIncluded(_ raw: String) -> Bool {
+        guard let set = options.includedPlaceCategoryRaws else { return true }
+        return set.contains(raw)
+    }
+
+    private func toggleCategory(_ raw: String) {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            let all = Set(availableCategoryRawsForDraft())
+            if options.includedPlaceCategoryRaws == nil {
+                options.includedPlaceCategoryRaws = all.subtracting([raw])
+            } else if options.includedPlaceCategoryRaws!.contains(raw) {
+                options.includedPlaceCategoryRaws!.remove(raw)
+            } else {
+                options.includedPlaceCategoryRaws!.insert(raw)
+                if options.includedPlaceCategoryRaws == all {
+                    options.includedPlaceCategoryRaws = nil
+                }
+            }
+        }
+    }
+
+    private func filteredDaysForPlacePicker() -> [RecapBlogDay] {
+        let days = draft.days.filter { !$0.placeStops.isEmpty }
+        guard let cats = options.includedPlaceCategoryRaws else { return days }
+        return days.compactMap { day in
+            let filteredStops = day.placeStops.filter { stop in
+                let raw = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let key = (raw == nil || raw?.isEmpty == true) ? "Others" : raw!
+                return cats.contains(key)
+            }
+            guard !filteredStops.isEmpty else { return nil }
+            var d = day
+            d.placeStops = filteredStops
+            return d
+        }
+    }
+
+    private func effectiveExportOptions() -> BlogVideoExportOptions {
+        guard let cats = options.includedPlaceCategoryRaws else { return options }
+        let allowedIDs: Set<UUID> = Set(
+            draft.days.flatMap(\.placeStops).filter { stop in
+                let raw = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let key = (raw == nil || raw?.isEmpty == true) ? "Others" : raw!
+                return cats.contains(key)
+            }.map(\.id)
+        )
+        var effective = options
+        effective.includedPlaceIDs = {
+            if let ids = options.includedPlaceIDs {
+                let filtered = ids.intersection(allowedIDs)
+                return filtered.isEmpty ? [] : filtered
+            }
+            return allowedIDs
+        }()
+        return effective
     }
 
     // MARK: - Shared UI helpers

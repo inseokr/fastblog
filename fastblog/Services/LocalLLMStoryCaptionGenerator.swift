@@ -850,13 +850,27 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
     @available(iOS 26.0, *)
     private func analyzeSentimentWithLLM(text: String) async -> Int? {
+        // Non-English captions cause the model to respond with non-digit output (e.g. Korean
+        // punctuation or words), breaking the strict single-digit parse. Translate first so the
+        // classifier always sees English text.
+        let analyzeText: String
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        let dominant = recognizer.dominantLanguage
+        let isNonEnglish = dominant != nil && dominant != .english && dominant != .undetermined
+        if isNonEnglish, let translated = await translateTextWithLLM(userText: text) {
+            analyzeText = translated
+        } else {
+            analyzeText = text
+        }
+
         let instructions = """
             You are a sentiment classifier for travel captions. \
             Read the text and decide if the overall sentiment is positive, neutral, or negative. \
             Respond with exactly one digit: 3 for positive, 2 for neutral, 1 for negative. \
             No explanation, no punctuation — just the single digit.
             """
-        let prompt = "Classify the sentiment of this travel caption:\n\"\(text)\""
+        let prompt = "Classify the sentiment of this travel caption:\n\"\(analyzeText)\""
         guard let result = await runSession(instructions: instructions, prompt: prompt) else { return nil }
         let digit = result.trimmingCharacters(in: .whitespacesAndNewlines)
         if digit == "1" { return 1 }

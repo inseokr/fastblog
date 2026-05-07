@@ -218,29 +218,12 @@ struct PlacePhotoModalView: View {
     @State private var dismissFrozenPhotoId: UUID?
     /// PHAsset time metadata for the current photo (creationDate, modificationDate). Loaded when photo has localIdentifier.
     @State private var currentPhotoAssetMetadata: (creation: Date?, modification: Date?)?
-    /// Derives the UTC offset from the EXIF digitized local time vs photo timestamps.
-    /// Digitized is the stop's earliest photo time in *local* time at capture; we compare to each photo's UTC timestamp to infer offset.
-    /// Returns nil when: no digitized time, single photo (can't validate), parse failure, or median offset is 0 (digitized may be stored in UTC — prefer location-based TZ).
+    /// Derived capture offset (same algorithm as ``PlaceStop.inferredCaptureTimeZone``).
     private var captureTimeZone: TimeZone? {
-        guard let digitized = stopDigitizedTime else { return nil }
-        let parser = DateFormatter()
-        parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
-        parser.timeZone = TimeZone(secondsFromGMT: 0)
-        guard let localAsUTC = parser.date(from: digitized) else { return nil }
-        // Per photo: offset = (parsed "local" as if UTC) - (photo UTC). When digitized is true local time, this gives capture TZ offset.
-        let offsets: [Int] = photos.map { Int(localAsUTC.timeIntervalSince($0.timestamp)) }
-        let sorted = offsets.sorted()
-        let medianOffset: Int
-        if sorted.count.isMultiple(of: 2), sorted.count >= 2 {
-            medianOffset = (sorted[sorted.count / 2 - 1] + sorted[sorted.count / 2]) / 2
-        } else {
-            medianOffset = sorted[sorted.count / 2]
-        }
-        let roundedOffset = (medianOffset / 900) * 900
-        // Offset 0 is ambiguous: digitized might be stored in UTC (no EXIF TZ), which would show wrong local time (e.g. morning instead of evening).
-        if roundedOffset == 0 { return nil }
-        guard let tz = TimeZone(secondsFromGMT: roundedOffset) else { return nil }
-        return tz
+        PlaceStop.inferredCaptureTimeZone(
+            visitedDigitized: stopDigitizedTime,
+            photoTimestamps: photos.map(\.timestamp)
+        )
     }
 
     /// Effective timezone for the current photo: per-photo cache first (so all photos get correct time), then derived from digitized, then device.

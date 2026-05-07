@@ -18,6 +18,9 @@ struct EditPlaceStopNameSheet: View {
     var photos: [RecapPhoto] = []
     /// Title, coordinate, POI category raw value, trimmed subtitle (empty clears subtitle).
     var onSave: (String, CLLocationCoordinate2D?, String?, String) -> Void
+    /// Called immediately when the sheet auto-resolves an "Unknown Place" name on appear,
+    /// so the blog model persists the name without requiring the user to tap Save.
+    var onAutoResolve: ((String) -> Void)? = nil
     var confirmLabel: String = "Save"
     @Environment(\.dismiss) private var dismiss
 
@@ -204,10 +207,44 @@ struct EditPlaceStopNameSheet: View {
                         Task {
                             let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                             let geocoded = await GeocodingService.shared.place(for: loc, precise: false)
-                            placeCountryCode = geocoded.isoCountryCode
-                            searchViewModel.setProvider(isoCountryCode: geocoded.isoCountryCode)
-                            if geocoded.isoCountryCode == "KR", koreaMapPreference.isEmpty {
+                            var isoCode = geocoded.isoCountryCode
+                            var kakaoPreResolvedName: String? = nil
+
+                            // When Apple geocoder has no country code (cached failure), try Kakao
+                            // as a country detector. Reuse its result for name resolution too.
+                            let needsNameResolve = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines) == "Unknown Place"
+                                || editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            if isoCode.isEmpty, KakaoLocalService.shared.isAvailable {
+                                if let doc = await KakaoLocalService.shared.reverseGeocode(coordinate: coord),
+                                   !doc.bestPlaceName.isEmpty {
+                                    isoCode = "KR"
+                                    if needsNameResolve {
+                                        kakaoPreResolvedName = doc.bestPlaceName
+                                    }
+                                }
+                            }
+
+                            placeCountryCode = isoCode
+                            searchViewModel.setProvider(isoCountryCode: isoCode)
+                            if isoCode == "KR", koreaMapPreference.isEmpty {
                                 showKoreaMapPrompt = true
+                            }
+
+                            // Auto-resolve unresolved place names; reuse Kakao result already fetched above.
+                            if needsNameResolve {
+                                let resolved: String
+                                if let preResolved = kakaoPreResolvedName {
+                                    resolved = preResolved
+                                } else {
+                                    isResolvingPOI = true
+                                    resolved = await searchViewModel.resolveCoordinateName(at: coord)
+                                    isResolvingPOI = false
+                                }
+                                if !resolved.isEmpty && resolved != "Unknown Place" {
+                                    editedTitle = resolved
+                                    initialTitle = resolved
+                                    onAutoResolve?(resolved)
+                                }
                             }
                         }
                     }

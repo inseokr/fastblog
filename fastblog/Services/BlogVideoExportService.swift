@@ -3,38 +3,20 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Video Style
-
-enum VideoStyle: String, Codable, CaseIterable {
-    case cinematic  = "cinematic"
-    case storyPages = "storyPages"
-
-    var label: String {
-        switch self {
-        case .cinematic:  return "Cinematic Journey"
-        case .storyPages: return "Story Pages"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .cinematic:  return "Map animations + full-frame photos"
-        case .storyPages: return "Full blog layout pages"
-        }
-    }
-}
-
 // MARK: - Options
 
 struct BlogVideoExportOptions: Codable, Equatable {
-    var videoStyle: VideoStyle = .cinematic
     var secondsPerSlide: Double = 3.0
-    var colorStyle: BlogColor = .white
-    var fontTheme: FontTheme = .classic
     /// Filename of the bundled music track to mix in, or nil for silence.
     var musicFilename: String? = nil
-    /// Cinematic style only: whether photo captions are shown on photo slides.
+    /// Whether photo captions are shown as text overlays on photo slides.
     var showPhotoCaptions: Bool = true
+    /// Maximum number of photos shown per place stop. Capped at this count from includedPhotos.
+    var maxPhotosPerPlace: Int = 3
+    /// Place stop IDs to include. nil means all places are included.
+    var includedPlaceIDs: Set<UUID>? = nil
+    /// Place categories to include (raw MapKit POI strings, plus optional `"Others"`). nil means all categories are included.
+    var includedPlaceCategoryRaws: Set<String>? = nil
 }
 
 // MARK: - Service
@@ -84,7 +66,6 @@ enum BlogVideoExportService {
     /// released before the next is generated.
     @MainActor
     static func exportVideo(
-        pages: [StoryPage],
         draft: RecapBlogDetail,
         options: BlogVideoExportOptions,
         progressHandler: ((Double) -> Void)? = nil
@@ -181,27 +162,16 @@ enum BlogVideoExportService {
         }
 
         // Step 1 – Generate + write frames one at a time (0 → 85 %).
-        if options.videoStyle == .cinematic {
-            try await CinematicBlogVideoBuilder.buildFrames(
-                from: draft,
-                logicalSize: logicalSize,
-                secondsPerPhoto: options.secondsPerSlide,
-                showPhotoCaptions: options.showPhotoCaptions,
-                progressHandler: { p in progressHandler?(p * 0.85) },
-                frameHandler: { img, dur in try await appendFrame(img, duration: dur) }
-            )
-        } else {
-            guard !pages.isEmpty else { throw ExportError.noPages }
-            for (idx, page) in pages.enumerated() {
-                try Task.checkCancellation()
-                if idx % 2 == 0 { await Task.yield() }
-                let image = try autoreleasepool {
-                    try renderPageToImage(page: page, logicalSize: logicalSize, pageIndex: idx, options: options)
-                }
-                try await appendFrame(image, duration: options.secondsPerSlide)
-                progressHandler?(Double(idx + 1) / Double(pages.count) * 0.85)
-            }
-        }
+        try await CinematicBlogVideoBuilder.buildFrames(
+            from: draft,
+            logicalSize: logicalSize,
+            secondsPerPhoto: options.secondsPerSlide,
+            showPhotoCaptions: options.showPhotoCaptions,
+            maxPhotosPerPlace: options.maxPhotosPerPlace,
+            includedPlaceIDs: options.includedPlaceIDs,
+            progressHandler: { p in progressHandler?(p * 0.85) },
+            frameHandler: { img, dur in try await appendFrame(img, duration: dur) }
+        )
 
         if frameIdx == 0 {
             try Task.checkCancellation()
@@ -238,36 +208,6 @@ enum BlogVideoExportService {
 
         progressHandler?(1.0)
         return finalURL
-    }
-
-    // MARK: - Story-page rendering
-
-    @MainActor
-    private static func renderPageToImage(
-        page: StoryPage,
-        logicalSize: CGSize,
-        pageIndex: Int,
-        options: BlogVideoExportOptions
-    ) throws -> UIImage {
-        let bgColor: Color           = options.colorStyle == .black ? .black : .white
-        let colorScheme: ColorScheme = options.colorStyle == .black ? .dark  : .light
-
-        let root = StoryPageView(page: page)
-            .environment(\.colorScheme, colorScheme)
-            .environment(\.storyFontTheme, options.fontTheme)
-            .environment(\.storyBlogColor, options.colorStyle)
-            .environment(\.storyRasterizesForExport, true)
-            .frame(width: logicalSize.width, height: logicalSize.height)
-            .background(bgColor)
-
-        let renderer = ImageRenderer(content: root)
-        renderer.scale = 2.0
-        renderer.proposedSize = ProposedViewSize(width: logicalSize.width, height: logicalSize.height)
-
-        guard let image = renderer.uiImage else {
-            throw ExportError.failedToRenderPage(pageIndex)
-        }
-        return image
     }
 
     // MARK: - AVMutableComposition (audio track)

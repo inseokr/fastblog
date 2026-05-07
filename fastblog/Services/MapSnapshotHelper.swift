@@ -368,9 +368,8 @@ class MapSnapshotHelper {
         guard !entries.isEmpty else { return nil }
         /// Tighter than the default snapshot floor (~110 m) so the block reads more zoomed-in.
         let zoomSpanDegrees = 0.001
-        // Shift the map center slightly south so the POI sits a bit above frame center (helps the name pill); keep subtle so it is not hugging the top.
-        let verticalBiasDegrees = zoomSpanDegrees * 0.15
-        let mapCenter = CLLocationCoordinate2D(latitude: fc.latitude - verticalBiasDegrees, longitude: fc.longitude)
+        // Center the POI in the map half of the slide (no vertical bias).
+        let mapCenter = CLLocationCoordinate2D(latitude: fc.latitude, longitude: fc.longitude)
         let tight = MKCoordinateRegion(
             center: mapCenter,
             span: MKCoordinateSpan(latitudeDelta: zoomSpanDegrees, longitudeDelta: zoomSpanDegrees)
