@@ -30,13 +30,13 @@ struct BlogVideoExportOptionsSheet: View {
             NavigationStack {
                 ScrollView {
                     VStack(spacing: 20) {
-                        photoCaptionsSection
-                        durationSection
-                        photosPerPlaceSection
                         estimatedPlayTimeSection
+                        photosPerPlaceSection
+                        durationSection
+                        photoCaptionsSection
+                        musicSection
                         categoryFilterSection
                         placesSection
-                        musicSection
                     }
                     .padding(20)
                     .padding(.bottom, 8)
@@ -293,27 +293,10 @@ struct BlogVideoExportOptionsSheet: View {
                         }
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Text(stop.placeTitle)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-
-                            HStack(spacing: 4) {
-                                if isStarred {
-                                    Image(systemName: "star.fill")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(Color(red: 1.0, green: 0.84, blue: 0.0))
-                                }
-                                Text("\(Int(score.rounded()))")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color(uiColor: .tertiarySystemGroupedBackground))
-                            .appChromeCornerRadius(10)
-                        }
+                        Text(stop.placeTitle)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
                         if let raw = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines),
                            !raw.isEmpty {
                             let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
@@ -342,7 +325,7 @@ struct BlogVideoExportOptionsSheet: View {
     }
 
     private func placePhotoStrip(stop: PlaceStop) -> some View {
-        let photos = Array(stop.includedPhotos.prefix(2))
+        let photos = Array(stop.includedPhotos.prefix(options.maxPhotosPerPlace))
         return HStack(spacing: 8) {
             ForEach(photos) { photo in
                 RecapPhotoThumbnail(
@@ -496,25 +479,45 @@ struct BlogVideoExportOptionsSheet: View {
         }
     }
 
-    // MARK: - Estimated Play Time
+    // MARK: - Estimated Video Length
 
     private var estimatedPlayTimeSection: some View {
         let stats = estimatedPlaybackStats()
-        return VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Estimated Play Time", icon: "clock")
+        return HStack(spacing: 14) {
+            Image(systemName: "film")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color(red: 0.0, green: 0.85, blue: 1.0),
+                                 Color(red: 0.2, green: 0.5, blue: 1.0)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(stats.estimatedDurationText)")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.primary)
-                Text("\(stats.includedPlaceCount) places · \(stats.includedPhotoCount) photos")
-                    .font(.caption)
+                Text("Estimated Video Length")
+                    .font(.caption.weight(.semibold))
                     .foregroundColor(.secondary)
+                Text(stats.estimatedDurationText)
+                    .font(.title3.weight(.bold))
+                    .foregroundColor(.white)
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .appChromeCornerRadius(12)
+            Spacer()
+            Text("\(stats.includedPlaceCount) places · \(stats.includedPhotoCount) photos")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.trailing)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(red: 0.0, green: 0.85, blue: 1.0).opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color(red: 0.0, green: 0.85, blue: 1.0).opacity(0.2), lineWidth: 1)
+                )
+        )
     }
 
     private func estimatedPlaybackStats() -> (includedPlaceCount: Int, includedPhotoCount: Int, estimatedSeconds: Double, estimatedDurationText: String) {

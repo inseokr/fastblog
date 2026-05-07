@@ -488,7 +488,9 @@ enum CinematicBlogVideoBuilder {
     private static func drawCoverPage(
         draft: RecapBlogDetail, pixelSize: CGSize, coverImage: UIImage?
     ) -> UIImage {
-        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
         return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
             let cg = ctx.cgContext
             let w = pixelSize.width, h = pixelSize.height
@@ -685,7 +687,9 @@ enum CinematicBlogVideoBuilder {
         show: Bool
     ) -> UIImage {
         guard show else { return mapImage }
-        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
         return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
             let cg = ctx.cgContext
             prepareContextForSharpBitmapCompositing(cg)
@@ -770,7 +774,9 @@ enum CinematicBlogVideoBuilder {
     private static func drawDayHeaderOverlay(
         on mapImage: UIImage, day: RecapBlogDay, dayNumber: Int, pixelSize: CGSize
     ) -> UIImage {
-        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
         return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
             let cg = ctx.cgContext
             let w = pixelSize.width, h = pixelSize.height
@@ -984,7 +990,9 @@ enum CinematicBlogVideoBuilder {
         photoThumbnails: [UIImage],
         overlayContentAlpha: CGFloat = 1
     ) -> UIImage {
-        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
         let alpha = min(1, max(0, overlayContentAlpha))
         return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
             let cg = ctx.cgContext
@@ -1339,7 +1347,9 @@ enum CinematicBlogVideoBuilder {
         kbScale: CGFloat = 1.0
     ) -> UIImage {
         let hasStory = !(caption?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
         return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
             let cg = ctx.cgContext
             let w = pixelSize.width, h = pixelSize.height
@@ -1513,6 +1523,12 @@ enum CinematicBlogVideoBuilder {
     private static func prepareContextForSharpBitmapCompositing(_ cg: CGContext) {
         cg.interpolationQuality = .high
         cg.setShouldAntialias(true)
+        // Video frames are drawn into a bitmap; disable subpixel font rendering to avoid
+        // colored/fringed edges and “textured” glyphs in the exported H.264 output.
+        cg.setAllowsFontSmoothing(true)
+        cg.setShouldSmoothFonts(true)
+        cg.setAllowsFontSubpixelPositioning(false)
+        cg.setAllowsFontSubpixelQuantization(false)
     }
 
     private static func integralRect(_ r: CGRect) -> CGRect {
@@ -1539,7 +1555,9 @@ enum CinematicBlogVideoBuilder {
     /// Cross-fade from the rendered cover to the first map frame (`progress` 0…1).
     private static func blendCoverToMap(from cover: UIImage, to map: UIImage, progress: CGFloat, size: CGSize) -> UIImage {
         let u = min(1, max(0, progress))
-        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
         return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
             prepareContextForSharpBitmapCompositing(ctx.cgContext)
             cover.draw(in: CGRect(origin: .zero, size: size), blendMode: .normal, alpha: 1 - u)
@@ -1574,7 +1592,9 @@ enum CinematicBlogVideoBuilder {
         let zoomPhaseSplit: CGFloat = 0.65
         let fullRect = CGRect(origin: .zero, size: size)
 
-        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
         return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
             prepareContextForSharpBitmapCompositing(ctx.cgContext)
             let cgWide = wideImage.cgImage
@@ -1622,7 +1642,9 @@ enum CinematicBlogVideoBuilder {
     ) -> UIImage {
         let t = CGFloat(stepIndex) / CGFloat(blendStepCount + 1)
         let alpha = t * t * (3 - 2 * t) // smooth-step ease
-        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         return renderer.image { ctx in
             let cg = ctx.cgContext
