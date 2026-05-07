@@ -313,18 +313,12 @@ enum CinematicBlogVideoBuilder {
                 }
 
                 // 4. Photo slides — one at a time, released after each write
-                let placeTZ: TimeZone
-                if let id = stop.timeZoneIdentifier, let stored = TimeZone(identifier: id) {
-                    placeTZ = stored
-                } else {
-                    placeTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: stop)
-                }
                 var lastPhotoSlide: UIImage?
                 var lastPhotoKBLastFrame: UIImage?
                 for (photoIdx, photo) in stop.includedPhotos.prefix(maxPhotosPerPlace).enumerated() {
                     try Task.checkCancellation()
                     if let img = await loadPhoto(photo, targetSize: pixelSize) {
-                        let timeLabel = photoSlideTimeDisplayText(for: photo, placeTimeZone: placeTZ)
+                        let timeLabel = photoSlideTimeDisplayText(for: photo, stop: stop)
                         if photoIdx == 0,
                            let mapComposite = lastFocusedMapCompositeForPhotoTransition,
                            let fromCell = mapToPhotoThumbCell,
@@ -1638,9 +1632,8 @@ enum CinematicBlogVideoBuilder {
         }
     }
 
-    /// Used only for `stop.visitedTimeDigitized` on the focused map overlay. That field is always
-    /// set with the correct local timezone (EXIF consensus or device-TZ fallback), so treating the
-    /// digits as wall-clock is safe here.
+    /// Formats EXIF-style `yyyy:MM:dd HH:mm:ss` digitized strings for on-screen overlays. Parse and display
+    /// both use UTC so calendar components appear unchanged (matches ``PlaceStopRowView`` digitized handling).
     private static func formattedTimestamp(_ digitized: String?) -> String? {
         guard let raw = digitized?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty else { return nil }
@@ -1656,15 +1649,15 @@ enum CinematicBlogVideoBuilder {
         return display.string(from: date)
     }
 
-    /// Formats `photo.timestamp` (an absolute UTC Date from PHAsset.creationDate) using the stop’s
-    /// resolved timezone. This is always correct regardless of whether EXIF OffsetTimeOriginal was
-    /// present: `digitizedTime` can store either local or UTC digits depending on EXIF availability,
-    /// making it unreliable for display here.
-    private static func photoSlideTimeDisplayText(for photo: RecapPhoto, placeTimeZone: TimeZone) -> String {
+    /// Same rules as thumbnails (``PlaceStopRowView.photoTimeDisplayText``): prefer per-photo digitized wall
+    /// clock when present so export matches map overlays and publishing; otherwise format capture `Date`
+    /// with ``PlaceStop/recapThumbnailTimeZone`` (inferred offset + identifiers), not only `timeZoneIdentifier`.
+    private static func photoSlideTimeDisplayText(for photo: RecapPhoto, stop: PlaceStop) -> String {
+        if let d = formattedTimestamp(photo.digitizedTime) { return d }
         let f = DateFormatter()
         f.dateFormat = "h:mm a"
         f.locale = Locale.current
-        f.timeZone = placeTimeZone
+        f.timeZone = stop.recapThumbnailTimeZone
         return f.string(from: photo.timestamp)
     }
 

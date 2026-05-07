@@ -191,6 +191,8 @@ struct BlogVideoExportOptionsSheet: View {
 
     private var placesSection: some View {
         let days = filteredDaysForPlacePicker()
+        let highlightIDs = highlightIDsForVisibleStops()
+        let highlightSelected = isHighlightsOnlySelected(highlightIDs: highlightIDs)
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 sectionHeader("Places", icon: "mappin.and.ellipse")
@@ -201,13 +203,21 @@ struct BlogVideoExportOptionsSheet: View {
                             selectHighlightsOnly()
                         }
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 10, weight: .semibold))
+                        HStack(spacing: 6) {
+                            Image(systemName: highlightSelected ? "checkmark.circle.fill" : "star.fill")
+                                .font(.system(size: 11, weight: .semibold))
                             Text("Highlights")
-                                .font(.caption.weight(.medium))
+                                .font(.caption.weight(.semibold))
                         }
-                        .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(highlightSelected
+                                      ? Color(red: 1.0, green: 0.84, blue: 0.0)
+                                      : Color(uiColor: .tertiarySystemGroupedBackground))
+                        )
+                        .foregroundColor(highlightSelected ? .black : Color(red: 1.0, green: 0.84, blue: 0.0))
                     }
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -251,10 +261,20 @@ struct BlogVideoExportOptionsSheet: View {
         }
     }
 
+    private func highlightIDsForVisibleStops() -> Set<UUID> {
+        let stops = filteredDaysForPlacePicker().flatMap(\.placeStops)
+        let avg = stops.map(\.highlightMomentScore).reduce(0, +) / Double(max(stops.count, 1))
+        return Set(stops.filter { $0.highlightMomentScore > avg }.map(\.id))
+    }
+
+    private func isHighlightsOnlySelected(highlightIDs: Set<UUID>) -> Bool {
+        guard let ids = options.includedPlaceIDs else { return false }
+        return ids == highlightIDs
+    }
+
     private func placeCheckRow(stop: PlaceStop) -> some View {
         let isIncluded = isPlaceIncluded(stop.id)
         let score = stop.highlightMomentScore
-        let components = stop.highlightScoreComponents
         let avg = averageHighlightMomentScoreForVisibleStops()
         let isStarred = score > avg
         return Button { togglePlace(stop.id) } label: {
@@ -302,8 +322,6 @@ struct BlogVideoExportOptionsSheet: View {
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
                         }
-
-                        scoreBreakdownRow(components: components)
                     }
                     Spacer()
                 }
@@ -315,31 +333,6 @@ struct BlogVideoExportOptionsSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private func scoreBreakdownRow(components: PlaceStop.HighlightScoreComponents) -> some View {
-        HStack(spacing: 6) {
-            scoreChip(icon: "hand.thumbsup.fill", label: "Mood",     value: components.sentiment, max: 45)
-            scoreChip(icon: "text.bubble.fill",   label: "Caption",  value: components.caption,   max: 30)
-            scoreChip(icon: "photo.fill",          label: "Photo",    value: components.photo,     max: 15)
-            scoreChip(icon: "clock.fill",          label: "Duration", value: components.duration,  max: 10)
-        }
-    }
-
-    private func scoreChip(icon: String, label: String, value: Double, max maxVal: Int) -> some View {
-        let earned = Int(value.rounded())
-        let isEmpty = earned == 0
-        return HStack(spacing: 3) {
-            Image(systemName: icon)
-                .font(.system(size: 9, weight: .semibold))
-            Text("\(earned)/\(maxVal)")
-                .font(.system(size: 10, weight: .semibold).monospacedDigit())
-        }
-        .foregroundColor(isEmpty ? .secondary.opacity(0.5) : .secondary)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .background(Color(uiColor: .tertiarySystemGroupedBackground).opacity(isEmpty ? 0.5 : 1))
-        .appChromeCornerRadius(6)
     }
 
     private func averageHighlightMomentScoreForVisibleStops() -> Double {
@@ -377,9 +370,7 @@ struct BlogVideoExportOptionsSheet: View {
     }
 
     private func selectHighlightsOnly() {
-        let stops = filteredDaysForPlacePicker().flatMap(\.placeStops)
-        let avg = stops.map(\.highlightMomentScore).reduce(0, +) / Double(max(stops.count, 1))
-        let highlightIDs = Set(stops.filter { $0.highlightMomentScore > avg }.map(\.id))
+        let highlightIDs = highlightIDsForVisibleStops()
         options.includedPlaceIDs = highlightIDs.isEmpty ? nil : highlightIDs
     }
 
