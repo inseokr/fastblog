@@ -218,6 +218,8 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     /// User sentiment for this place visit. 1 = bad, 2 = neutral (default), 3 = good.
     /// Auto-extracted from caption text by local LLM; can also be set manually.
     var sentiment: Int
+    /// User-chosen transport mode to the next stop. nil = auto-detect (distance-based).
+    var transportModeToNextStop: TravelMode?
 
     init(
         id: UUID = UUID(),
@@ -235,7 +237,8 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         visitedTimeDigitized: String? = nil,
         placeCategory: String? = nil,
         timeZoneIdentifier: String? = nil,
-        sentiment: Int = 2
+        sentiment: Int = 2,
+        transportModeToNextStop: TravelMode? = nil
     ) {
         self.id = id
         self.orderIndex = orderIndex
@@ -253,6 +256,7 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         self.placeCategory = placeCategory
         self.timeZoneIdentifier = timeZoneIdentifier
         self.sentiment = sentiment
+        self.transportModeToNextStop = transportModeToNextStop
     }
 
     init(from decoder: Decoder) throws {
@@ -273,12 +277,14 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         placeCategory = try c.decodeIfPresent(String.self, forKey: .placeCategory)
         sentiment = try c.decodeIfPresent(Int.self, forKey: .sentiment) ?? 2
         timeZoneIdentifier = try c.decodeIfPresent(String.self, forKey: .timeZoneIdentifier)
+        transportModeToNextStop = try c.decodeIfPresent(TravelMode.self, forKey: .transportModeToNextStop)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, orderIndex, placeTitle, placeSubtitle, placeTitleIsManual, representativeLocation
         case photos, noteText, overallStory, placeNarrative, overallStoryIsManual
         case cloudPlaceIndex, visitedTimeDigitized, placeCategory, timeZoneIdentifier, sentiment
+        case transportModeToNextStop
     }
 
     /// Display-ready place title. Cleans up raw system-generated highway names like

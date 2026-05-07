@@ -86,6 +86,8 @@ enum CinematicBlogVideoBuilder {
         frameHandler: (UIImage, Double) async throws -> Void
     ) async throws {
         let pixelSize = CGSize(width: logicalSize.width * 2, height: logicalSize.height * 2)
+        // Accumulates each stop's coordinate in visit order for the persistent trail overlay.
+        var visitedTrailCoords: [CLLocationCoordinate2D] = []
         let days: [RecapBlogDay] = draft.days.compactMap { day in
             let filteredStops: [PlaceStop]
             if let ids = includedPlaceIDs {
@@ -141,6 +143,10 @@ enum CinematicBlogVideoBuilder {
             }
         }
 
+        // When the travel animation zooms into the next stop, it hands off the tight
+        // arrival image here so the next iteration can skip pan + zoom.
+        var travelHandoffTightImage: UIImage? = nil
+
         for (dayIdx, day) in days.enumerated() {
             try Task.checkCancellation()
 
@@ -156,157 +162,176 @@ enum CinematicBlogVideoBuilder {
                 /// Cinematic export: brand chip only on the first map segment (first day, first stop).
                 let isFirstMapSegmentInVideo = (dayIdx == 0 && placeIdx == 0)
 
+                // Consume any tight-image handoff from the previous stop's travel arrival zoom.
+                let handoffTight = travelHandoffTightImage
+                travelHandoffTightImage = nil
+
                 if let focusedCoord = stop.representativeLocation?.clCoordinate,
                    focusedCoord.latitude.isFinite, focusedCoord.longitude.isFinite {
 
-                    let neighborhoodSpan = MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)
-                    let wideRegion  = MKCoordinateRegion(center: focusedCoord, span: neighborhoodSpan)
-                    let tightRegion = MKCoordinateRegion(center: focusedCoord,
-                                                         span: MKCoordinateSpan(latitudeDelta: 0.003, longitudeDelta: 0.003))
-
-                    let previousIdx = placeIdx - 1
-                    let previousHasMapPin: Bool = {
-                        guard placeIdx > 0,
-                              let loc = stops[previousIdx].representativeLocation else { return false }
-                        let c = loc.clCoordinate
-                        return c.latitude.isFinite && c.longitude.isFinite
-                    }()
-                    /// First stop of the day: pan from full-day overview into neighborhood. Later stops: stay at
-                    /// neighborhood zoom and pan from the previous marker’s frame so export does not zoom out again.
-                    let panFromRegion: MKCoordinateRegion = {
-                        guard placeIdx > 0, previousHasMapPin,
-                              let prevCoord = stops[previousIdx].representativeLocation?.clCoordinate,
-                              prevCoord.latitude.isFinite, prevCoord.longitude.isFinite else {
-                            return dayOverviewRegion
-                        }
-                        return MKCoordinateRegion(center: prevCoord, span: neighborhoodSpan)
-                    }()
-
-                    // Pre-fetch zoom snapshots and thumbnails concurrently with the pan.
-                    // The pan takes ~1.5 s (14 real MapKit calls); starting these here means they
-                    // will be ready (or near-ready) the moment the zoom loop finishes, so no
-                    // stall freezes the last zoom frame before the overlay reveal begins.
-                    async let wideSnapFetch = MapSnapshotHelper.generateSnapshotAtRegion(
-                        region: wideRegion,
-                        focusedStopIndex: placeIdx,
-                        allStops: stops,
-                        logicalSize: logicalSize,
-                        displayScale: exportMapDisplayScale,
-                        showPlaceNamePillForFocused: false,
-                        showFocusedMarker: false,
-                        showDistancePills: false  // crop-scaled during zoom animation — pills must not be baked in
-                    )
-                    async let tightSnapFetch = MapSnapshotHelper.generateSnapshotAtRegion(
-                        region: tightRegion,
-                        focusedStopIndex: placeIdx,
-                        allStops: stops,
-                        logicalSize: logicalSize,
-                        displayScale: exportMapDisplayScale,
-                        showPlaceNamePillForFocused: true,
-                        showDistancePills: false  // tight view (0.003°) — adjacent stops are out of frame
-                    )
-                    async let photoThumbsFetch = loadThumbnailsForPlaceMapOverlay(stop: stop)
-
-                    // 1. Pan: day-wide (first stop only) or neighborhood → neighborhood around the focus.
-                    let panDt = cinematicPanFrameDurationSeconds
-                    let handoffEnd = cinematicPanHandoffPreviousHighlightFrames + cinematicPanHandoffAllMutedFrames
-                    try await MapSnapshotHelper.forEachInterpolatedFrame(
-                        from: panFromRegion, to: wideRegion,
-                        allStops: stops,
-                        focusedStopIndexForFrame: { frameIdx in
-                            if placeIdx == 0 { return 0 }
-                            guard previousHasMapPin else { return placeIdx }
-                            if frameIdx < cinematicPanHandoffPreviousHighlightFrames { return previousIdx }
-                            if frameIdx < handoffEnd { return nil }
-                            return placeIdx
-                        },
-                        showPlaceNamePillForFrame: { frameIdx in
-                            guard frameIdx >= handoffEnd else { return false }
-                            if placeIdx == 0 { return true }
-                            return previousHasMapPin
-                        },
-                        logicalSize: logicalSize, displayScale: exportMapDisplayScale,
-                        frameCount: cinematicPanFrameCount, inclusiveEndpoints: true,
-                        showDistancePills: false  // pan frames change zoom level — pills would scale with the map
-                    ) { img in
-                        let out = autoreleasepool {
-                            let withHeader = mapSnapshotWithFirstPlaceDayHeaderIfNeeded(
-                                placeIdx: placeIdx, mapImage: img, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize
-                            )
-                            return applyingPoweredByBloggoWatermarkIfNeeded(
-                                to: withHeader, pixelSize: pixelSize, show: isFirstMapSegmentInVideo
-                            )
-                        }
-                        try await frameHandler(out, panDt)
-                    }
-
-                    let zoomDt = cinematicZoomFrameDurationSeconds
-
-                    // 2. Zoom-in to POI — await pre-fetched snapshots (ran concurrently with pan).
+                    var photoThumbs: [UIImage] = []
                     var lastZoomFrame: UIImage?
-                    let wideSnap = await wideSnapFetch
-                    let tightSnap = await tightSnapFetch
-                    let photoThumbs = await photoThumbsFetch
-                    if let wideSnap, let tightSnap {
-                        lastZoomFrame = tightSnap
-                        let blendCount = cinematicZoomBlendFrameCount
-                        let zoomRatio = CGFloat(wideRegion.span.latitudeDelta / tightRegion.span.latitudeDelta)
-                        // Fixed-size overlay (circle halo + colored pin + name pill) composited over the
-                        // zoom frames at a constant size — not crop-scaled with the map tiles.
-                        let focusedOverlay = MapSnapshotHelper.generateFocusedMarkerOverlay(
-                            displayNumber: placeIdx + 1,
-                            totalCount: stops.count,
-                            title: stop.placeTitle,
-                            logicalSize: logicalSize,
-                            displayScale: exportMapDisplayScale
-                        )
-                        for fi in 0..<blendCount {
-                            try Task.checkCancellation()
-                            let rawT = blendCount > 1 ? CGFloat(fi) / CGFloat(blendCount - 1) : 1
-                            let blended = autoreleasepool {
-                                drawZoomBlendFrame(
-                                    wideImage: wideSnap, tightImage: tightSnap,
-                                    overlayImage: focusedOverlay,
-                                    progress: rawT,
-                                    zoomRatio: zoomRatio,
-                                    size: pixelSize
-                                )
+
+                    if let handoffTight {
+                        // Travel transition already zoomed into this stop — skip pan + zoom.
+                        lastZoomFrame = handoffTight
+                        photoThumbs = await loadThumbnailsForPlaceMapOverlay(stop: stop)
+                    } else {
+                        let neighborhoodSpan = MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)
+                        let wideRegion  = MKCoordinateRegion(center: focusedCoord, span: neighborhoodSpan)
+                        let tightRegion = MKCoordinateRegion(center: focusedCoord,
+                                                             span: MKCoordinateSpan(latitudeDelta: 0.003, longitudeDelta: 0.003))
+
+                        let previousIdx = placeIdx - 1
+                        let previousHasMapPin: Bool = {
+                            guard placeIdx > 0,
+                                  let loc = stops[previousIdx].representativeLocation else { return false }
+                            let c = loc.clCoordinate
+                            return c.latitude.isFinite && c.longitude.isFinite
+                        }()
+                        /// First stop of the day: pan from full-day overview into neighborhood. Later stops: stay at
+                        /// neighborhood zoom and pan from the previous marker’s frame so export does not zoom out again.
+                        let panFromRegion: MKCoordinateRegion = {
+                            guard placeIdx > 0, previousHasMapPin,
+                                  let prevCoord = stops[previousIdx].representativeLocation?.clCoordinate,
+                                  prevCoord.latitude.isFinite, prevCoord.longitude.isFinite else {
+                                return dayOverviewRegion
                             }
+                            return MKCoordinateRegion(center: prevCoord, span: neighborhoodSpan)
+                        }()
+
+                        // Pre-fetch zoom snapshots and thumbnails concurrently with the pan.
+                        // The pan takes ~1.5 s (14 real MapKit calls); starting these here means they
+                        // will be ready (or near-ready) the moment the zoom loop finishes, so no
+                        // stall freezes the last zoom frame before the overlay reveal begins.
+                        async let wideSnapFetch = MapSnapshotHelper.generateSnapshotAtRegion(
+                            region: wideRegion,
+                            focusedStopIndex: placeIdx,
+                            allStops: stops,
+                            logicalSize: logicalSize,
+                            displayScale: exportMapDisplayScale,
+                            showPlaceNamePillForFocused: false,
+                            showFocusedMarker: false,
+                            showDistancePills: false  // crop-scaled during zoom animation — pills must not be baked in
+                        )
+                        async let tightSnapFetch = MapSnapshotHelper.generateSnapshotAtRegion(
+                            region: tightRegion,
+                            focusedStopIndex: placeIdx,
+                            allStops: stops,
+                            logicalSize: logicalSize,
+                            displayScale: exportMapDisplayScale,
+                            showPlaceNamePillForFocused: true,
+                            showDistancePills: false  // tight view (0.003°) — adjacent stops are out of frame
+                        )
+                        async let photoThumbsFetch = loadThumbnailsForPlaceMapOverlay(stop: stop)
+
+                        // 1. Pan: day-wide (first stop only) or neighborhood → neighborhood around the focus.
+                        let panDt = cinematicPanFrameDurationSeconds
+                        let handoffEnd = cinematicPanHandoffPreviousHighlightFrames + cinematicPanHandoffAllMutedFrames
+                        try await MapSnapshotHelper.forEachInterpolatedFrame(
+                            from: panFromRegion, to: wideRegion,
+                            allStops: stops,
+                            focusedStopIndexForFrame: { frameIdx in
+                                if placeIdx == 0 { return 0 }
+                                guard previousHasMapPin else { return placeIdx }
+                                if frameIdx < cinematicPanHandoffPreviousHighlightFrames { return previousIdx }
+                                if frameIdx < handoffEnd { return nil }
+                                return placeIdx
+                            },
+                            showPlaceNamePillForFrame: { frameIdx in
+                                guard frameIdx >= handoffEnd else { return false }
+                                if placeIdx == 0 { return true }
+                                return previousHasMapPin
+                            },
+                            logicalSize: logicalSize, displayScale: exportMapDisplayScale,
+                            frameCount: cinematicPanFrameCount, inclusiveEndpoints: true,
+                            showDistancePills: false  // pan frames change zoom level — pills would scale with the map
+                        ) { img in
                             let out = autoreleasepool {
                                 let withHeader = mapSnapshotWithFirstPlaceDayHeaderIfNeeded(
-                                    placeIdx: placeIdx, mapImage: blended, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize
+                                    placeIdx: placeIdx, mapImage: img, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize
                                 )
                                 return applyingPoweredByBloggoWatermarkIfNeeded(
                                     to: withHeader, pixelSize: pixelSize, show: isFirstMapSegmentInVideo
                                 )
                             }
-                            try await frameHandler(out, zoomDt)
+                            try await frameHandler(out, panDt)
+                        }
+
+                        let zoomDt = cinematicZoomFrameDurationSeconds
+
+                        // 2. Zoom-in to POI — await pre-fetched snapshots (ran concurrently with pan).
+                        let wideSnap = await wideSnapFetch
+                        let tightSnap = await tightSnapFetch
+                        photoThumbs = await photoThumbsFetch
+                        if let wideSnap, let tightSnap {
+                            lastZoomFrame = tightSnap
+                            let blendCount = cinematicZoomBlendFrameCount
+                            let zoomRatio = CGFloat(wideRegion.span.latitudeDelta / tightRegion.span.latitudeDelta)
+                            // Fixed-size overlay (circle halo + colored pin + name pill) composited over the
+                            // zoom frames at a constant size — not crop-scaled with the map tiles.
+                            let focusedOverlay = MapSnapshotHelper.generateFocusedMarkerOverlay(
+                                displayNumber: placeIdx + 1,
+                                totalCount: stops.count,
+                                title: stop.placeTitle,
+                                logicalSize: logicalSize,
+                                displayScale: exportMapDisplayScale
+                            )
+                            for fi in 0..<blendCount {
+                                try Task.checkCancellation()
+                                let rawT = blendCount > 1 ? CGFloat(fi) / CGFloat(blendCount - 1) : 1
+                                let blended = autoreleasepool {
+                                    drawZoomBlendFrame(
+                                        wideImage: wideSnap, tightImage: tightSnap,
+                                        overlayImage: focusedOverlay,
+                                        progress: rawT,
+                                        zoomRatio: zoomRatio,
+                                        size: pixelSize
+                                    )
+                                }
+                                let out = autoreleasepool {
+                                    let withHeader = mapSnapshotWithFirstPlaceDayHeaderIfNeeded(
+                                        placeIdx: placeIdx, mapImage: blended, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize
+                                    )
+                                    return applyingPoweredByBloggoWatermarkIfNeeded(
+                                        to: withHeader, pixelSize: pixelSize, show: isFirstMapSegmentInVideo
+                                    )
+                                }
+                                try await frameHandler(out, zoomDt)
+                            }
+                        }
+                    } // end of handoff vs. normal branch
+
+                    if let tightMap = lastZoomFrame {
+                        let mapForPlaceOverlay = autoreleasepool {
+                            mapSnapshotWithFirstPlaceDayHeaderIfNeeded(
+                                placeIdx: placeIdx, mapImage: tightMap, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize
+                            )
+                        }
+                        let overlaid = try await emitFocusedPlaceOverlayReveal(
+                            mapImageWithHeader: mapForPlaceOverlay,
+                            stop: stop,
+                            focusedPlaceIndex: placeIdx,
+                            allStops: stops,
+                            pixelSize: pixelSize,
+                            photoThumbnails: photoThumbs,
+                            isFirstMapSegmentInVideo: isFirstMapSegmentInVideo,
+                            frameHandler: frameHandler
+                        )
+                        lastFocusedMapCompositeForPhotoTransition = overlaid
+                        if let thumb = firstThumbnailCellOnFocusedPlaceMap(
+                            pixelSize: pixelSize, stop: stop, photoThumbnails: photoThumbs
+                        ) {
+                            mapToPhotoThumbCell = thumb.rect
+                            mapToPhotoThumbCorner = thumb.cornerRadius
                         }
                     }
-                        if let tightMap = lastZoomFrame {
-                            let mapForPlaceOverlay = autoreleasepool {
-                                mapSnapshotWithFirstPlaceDayHeaderIfNeeded(
-                                    placeIdx: placeIdx, mapImage: tightMap, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize
-                                )
-                            }
-                            let overlaid = try await emitFocusedPlaceOverlayReveal(
-                                mapImageWithHeader: mapForPlaceOverlay,
-                                stop: stop,
-                                focusedPlaceIndex: placeIdx,
-                                allStops: stops,
-                                pixelSize: pixelSize,
-                                photoThumbnails: photoThumbs,
-                                isFirstMapSegmentInVideo: isFirstMapSegmentInVideo,
-                                frameHandler: frameHandler
-                            )
-                            lastFocusedMapCompositeForPhotoTransition = overlaid
-                            if let thumb = firstThumbnailCellOnFocusedPlaceMap(
-                                pixelSize: pixelSize, stop: stop, photoThumbnails: photoThumbs
-                            ) {
-                                mapToPhotoThumbCell = thumb.rect
-                                mapToPhotoThumbCorner = thumb.cornerRadius
-                            }
-                        }
+
+                    // Record this stop so the persistent trail grows with each visit.
+                    if let c = stop.representativeLocation?.clCoordinate,
+                       c.latitude.isFinite, c.longitude.isFinite {
+                        visitedTrailCoords.append(c)
+                    }
 
                     let stopCount = Double(max(stops.count, 1))
                     progressHandler?((Double(dayIdx) + Double(placeIdx + 1) / stopCount) / totalDays)
@@ -407,63 +432,179 @@ enum CinematicBlogVideoBuilder {
                     }
                 }
 
-                // Fade last photo into the next map segment's starting frame
+                // Transition to next stop: travel animation (path reveal + vehicle icon) for
+                // same-day moves; simple cross-dissolve to the next day's overview for day changes.
                 let isLastPlaceOverall = (dayIdx == days.count - 1) && (placeIdx == stops.count - 1)
+                let isLastPlaceOfDay   = placeIdx == stops.count - 1
+
                 if !isLastPlaceOverall, let lastSlide = lastPhotoSlide {
-                    let neighborhoodSpanForFade = MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)
-                    let nextPanFromRegion: MKCoordinateRegion?
-                    if placeIdx + 1 < stops.count {
-                        // Next stop in same day — pan starts from neighbourhood around current stop
-                        if let coord = stop.representativeLocation?.clCoordinate,
-                           coord.latitude.isFinite, coord.longitude.isFinite {
-                            nextPanFromRegion = MKCoordinateRegion(center: coord, span: neighborhoodSpanForFade)
-                        } else {
-                            nextPanFromRegion = nil
-                        }
-                    } else if dayIdx + 1 < days.count {
-                        // First stop of the next day — pan starts from the day overview
-                        nextPanFromRegion = Self.dayOverviewRegion(for: days[dayIdx + 1].placeStops)
-                    } else {
-                        nextPanFromRegion = nil
-                    }
-                    let fadeStops: [PlaceStop]
-                    let fadeFocusIdx: Int
-                    if placeIdx + 1 < stops.count {
-                        fadeStops = stops
-                        fadeFocusIdx = placeIdx + 1
-                    } else if dayIdx + 1 < days.count {
-                        fadeStops = days[dayIdx + 1].placeStops
-                        fadeFocusIdx = 0
-                    } else {
-                        fadeStops = stops
-                        fadeFocusIdx = placeIdx
-                    }
-                    if let region = nextPanFromRegion,
-                       let nextMapBase = await MapSnapshotHelper.generateSnapshotAtRegion(
-                           region: region,
-                           focusedStopIndex: fadeFocusIdx,
-                           allStops: fadeStops,
-                           logicalSize: logicalSize,
-                           displayScale: exportMapDisplayScale,
-                           showPlaceNamePillForFocused: false,
-                           showDistancePills: false  // transition frame — not stable, pills would scale
-                       ) {
-                        let nextMapOut = autoreleasepool {
-                            applyingPoweredByBloggoWatermarkIfNeeded(to: nextMapBase, pixelSize: pixelSize, show: false)
-                        }
-                        let nFadeFrames = max(14, Int(round(lastPhotoToMapFadeSeconds * lastPhotoToMapFadeFPS)))
-                        let fadeDt = lastPhotoToMapFadeSeconds / Double(nFadeFrames)
-                        let denom = max(nFadeFrames - 1, 1)
-                        for fi in 0..<nFadeFrames {
-                            try Task.checkCancellation()
-                            let rawT = CGFloat(fi) / CGFloat(denom)
-                            let eased = easeInOutCubic(rawT)
-                            let blended = autoreleasepool {
-                                blendCoverToMap(from: lastSlide, to: nextMapOut, progress: eased, size: pixelSize)
+                    if isLastPlaceOfDay {
+                        // Cross-day transition: no map animation. Dissolve from the last photo of
+                        // this day directly into the next day's overview region; the next iteration
+                        // then starts its normal pan+zoom from that overview.
+                        let nextDayStops = days[dayIdx + 1].placeStops
+                        let nextDayOverview = Self.dayOverviewRegion(for: nextDayStops)
+                        if let nextMapBase = await MapSnapshotHelper.generateSnapshotAtRegion(
+                            region: nextDayOverview,
+                            focusedStopIndex: 0,
+                            allStops: nextDayStops,
+                            logicalSize: logicalSize,
+                            displayScale: exportMapDisplayScale,
+                            showPlaceNamePillForFocused: false,
+                            showDistancePills: false
+                        ) {
+                            let nextMapOut = autoreleasepool {
+                                applyingPoweredByBloggoWatermarkIfNeeded(to: nextMapBase, pixelSize: pixelSize, show: false)
                             }
-                            try await frameHandler(blended, fadeDt)
+                            let nFadeFrames = max(14, Int(round(lastPhotoToMapFadeSeconds * lastPhotoToMapFadeFPS)))
+                            let fadeDt = lastPhotoToMapFadeSeconds / Double(nFadeFrames)
+                            let denom = max(nFadeFrames - 1, 1)
+                            for fi in 0..<nFadeFrames {
+                                try Task.checkCancellation()
+                                let eased = easeInOutCubic(CGFloat(fi) / CGFloat(denom))
+                                let blended = autoreleasepool {
+                                    blendCoverToMap(from: lastSlide, to: nextMapOut, progress: eased, size: pixelSize)
+                                }
+                                try await frameHandler(blended, fadeDt)
+                            }
+                        }
+                        // travelHandoffTightImage stays nil → next day starts with its normal pan+zoom.
+                    } else {
+                    // Resolve the same-day next stop.
+                    let nextStop: PlaceStop = stops[placeIdx + 1]
+                    let transitionFromImage: UIImage = lastSlide
+
+                    // Pre-fetch BOTH wide (0.008°) and tight (0.003°) arrival snapshots concurrently
+                    // with the travel animation (~2 s), so both are ready for the two-stage zoom.
+                    let nextAllStops: [PlaceStop] = stops
+                    let nextFocusIdx: Int         = placeIdx + 1
+                    let arrivalWideTask = Task<UIImage?, Never> {
+                        guard let coord = nextStop.representativeLocation?.clCoordinate,
+                              coord.latitude.isFinite, coord.longitude.isFinite else { return nil }
+                        let region = MKCoordinateRegion(
+                            center: coord,
+                            span: MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)
+                        )
+                        return await MapSnapshotHelper.generateSnapshotAtRegion(
+                            region: region,
+                            focusedStopIndex: nextFocusIdx,
+                            allStops: nextAllStops,
+                            logicalSize: logicalSize,
+                            displayScale: exportMapDisplayScale,
+                            showPlaceNamePillForFocused: false,
+                            showFocusedMarker: false,
+                            showDistancePills: false
+                        )
+                    }
+                    let arrivalTightTask = Task<UIImage?, Never> {
+                        guard let coord = nextStop.representativeLocation?.clCoordinate,
+                              coord.latitude.isFinite, coord.longitude.isFinite else { return nil }
+                        let region = MKCoordinateRegion(
+                            center: coord,
+                            span: MKCoordinateSpan(latitudeDelta: 0.003, longitudeDelta: 0.003)
+                        )
+                        return await MapSnapshotHelper.generateSnapshotAtRegion(
+                            region: region,
+                            focusedStopIndex: nextFocusIdx,
+                            allStops: nextAllStops,
+                            logicalSize: logicalSize,
+                            displayScale: exportMapDisplayScale,
+                            showPlaceNamePillForFocused: true,
+                            showDistancePills: false
+                        )
+                    }
+
+                    // Travel animation: path reveal + vehicle icon.
+                    let travelLast = try await CinematicTravelSegment.emitTravelTransitionFrames(
+                        fromImage: transitionFromImage,
+                        fromStop: stop,
+                        toStop: nextStop,
+                        visitedTrailCoords: visitedTrailCoords,
+                        modeOverride: stop.transportModeToNextStop,
+                        logicalSize: logicalSize,
+                        pixelSize: pixelSize,
+                        displayScale: exportMapDisplayScale,
+                        frameHandler: frameHandler
+                    )
+
+                    // Arrival zoom: two-stage transition that mirrors the normal stop zoom animation.
+                    // Stage 1 — short dissolve from travel map → wide neighborhood (~0.25 s):
+                    //   bridges the spatial gap (travel map centers the full route, not just the destination).
+                    // Stage 2 — drawZoomBlendFrame wide → tight (~1.1 s):
+                    //   identical crop-zoom as the normal per-stop zoom, so arrival always looks smooth.
+                    if let travelEnd = travelLast,
+                       let wideArrival = await arrivalWideTask.value,
+                       let tightArrival = await arrivalTightTask.value {
+
+                        // Stage 1: dissolve travel map → wide neighborhood
+                        let dissolveFrames = max(5, Int((0.25 * TravelMode.fps).rounded()))
+                        let dissolveDt = 0.25 / Double(dissolveFrames)
+                        for di in 0..<dissolveFrames {
+                            try Task.checkCancellation()
+                            let t = CinematicTravelSegment.easeInOutCubic(CGFloat(di + 1) / CGFloat(dissolveFrames))
+                            let frame = autoreleasepool {
+                                CinematicTravelSegment.blendImages(from: travelEnd, to: wideArrival, progress: t, size: pixelSize)
+                            }
+                            try await frameHandler(frame, dissolveDt)
+                        }
+
+                        // Stage 2: crop-zoom wide → tight (same animation as the normal stop zoom)
+                        let arrivalZoomRatio = CGFloat(0.008 / 0.003)
+                        let focusedOverlay = MapSnapshotHelper.generateFocusedMarkerOverlay(
+                            displayNumber: nextFocusIdx + 1,
+                            totalCount: nextAllStops.count,
+                            title: nextStop.placeTitle,
+                            logicalSize: logicalSize,
+                            displayScale: exportMapDisplayScale
+                        )
+                        let blendCount = cinematicZoomBlendFrameCount
+                        let zoomDt = cinematicZoomFrameDurationSeconds
+                        for fi in 0..<blendCount {
+                            try Task.checkCancellation()
+                            let rawT = blendCount > 1 ? CGFloat(fi) / CGFloat(blendCount - 1) : 1
+                            let frame = autoreleasepool {
+                                drawZoomBlendFrame(
+                                    wideImage: wideArrival,
+                                    tightImage: tightArrival,
+                                    overlayImage: focusedOverlay,
+                                    progress: rawT,
+                                    zoomRatio: arrivalZoomRatio,
+                                    size: pixelSize
+                                )
+                            }
+                            try await frameHandler(frame, zoomDt)
+                        }
+                        travelHandoffTightImage = tightArrival
+                    }
+
+                    // Fallback plain cross-dissolve if travel animation couldn't generate frames
+                    // (missing coordinates, MapKit error, etc.).
+                    if travelLast == nil {
+                        if let coord = stop.representativeLocation?.clCoordinate,
+                           coord.latitude.isFinite, coord.longitude.isFinite,
+                           let nextMapBase = await MapSnapshotHelper.generateSnapshotAtRegion(
+                               region: MKCoordinateRegion(center: coord,
+                                                          span: MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)),
+                               focusedStopIndex: nextFocusIdx, allStops: nextAllStops,
+                               logicalSize: logicalSize, displayScale: exportMapDisplayScale,
+                               showPlaceNamePillForFocused: false, showDistancePills: false) {
+                            let nextMapOut = autoreleasepool {
+                                applyingPoweredByBloggoWatermarkIfNeeded(to: nextMapBase, pixelSize: pixelSize, show: false)
+                            }
+                            let nFadeFrames = max(14, Int(round(lastPhotoToMapFadeSeconds * lastPhotoToMapFadeFPS)))
+                            let fadeDt = lastPhotoToMapFadeSeconds / Double(nFadeFrames)
+                            let denom = max(nFadeFrames - 1, 1)
+                            for fi in 0..<nFadeFrames {
+                                try Task.checkCancellation()
+                                let eased = easeInOutCubic(CGFloat(fi) / CGFloat(denom))
+                                let blended = autoreleasepool {
+                                    blendCoverToMap(from: lastSlide, to: nextMapOut, progress: eased, size: pixelSize)
+                                }
+                                try await frameHandler(blended, fadeDt)
+                            }
                         }
                     }
+                    } // end same-day else branch
                 }
             }
 

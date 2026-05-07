@@ -18,6 +18,10 @@ struct PlaceStopActionSheet: View {
     var onMergePlaces: (() -> Void)?
     /// Non-nil when the stop has more than one photo and can be split.
     var onSplit: (() -> Void)?
+    /// Non-nil when there is a next stop to travel to. Opens the transport mode picker.
+    var onSetTransportMode: (() -> Void)?
+    /// The currently chosen transport mode for the leg to the next stop (nil = auto-detect).
+    var currentTransportMode: TravelMode?
     var onRemoveFromBlog: () -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -67,7 +71,11 @@ struct PlaceStopActionSheet: View {
             }
             if onSplit != nil { section2Rows += 1 }
             height += CGFloat(section2Rows) * rowH + CGFloat(section2Dividers)
-            height += 20
+            height += 12
+        }
+
+        if onSetTransportMode != nil {
+            height += rowH + 12
         }
 
         height += rowH
@@ -174,7 +182,44 @@ struct PlaceStopActionSheet: View {
                 .padding(.bottom, 20)
             }
 
-            // Section 3: Destructive Action
+            // Section 3: Transport mode to next stop (optional)
+            if let onSetTransport = onSetTransportMode {
+                VStack(spacing: 0) {
+                    let modeLabel: String = currentTransportMode?.displayName ?? "Auto-detect"
+                    let modeIcon: String  = currentTransportMode?.sfSymbolName ?? "wand.and.stars"
+                    Button(action: {
+                        dismiss()
+                        onSetTransport()
+                    }) {
+                        HStack(spacing: 12) {
+                            Image(systemName: modeIcon)
+                                .font(.body)
+                                .foregroundColor(currentTransportMode.map { Color(uiColor: $0.tintColor) } ?? .secondary)
+                                .frame(width: 24)
+                            Text("Transport to Next Stop")
+                                .font(.body)
+                                .foregroundColor(.white)
+                            Spacer()
+                            Text(modeLabel)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 16)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .background(Color(white: 0.15))
+                .appChromeCornerRadius(12)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+            }
+
+            // Section 4: Destructive Action
             VStack(spacing: 0) {
                 Button(action: {
                     dismiss()

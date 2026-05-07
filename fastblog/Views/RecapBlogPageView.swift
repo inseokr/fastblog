@@ -150,6 +150,7 @@ struct RecapBlogPageView: View {
     /// Require swipes to begin at the screen edge to avoid fighting inner horizontal carousels.
     private let daySwipeEdgeInset: CGFloat = 80
     @State private var overflowStop: OverflowItem?
+    @State private var transportModePickerItem: OverflowItem?
     @State private var mergeSelectionItem: MergeSelectionItem?
     @State private var showEditNameForStop: PlaceStop?
     @State private var placeCategoryPickerTarget: PlaceCategoryPickerTarget?
@@ -1126,7 +1127,28 @@ struct RecapBlogPageView: View {
                     onSplit: displayablePhotoCount > 1 ? {
                         presentSplitPlaceStopSheet(dayId: item.dayId, stop: item.stop)
                     } : nil,
+                    onSetTransportMode: nextStop(dayId: item.dayId, stopId: item.stop.id) != nil ? {
+                        transportModePickerItem = item
+                    } : nil,
+                    currentTransportMode: item.stop.transportModeToNextStop,
                     onRemoveFromBlog: { removePlaceStop(dayId: item.dayId, stopId: item.stop.id) }
+                )
+            }
+            .sheet(item: $transportModePickerItem) { item in
+                let next = nextStop(dayId: item.dayId, stopId: item.stop.id)
+                let autoMode: TravelMode? = {
+                    guard let a = item.stop.representativeLocation?.clCoordinate,
+                          let b = next?.representativeLocation?.clCoordinate else { return nil }
+                    return TravelMode.detect(from: a, to: b)
+                }()
+                TransportModePickerSheet(
+                    fromPlaceTitle: item.stop.placeTitle,
+                    toPlaceTitle: next?.placeTitle ?? "Next Stop",
+                    autoDetectedMode: autoMode,
+                    currentMode: item.stop.transportModeToNextStop,
+                    onSelect: { mode in
+                        setTransportMode(mode, dayId: item.dayId, stopId: item.stop.id)
+                    }
                 )
             }
             .sheet(item: $mergeSelectionItem) { item in
@@ -2914,14 +2936,55 @@ struct RecapBlogPageView: View {
                 
                 if index < day.placeStops.count - 1 {
                     let nextStop = day.placeStops[index + 1]
-                    HStack {
-                        if !isEditMode, let dist = distanceString(from: stop, to: nextStop) {
-                            Image(systemName: "arrow.down")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                    let manualMode = stop.transportModeToNextStop
+                    let effectiveMode: TravelMode? = manualMode ?? {
+                        guard let a = stop.representativeLocation?.clCoordinate,
+                              let b = nextStop.representativeLocation?.clCoordinate,
+                              a.latitude.isFinite, b.latitude.isFinite else { return nil }
+                        return TravelMode.detect(from: a, to: b)
+                    }()
+                    let pillTint: Color = effectiveMode.map { Color(uiColor: $0.tintColor) } ?? .secondary
+                    let isManual = manualMode != nil
+
+                    HStack(alignment: .center, spacing: 10) {
+                        // Route connector: stub lines above/below the pill to imply a path
+                        VStack(spacing: 0) {
+                            Rectangle()
+                                .fill(pillTint.opacity(0.35))
+                                .frame(width: 2, height: 8)
+                            Button {
+                                transportModePickerItem = OverflowItem(dayId: day.id, stop: stop)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: effectiveMode?.sfSymbolName ?? "arrow.down")
+                                        .font(.caption2.weight(.semibold))
+                                    Text(effectiveMode?.displayName ?? "—")
+                                        .font(.caption.weight(.medium))
+                                    if isEditMode {
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.system(size: 8, weight: .semibold))
+                                            .opacity(0.55)
+                                    }
+                                }
+                                .foregroundColor(pillTint.opacity(isManual ? 1.0 : 0.75))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(pillTint.opacity(isManual ? 0.14 : 0.09))
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(pillTint.opacity(isManual ? 0.3 : 0.15), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            Rectangle()
+                                .fill(pillTint.opacity(0.35))
+                                .frame(width: 2, height: 8)
+                        }
+
+                        if let dist = distanceString(from: stop, to: nextStop) {
                             Text(dist)
-                                .font(.caption)
-                                .fontWeight(.semibold)
+                                .font(.caption.weight(.semibold))
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
@@ -2942,7 +3005,7 @@ struct RecapBlogPageView: View {
                     }
                     .padding(.leading, 16)
                     .padding(.trailing, 16)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 2)
                 }
             }
         }
@@ -4443,6 +4506,22 @@ Your blog remains private unless you choose to share it.
         for d in draft.days {
             if let s = d.placeStops.first(where: { $0.id == stopId }) { return s }
         }
+        return nil
+    }
+
+    private func setTransportMode(_ mode: TravelMode?, dayId: UUID, stopId: UUID) {
+        guard let dayIndex = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIndex = draft.days[dayIndex].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+        draft.days[dayIndex].placeStops[stopIndex].transportModeToNextStop = mode
+    }
+
+    /// Returns the next PlaceStop after the given stop (same day or first of next day), if any.
+    private func nextStop(dayId: UUID, stopId: UUID) -> PlaceStop? {
+        guard let dayIndex = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIndex = draft.days[dayIndex].placeStops.firstIndex(where: { $0.id == stopId }) else { return nil }
+        let day = draft.days[dayIndex]
+        if stopIndex + 1 < day.placeStops.count { return day.placeStops[stopIndex + 1] }
+        if dayIndex + 1 < draft.days.count { return draft.days[dayIndex + 1].placeStops.first }
         return nil
     }
 

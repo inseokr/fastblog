@@ -983,6 +983,70 @@ class MapSnapshotHelper {
         )
     }
 
+    /// Returns a base map image (with from/to markers drawn) **and** the raw `MKMapSnapshot` so the
+    /// caller can use `snapshot.point(for:)` for coordinate→pixel conversion in overlay animations.
+    /// `travelStops` is typically `[fromStop, toStop]`; `fromStopIndex` / `toStopIndex` control which
+    /// markers are highlighted vs. muted.
+    static func generateSnapshotForTravel(
+        region: MKCoordinateRegion,
+        travelStops: [PlaceStop],
+        fromStopIndex: Int,
+        toStopIndex: Int,
+        logicalSize: CGSize,
+        displayScale: CGFloat
+    ) async -> (markedImage: UIImage, snapshot: MKMapSnapshotter.Snapshot)? {
+        let entries = buildMarkerEntries(allStops: travelStops, focusedStopIndex: toStopIndex)
+        guard !entries.isEmpty else { return nil }
+        let opts = MKMapSnapshotter.Options()
+        opts.region = validatedSnapshotRegion(region, fallbackCenter: entries[0].coord)
+        opts.size = logicalSize
+        opts.scale = displayScale
+        opts.mapType = .standard
+        opts.traitCollection = UITraitCollection(userInterfaceStyle: .light)
+        do {
+            let snapshot = try await MKMapSnapshotter(options: opts).start()
+            UIGraphicsBeginImageContextWithOptions(snapshot.image.size, true, snapshot.image.scale)
+            defer { UIGraphicsEndImageContext() }
+            guard let context = UIGraphicsGetCurrentContext() else { return nil }
+            context.interpolationQuality = .high
+            snapshot.image.draw(at: .zero)
+
+            // Dashed route polyline between the travel stops
+            if entries.count >= 2 {
+                context.saveGState()
+                context.setStrokeColor(UIColor.systemBlue.withAlphaComponent(0.30).cgColor)
+                context.setLineWidth(2.5)
+                context.setLineDash(phase: 0, lengths: [7, 5])
+                context.beginPath()
+                for (i, entry) in entries.enumerated() {
+                    let pt = snapshot.point(for: entry.coord)
+                    if i == 0 { context.move(to: pt) } else { context.addLine(to: pt) }
+                }
+                context.strokePath()
+                context.restoreGState()
+            }
+
+            // Markers: highlighted for from/to, muted for all others
+            for (i, entry) in entries.enumerated() {
+                let pt = snapshot.point(for: entry.coord)
+                let isHighlighted = (i == fromStopIndex || i == toStopIndex)
+                if isHighlighted {
+                    let color: UIColor = i == 0 ? .systemGreen
+                        : (i == entries.count - 1 ? .systemOrange : .systemBlue)
+                    drawMarker(at: pt, number: entry.displayNumber, color: color, context: context)
+                } else {
+                    drawSmallMutedMarker(at: pt, number: entry.displayNumber, context: context)
+                }
+            }
+
+            guard let markedImage = UIGraphicsGetImageFromCurrentImageContext() else { return nil }
+            return (markedImage, snapshot)
+        } catch {
+            debugPrint("[MapSnapshotHelper] generateSnapshotForTravel: \(error)")
+            return nil
+        }
+    }
+
     /// Generates a transparent overlay image (same logical size/scale as a snapshot) containing only
     /// the focused-stop circle halo, coloured marker dot, and place-name pill — all drawn at a fixed
     /// size centered on the canvas.  Composite this over a map base during zoom frames so the overlay

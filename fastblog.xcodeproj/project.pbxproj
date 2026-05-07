@@ -78,6 +78,7 @@
 		BB000146 /* PhotosPermissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000145 /* PhotosPermissionView.swift */; };
 		BB000148 /* PlacePhotoModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000147 /* PlacePhotoModalView.swift */; };
 		BB00014A /* PlaceStopActionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000149 /* PlaceStopActionSheet.swift */; };
+		BB0003E5 /* TransportModePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E4 /* TransportModePickerSheet.swift */; };
 		BB00014C /* PlaceStopRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00014B /* PlaceStopRowView.swift */; };
 		BB00014E /* PrivacyPolicyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00014D /* PrivacyPolicyView.swift */; };
 		BB000150 /* ProfileMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00014F /* ProfileMapView.swift */; };
@@ -196,6 +197,7 @@
 		BB0002B3 /* SlideshowMusicPlaybackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */; };
 		BB0002B5 /* SlideshowBundledMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B4 /* SlideshowBundledMusic.swift */; };
 		BB0002B7 /* BlogVideoExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B6 /* BlogVideoExportService.swift */; };
+		BB000310 /* CinematicTravelSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000311 /* CinematicTravelSegment.swift */; };
 		BB0002B9 /* BlogVideoExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B8 /* BlogVideoExportOptionsSheet.swift */; };
 		BB00030C /* BlogVideoPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00030D /* BlogVideoPreviewView.swift */; };
 		BB0002BA /* CinematicBlogVideoBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002BB /* CinematicBlogVideoBuilder.swift */; };
@@ -336,6 +338,7 @@
 		BB000145 /* PhotosPermissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotosPermissionView.swift; sourceTree = "<group>"; };
 		BB000147 /* PlacePhotoModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePhotoModalView.swift; sourceTree = "<group>"; };
 		BB000149 /* PlaceStopActionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopActionSheet.swift; sourceTree = "<group>"; };
+		BB0003E4 /* TransportModePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportModePickerSheet.swift; sourceTree = "<group>"; };
 		BB00014B /* PlaceStopRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopRowView.swift; sourceTree = "<group>"; };
 		BB00014D /* PrivacyPolicyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyPolicyView.swift; sourceTree = "<group>"; };
 		BB00014F /* ProfileMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMapView.swift; sourceTree = "<group>"; };
@@ -458,6 +461,7 @@
 		BB0002B8 /* BlogVideoExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoExportOptionsSheet.swift; path = StoryBook/BlogVideoExportOptionsSheet.swift; sourceTree = "<group>"; };
 		BB00030D /* BlogVideoPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoPreviewView.swift; path = StoryBook/BlogVideoPreviewView.swift; sourceTree = "<group>"; };
 		BB0002BB /* CinematicBlogVideoBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicBlogVideoBuilder.swift; sourceTree = "<group>"; };
+		BB000311 /* CinematicTravelSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicTravelSegment.swift; sourceTree = "<group>"; };
 		BB0002C2 /* PlaceStopCategoryPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopCategoryPickerSheet.swift; sourceTree = "<group>"; };
 		BB0002C4 /* PlacePOICategoryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePOICategoryPresentation.swift; sourceTree = "<group>"; };
 		BB0002C8 /* PlacePOICategoryCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePOICategoryCatalog.swift; sourceTree = "<group>"; };
@@ -700,6 +704,7 @@
 				BB000145 /* PhotosPermissionView.swift */,
 				BB000147 /* PlacePhotoModalView.swift */,
 				BB000149 /* PlaceStopActionSheet.swift */,
+				BB0003E4 /* TransportModePickerSheet.swift */,
 				BB00014B /* PlaceStopRowView.swift */,
 				BB0002C2 /* PlaceStopCategoryPickerSheet.swift */,
 				BB0002C4 /* PlacePOICategoryPresentation.swift */,
@@ -832,6 +837,7 @@
 				BB0002B4 /* SlideshowBundledMusic.swift */,
 				BB0002B6 /* BlogVideoExportService.swift */,
 				BB0002BB /* CinematicBlogVideoBuilder.swift */,
+				BB000311 /* CinematicTravelSegment.swift */,
 				BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */,
 				BB000221 /* PhotoTagService.swift */,
 				BB000197 /* PhotosAuthorizationManager.swift */,
@@ -1039,6 +1045,7 @@
 				BB000146 /* PhotosPermissionView.swift in Sources */,
 				BB000148 /* PlacePhotoModalView.swift in Sources */,
 				BB00014A /* PlaceStopActionSheet.swift in Sources */,
+				BB0003E5 /* TransportModePickerSheet.swift in Sources */,
 				BB00014C /* PlaceStopRowView.swift in Sources */,
 				BB0002C1 /* PlaceStopCategoryPickerSheet.swift in Sources */,
 				BB0002C3 /* PlacePOICategoryPresentation.swift in Sources */,
@@ -1120,6 +1127,7 @@
 				BB0002B9 /* BlogVideoExportOptionsSheet.swift in Sources */,
 				BB00030C /* BlogVideoPreviewView.swift in Sources */,
 				BB0002BA /* CinematicBlogVideoBuilder.swift in Sources */,
+				BB000310 /* CinematicTravelSegment.swift in Sources */,
 				BB0002B3 /* SlideshowMusicPlaybackCoordinator.swift in Sources */,
 				BB000220 /* PhotoTagService.swift in Sources */,
 				BB000222 /* StoryCaptionGenerator.swift in Sources */,
