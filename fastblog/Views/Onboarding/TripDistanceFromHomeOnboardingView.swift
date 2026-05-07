@@ -15,6 +15,7 @@ struct TripDistanceFromHomeOnboardingView: View {
     @State private var showHeadline = false
     @State private var showBody = false
     @State private var showControls = false
+    @State private var didPlaySliderThumbHint = false
 
     var body: some View {
         ZStack {
@@ -90,7 +91,7 @@ struct TripDistanceFromHomeOnboardingView: View {
                             .foregroundColor(.white.opacity(0.75))
                     }
 
-                    Slider(
+                    TripExclusionMilesSlider(
                         value: Binding(
                             get: { tripExclusionRadius },
                             set: { newValue in
@@ -98,10 +99,10 @@ struct TripDistanceFromHomeOnboardingView: View {
                                 NeighborhoodStore.tripExclusionRadiusMiles = newValue
                             }
                         ),
-                        in: 5...200,
-                        step: 1
+                        range: 5...200,
+                        step: 1,
+                        tint: OnboardingConstants.Colors.doneButtonBlue
                     )
-                    .tint(OnboardingConstants.Colors.doneButtonBlue)
 
                     VStack(alignment: .leading, spacing: 10) {
                         hintRow(
@@ -143,6 +144,9 @@ struct TripDistanceFromHomeOnboardingView: View {
             tripExclusionRadius = NeighborhoodStore.tripExclusionRadiusMiles
             startStaggeredAnimation()
         }
+        .onChange(of: showControls) { _, isVisible in
+            if isVisible { scheduleSliderThumbHint() }
+        }
     }
 
     private func hintRow(_ text: String) -> some View {
@@ -172,6 +176,89 @@ struct TripDistanceFromHomeOnboardingView: View {
         withAnimation(.easeOut(duration: duration).delay(0.65)) {
             showControls = true
         }
+    }
+
+    private func scheduleSliderThumbHint() {
+        guard !didPlaySliderThumbHint else { return }
+        didPlaySliderThumbHint = true
+        let defaultRadius = NeighborhoodStore.tripExclusionRadiusMiles
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(850))
+            // Slide right to hint that this is a horizontal drag
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.78)) {
+                tripExclusionRadius = min(defaultRadius + 30, 200)
+            }
+            try? await Task.sleep(for: .milliseconds(600))
+            // Snap back to the default
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.78)) {
+                tripExclusionRadius = defaultRadius
+            }
+        }
+    }
+}
+
+// MARK: - Miles slider (custom thumb so we can hint vertical drag affordance)
+
+private struct TripExclusionMilesSlider: View {
+    @Binding var value: Double
+    var range: ClosedRange<Double>
+    var step: Double
+    var tint: Color
+
+    private let thumbDiameter: CGFloat = 28
+    private let trackHeight: CGFloat = 4
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let thumbR = thumbDiameter / 2
+            let usable = max(width - thumbDiameter, 1)
+            let t = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+            let thumbCenterX = thumbR + CGFloat(t) * usable
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.28))
+                    .frame(height: trackHeight)
+                    .frame(maxWidth: .infinity)
+
+                Capsule()
+                    .fill(tint)
+                    .frame(width: max(trackHeight, thumbCenterX), height: trackHeight)
+
+                Circle()
+                    .fill(.white)
+                    .frame(width: thumbDiameter, height: thumbDiameter)
+                    .shadow(color: .black.opacity(0.22), radius: 3, y: 1)
+                    .offset(x: thumbCenterX - thumbR)
+            }
+            .frame(height: thumbDiameter)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        let x = min(max(gesture.location.x, thumbR), width - thumbR)
+                        let fraction = (x - thumbR) / usable
+                        let raw = range.lowerBound + Double(fraction) * (range.upperBound - range.lowerBound)
+                        let stepped = (raw / step).rounded() * step
+                        value = min(range.upperBound, max(range.lowerBound, stepped))
+                    }
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Exclude photos closer than")
+            .accessibilityValue("\(Int(value)) miles")
+            .accessibilityAdjustableAction { direction in
+                let delta: Double
+                switch direction {
+                case .increment: delta = step
+                case .decrement: delta = -step
+                @unknown default: return
+                }
+                let next = value + delta
+                value = min(range.upperBound, max(range.lowerBound, next))
+            }
+        }
+        .frame(height: thumbDiameter)
     }
 }
 

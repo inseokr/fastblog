@@ -752,6 +752,9 @@ private struct PlacesVisitedMapView: View {
     @State private var revealNavDuringModalDismiss: Bool = false
     @State private var isSearchActive: Bool = false
     @State private var hasTappedLocationButton: Bool = false
+    @State private var selectedMapFeature: MapFeature?
+    @State private var activePOIFeature: MapFeature?
+    @State private var showPOISheet: Bool = false
     @FocusState private var isSearchFocused: Bool
     @StateObject private var locationHelper = PlacesVisitedMapLocationHelper()
 
@@ -1030,7 +1033,7 @@ private struct PlacesVisitedMapView: View {
     var body: some View {
         ZStack(alignment: .top) {
             GeometryReader { geo in
-                Map(position: $mapPosition) {
+                Map(position: $mapPosition, selection: $selectedMapFeature) {
                     ForEach(clusteredPlaceItems) { cluster in
                         Annotation("", coordinate: cluster.coordinate) {
                             if cluster.isCluster {
@@ -1057,6 +1060,12 @@ private struct PlacesVisitedMapView: View {
                     }
                 }
                 .mapStyle(.standard(elevation: .realistic))
+                .onChange(of: selectedMapFeature) { _, newFeature in
+                    guard let newFeature else { return }
+                    activePOIFeature = newFeature
+                    showPOISheet = true
+                    selectedMapFeature = nil
+                }
                 .onMapCameraChange(frequency: .onEnd) { context in
                     mapRegion = context.region
                 }
@@ -1372,6 +1381,13 @@ private struct PlacesVisitedMapView: View {
         .toolbar((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
         .toolbarBackground((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
         .dynamicTypeSize(.large)
+        .sheet(isPresented: $showPOISheet, onDismiss: {
+            activePOIFeature = nil
+        }) {
+            if let feature = activePOIFeature {
+                POIInfoSheet(feature: feature)
+            }
+        }
     }
 
     private func placesVisitedMapCategoryChip(raw: String, isSelected: Bool, action: @escaping () -> Void) -> some View {

@@ -38,20 +38,24 @@ struct MapDayView: View {
     var onAnnotationTap: ((UUID) -> Void)? = nil
     /// If true, suppress any green/orange "Start" or "End" visual styling on markers.
     var hideStartEndMarkers: Bool = false
+    /// When set, called when the user taps a native MapKit POI. Only pass this in full-screen contexts.
+    var onPOITapped: ((MapFeature) -> Void)? = nil
 
     @State private var cameraPosition: MapCameraPosition = .automatic
+    @State private var selectedMapFeature: MapFeature?
 
-    init(placeStops: [PlaceStop], height: CGFloat = 220, onTap: (() -> Void)? = nil, focusedPlaceId: UUID? = nil, onAnnotationTap: ((UUID) -> Void)? = nil, hideStartEndMarkers: Bool = false) {
+    init(placeStops: [PlaceStop], height: CGFloat = 220, onTap: (() -> Void)? = nil, focusedPlaceId: UUID? = nil, onAnnotationTap: ((UUID) -> Void)? = nil, hideStartEndMarkers: Bool = false, onPOITapped: ((MapFeature) -> Void)? = nil) {
         self.placeStops = placeStops
         self.height = height
         self.onTap = onTap
         self.focusedPlaceId = focusedPlaceId
         self.onAnnotationTap = onAnnotationTap
         self.hideStartEndMarkers = hideStartEndMarkers
+        self.onPOITapped = onPOITapped
     }
 
     var body: some View {
-        Map(position: $cameraPosition) {
+        Map(position: $cameraPosition, selection: $selectedMapFeature) {
             if routeCoordinates.count >= 2 {
                 MapPolyline(coordinates: routeCoordinates)
                     .stroke(Color(red: 0, green: 122/255, blue: 1), lineWidth: 4)
@@ -94,6 +98,11 @@ struct MapDayView: View {
         }
         // Match onboarding's native Apple Maps look (less 3D terrain-heavy than realistic elevation).
         .mapStyle(.standard(elevation: .flat))
+        .onChange(of: selectedMapFeature) { _, newFeature in
+            guard let newFeature, let onPOITapped else { return }
+            onPOITapped(newFeature)
+            selectedMapFeature = nil
+        }
         .frame(height: height)
         .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
         .contentShape(Rectangle())
@@ -350,6 +359,8 @@ struct FullScreenMapView: View {
     @State private var selectedCategory: String? = nil
     @State private var scrolledPlaceID: UUID?
     @State private var editablePlaceStops: [PlaceStop]
+    @State private var activePOIFeature: MapFeature?
+    @State private var showPOISheet: Bool = false
 
     init(
         day: RecapBlogDay,
@@ -451,7 +462,11 @@ struct FullScreenMapView: View {
                             guard let stop = filteredStops.first(where: { $0.id == stopId }) else { return }
                             openPhotoModal(for: stop)
                         },
-                        hideStartEndMarkers: selectedCategory != nil
+                        hideStartEndMarkers: selectedCategory != nil,
+                        onPOITapped: { feature in
+                            activePOIFeature = feature
+                            showPOISheet = true
+                        }
                     )
                     .ignoresSafeArea(edges: .all)
 
@@ -599,6 +614,13 @@ struct FullScreenMapView: View {
         // so PlacePhotoModalView's caption editor inset stays above the keyboard.
         .ignoresSafeArea(.container, edges: .all)
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showPOISheet, onDismiss: {
+            activePOIFeature = nil
+        }) {
+            if let feature = activePOIFeature {
+                POIInfoSheet(feature: feature)
+            }
+        }
         .animation(.easeInOut(duration: 0.38), value: photoModalStop?.id)
         .onAppear {
             applyInitialFocusIfNeeded()
