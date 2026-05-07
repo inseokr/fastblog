@@ -276,6 +276,12 @@ struct BlogVideoExportOptionsSheet: View {
             ZStack(alignment: .bottomLeading) {
                 placePhotoGrid(photos: photos, overflowCount: overflowCount, cardW: cardW, cellW: cellW, gap: gap)
 
+                if !isIncluded {
+                    Color.black.opacity(0.5)
+                        .frame(width: cardW, height: gridH)
+                        .allowsHitTesting(false)
+                }
+
                 LinearGradient(
                     colors: [.black.opacity(0.65), .clear],
                     startPoint: .bottom,
