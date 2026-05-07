@@ -235,28 +235,20 @@ struct BlogVideoExportOptionsSheet: View {
                 }
             }
             if !days.isEmpty {
-                VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 16) {
                     ForEach(Array(days.enumerated()), id: \.element.id) { dayOffset, day in
-                        if dayOffset > 0 {
-                            Divider()
-                        }
-                        Text("Day \(dayOffset + 1) · \(day.dateText)")
-                            .font(.caption.weight(.semibold))
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 14)
-                            .padding(.top, 10)
-                            .padding(.bottom, 4)
-                        ForEach(Array(day.placeStops.enumerated()), id: \.element.id) { stopOffset, stop in
-                            if stopOffset > 0 {
-                                Divider().padding(.leading, 52)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Day \(dayOffset + 1) · \(day.dateText)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.secondary)
+                            VStack(spacing: 8) {
+                                ForEach(day.placeStops) { stop in
+                                    placeCheckRow(stop: stop)
+                                }
                             }
-                            placeCheckRow(stop: stop)
                         }
                     }
                 }
-                .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .appChromeCornerRadius(12)
             }
         }
     }
@@ -274,82 +266,152 @@ struct BlogVideoExportOptionsSheet: View {
 
     private func placeCheckRow(stop: PlaceStop) -> some View {
         let isIncluded = isPlaceIncluded(stop.id)
-        let score = stop.highlightMomentScore
-        let avg = averageHighlightMomentScoreForVisibleStops()
-        let isStarred = score > avg
+        let photos = Array(stop.includedPhotos.prefix(options.maxPhotosPerPlace))
+        let gap: CGFloat = 2
+        let cardW = UIScreen.main.bounds.width - 40
+        let cellW = floor((cardW - gap) / 2)
+        let gridH = placeGridHeight(count: photos.count, cardW: cardW, cellW: cellW, gap: gap)
+        let overflowCount = max(0, stop.includedPhotos.count - photos.count)
         return Button { togglePlace(stop.id) } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 14) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(isIncluded
-                                  ? Color.accentColor
-                                  : Color(uiColor: .tertiarySystemGroupedBackground))
-                            .frame(width: 24, height: 24)
-                        if isIncluded {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(stop.placeTitle)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        if let raw = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines),
-                           !raw.isEmpty {
-                            let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
+            ZStack(alignment: .bottomLeading) {
+                placePhotoGrid(photos: photos, overflowCount: overflowCount, cardW: cardW, cellW: cellW, gap: gap)
+
+                LinearGradient(
+                    colors: [.black.opacity(0.65), .clear],
+                    startPoint: .bottom,
+                    endPoint: .center
+                )
+                .allowsHitTesting(false)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    if let raw = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !raw.isEmpty {
+                        let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
+                        HStack(spacing: 4) {
+                            Image(systemName: p.symbol)
+                                .font(.system(size: 9, weight: .semibold))
                             Text(p.label)
-                                .font(.caption.weight(.medium))
-                                .foregroundColor(.secondary)
+                                .font(.caption2.weight(.semibold))
                                 .lineLimit(1)
                         }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(Capsule(style: .continuous).fill(p.color.opacity(0.85)))
+                        .foregroundColor(.white)
                     }
-                    Spacer()
+                    Text(stop.placeTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.trailing, 40)
                 }
+                .padding(10)
 
-                placePhotoStrip(stop: stop)
+                ZStack {
+                    Circle()
+                        .fill(isIncluded ? Color.accentColor : Color.black.opacity(0.4))
+                        .frame(width: 26, height: 26)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(Color.white.opacity(isIncluded ? 0 : 0.6), lineWidth: 1.5)
+                        )
+                    if isIncluded {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(10)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .frame(width: cardW, height: gridH)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(isIncluded ? Color.accentColor : Color.clear, lineWidth: 2)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    private func averageHighlightMomentScoreForVisibleStops() -> Double {
-        let stops = filteredDaysForPlacePicker().flatMap(\.placeStops)
-        guard !stops.isEmpty else { return 0 }
-        return stops.map(\.highlightMomentScore).reduce(0, +) / Double(stops.count)
+    private func placeGridHeight(count: Int, cardW: CGFloat, cellW: CGFloat, gap: CGFloat) -> CGFloat {
+        switch count {
+        case 0:       return 120
+        case 1:       return cardW
+        case 2:       return cellW
+        case 3, 4:    return cellW * 2 + gap
+        default:      return cellW * 3 + gap * 2
+        }
     }
 
-    private func placePhotoStrip(stop: PlaceStop) -> some View {
-        let photos = Array(stop.includedPhotos.prefix(options.maxPhotosPerPlace))
-        return HStack(spacing: 8) {
-            ForEach(photos) { photo in
-                RecapPhotoThumbnail(
-                    photo: photo,
-                    cornerRadius: 8,
-                    showIcon: false,
-                    targetSize: CGSize(width: 260, height: 260)
-                )
-                .frame(width: 42, height: 42)
-                .clipped()
+    @ViewBuilder
+    private func placePhotoGrid(photos: [RecapPhoto], overflowCount: Int, cardW: CGFloat, cellW: CGFloat, gap: CGFloat) -> some View {
+        switch photos.count {
+        case 0:
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .frame(width: cardW, height: 120)
+        case 1:
+            placePhotoCell(photos[0], width: cardW, height: cardW)
+        case 2:
+            HStack(spacing: gap) {
+                placePhotoCell(photos[0], width: cellW, height: cellW)
+                placePhotoCell(photos[1], width: cellW, height: cellW)
             }
-            if stop.includedPhotos.count > photos.count {
-                let overflow = stop.includedPhotos.count - photos.count
-                Text("+\(overflow)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(Color(uiColor: .tertiarySystemGroupedBackground))
-                    .appChromeCornerRadius(12)
+        case 3:
+            VStack(spacing: gap) {
+                HStack(spacing: gap) {
+                    placePhotoCell(photos[0], width: cellW, height: cellW)
+                    placePhotoCell(photos[1], width: cellW, height: cellW)
+                }
+                placePhotoCell(photos[2], width: cardW, height: cellW)
             }
-            Spacer(minLength: 0)
+        case 4:
+            VStack(spacing: gap) {
+                HStack(spacing: gap) {
+                    placePhotoCell(photos[0], width: cellW, height: cellW)
+                    placePhotoCell(photos[1], width: cellW, height: cellW)
+                }
+                HStack(spacing: gap) {
+                    placePhotoCell(photos[2], width: cellW, height: cellW)
+                    placePhotoCell(photos[3], width: cellW, height: cellW)
+                }
+            }
+        default:
+            VStack(spacing: gap) {
+                HStack(spacing: gap) {
+                    placePhotoCell(photos[0], width: cellW, height: cellW)
+                    placePhotoCell(photos[1], width: cellW, height: cellW)
+                }
+                HStack(spacing: gap) {
+                    placePhotoCell(photos[2], width: cellW, height: cellW)
+                    placePhotoCell(photos[3], width: cellW, height: cellW)
+                }
+                ZStack {
+                    placePhotoCell(photos[4], width: cardW, height: cellW)
+                    if overflowCount > 0 {
+                        Color.black.opacity(0.45)
+                            .frame(width: cardW, height: cellW)
+                        Text("+\(overflowCount)")
+                            .font(.title2.weight(.bold))
+                            .foregroundColor(.white)
+                    }
+                }
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func placePhotoCell(_ photo: RecapPhoto, width: CGFloat, height: CGFloat) -> some View {
+        RecapPhotoThumbnail(
+            photo: photo,
+            cornerRadius: 0,
+            showIcon: false,
+            targetSize: CGSize(width: 300, height: 300)
+        )
+        .frame(width: width, height: height)
+        .clipped()
     }
 
     private func selectHighlightsOnly() {
