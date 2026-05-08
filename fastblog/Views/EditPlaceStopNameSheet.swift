@@ -787,6 +787,8 @@ struct EditPlaceStopNameSheet: View {
         // Cancel any in-flight resolution so rapid re-taps always reflect the latest tap position.
         kakaoResolveTask?.cancel()
         debugPrint("[KakaoMap] resolveKakaoPOI lat=\(coordinate.latitude) lon=\(coordinate.longitude) zoom=\(kakaoZoomLevel) directPOI=\(isDirectPOITap) preferredName=\(preferredPOIName ?? "nil")")
+        // Anchor the marker on the tapped point immediately; ambiguous branches keep this until the user picks from the list.
+        selectedCoordinate = coordinate
         isResolvingPOI = true
         isFocused = false
         showSuggestions = false
@@ -818,6 +820,7 @@ struct EditPlaceStopNameSheet: View {
             switch result {
             case .single(let name, let category, let coord):
                 debugPrint("[KakaoMap] resolveKakaoPOI POI single '\(name)'")
+                debugPrint("[POI-debug] UI apply single title='\(name)' category=\(category ?? "nil")")
                 editedTitle = name
                 selectedCoordinate = coord
                 selectedCategory = category
@@ -827,6 +830,9 @@ struct EditPlaceStopNameSheet: View {
                 }
             case .ambiguous(let candidates):
                 debugPrint("[KakaoMap] resolveKakaoPOI ambiguous (\(candidates.count) choices)")
+                debugPrint("[POI-debug] UI disambiguation sheet count=\(candidates.count) first=\(candidates.first?.name ?? "?")")
+                // Pin stays at the tap coordinate until `applyMapTapPOIChoice` sets a definitive place.
+                selectedCoordinate = coordinate
                 mapTapPOIDisambiguationCandidates = candidates
                 showMapTapPOIDisambiguation = true
             case .none:
@@ -839,6 +845,7 @@ struct EditPlaceStopNameSheet: View {
                 selectedCoordinate = coordinate
                 mapTapResolvedAsPOI = false
                 debugPrint("[KakaoMap] resolveKakaoPOI reverse-geocode → '\(name)'")
+                debugPrint("[POI-debug] UI applied reverse-geocode / non-POI title='\(name)'")
                 if let category = await searchViewModel.fetchCategory(at: coordinate, name: name) {
                     selectedCategory = category
                 }
@@ -859,6 +866,7 @@ struct EditPlaceStopNameSheet: View {
         isResolvingPOI = true
         isFocused = false
         showSuggestions = false
+        selectedCoordinate = coordinate
         Task { @MainActor in
             defer {
                 isResolvingPOI = false
@@ -875,6 +883,7 @@ struct EditPlaceStopNameSheet: View {
                 return
             case .ambiguous(let candidates):
                 debugPrint("[POI] map-tap ambiguous: \(candidates.count) choices")
+                selectedCoordinate = coordinate
                 mapTapPOIDisambiguationCandidates = candidates
                 showMapTapPOIDisambiguation = true
                 return

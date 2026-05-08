@@ -193,21 +193,33 @@ actor KakaoLocalService {
 
     // MARK: - Keyword search
 
-    /// Returns up to 10 places matching `query`, sorted by distance from `coordinate` when provided.
-    func searchPlaces(query: String, near coordinate: CLLocationCoordinate2D?, radius: Int = 5000) async -> [KakaoPlace] {
+    /// Returns up to 15 places matching `query`, sorted by `sort` from `coordinate` when provided.
+    /// When `categoryGroupCode` is set, Kakao restricts keyword matches to that group (e.g. AT4 landmarks).
+    /// `sort` must be `"distance"` (default, requires coordinate) or `"accuracy"` (text-relevance, ignores radius).
+    func searchPlaces(
+        query: String,
+        near coordinate: CLLocationCoordinate2D?,
+        radius: Int = 5000,
+        categoryGroupCode: String? = nil,
+        sort: String = "distance"
+    ) async -> [KakaoPlace] {
         guard isAvailable, !query.isEmpty else { return [] }
 
         var components = URLComponents(string: "https://dapi.kakao.com/v2/local/search/keyword.json")!
         var items: [URLQueryItem] = [
             URLQueryItem(name: "query", value: query),
-            URLQueryItem(name: "size", value: "10")
+            // Kakao caps keyword page size at 15; nearer POIs can push the true landmark out when size=10.
+            URLQueryItem(name: "size", value: coordinate != nil ? "15" : "10")
         ]
+        if let code = categoryGroupCode, !code.isEmpty {
+            items.append(URLQueryItem(name: "category_group_code", value: code))
+        }
         if let coord = coordinate {
             items += [
                 URLQueryItem(name: "x", value: String(coord.longitude)),
                 URLQueryItem(name: "y", value: String(coord.latitude)),
                 URLQueryItem(name: "radius", value: String(radius)),
-                URLQueryItem(name: "sort", value: "distance")
+                URLQueryItem(name: "sort", value: sort)
             ]
         }
         components.queryItems = items
@@ -230,21 +242,22 @@ actor KakaoLocalService {
 
     // MARK: - Category search (nearby POIs for map taps)
 
-    /// Travel-relevant Kakao category group codes used for map-tap POI resolution.
-    /// Ordered roughly by likelihood of appearing in a travel blog; excludes low-value
-    /// categories (nurseries, academies, real estate) to keep the parallel-request fan-out reasonable.
+    /// Kakao Local `/v2/local/search/category.json` codes: MT1, CS2, PK6, OL7, SW8, BK9, CT1, PO3, AT4, AD5, FD6, CE7, HP8, PM9, …
     ///
-    /// Kakao Local supports a fixed list of group codes for `/v2/local/search/category.json`:
-    /// MT1, CS2, PS3, SC4, AC5, PK6, OL7, SW8, BK9, CT1, AG2, PO3, AT4, AD5, FD6, CE7, HP8, PM9.
-    static let categoryGroupCodesForMapTap: [String] = [
+    /// Map taps use **two tiers** merged into one candidate pool:
+    /// 1. **Landmark tier** — large / “popular” POIs (AT4, CT1, PO3) with **wider radii** so registry offset does not drop 첨성대-class sites.
+    /// 2. **Amenity tier** — small venue categories **tied to map zoom radius** (food, café, stay, transit, etc.).
+    static let mapTapLandmarkCategoryCodes: [String] = [
+        "AT4",  // tourist attractions
+        "CT1",  // cultural facilities
+        "PO3",  // public institutions (palaces, offices, some heritage-adjacent rows)
+    ]
+    static let mapTapAmenityCategoryCodes: [String] = [
         "FD6",  // restaurants
         "CE7",  // cafes
-        "AT4",  // tourist attractions
-        "AD5",  // accommodations / hotels
-        "CT1",  // cultural facilities (museums, galleries)
-        "PO3",  // public institutions (palaces, observatories, memorials sometimes land here)
+        "AD5",  // accommodations
         "CS2",  // convenience stores
-        "MT1",  // large marts / supermarkets
+        "MT1",  // supermarkets
         "SW8",  // subway stations
         "PK6",  // parking
         "OL7",  // gas / charging
@@ -252,6 +265,10 @@ actor KakaoLocalService {
         "HP8",  // hospitals
         "PM9",  // pharmacies
     ]
+    /// All codes queried across both tiers (deduped merge); preserved for tooling / clarity.
+    static var categoryGroupCodesForMapTap: [String] {
+        mapTapLandmarkCategoryCodes + mapTapAmenityCategoryCodes
+    }
 
     /// Places of one category within `radius` meters of `coordinate` (sorted by distance when supported).
     func searchPlacesByCategory(
@@ -284,36 +301,98 @@ actor KakaoLocalService {
         return response.documents
     }
 
-    /// Per-category (radius, size) overrides for map-tap searches.
-    /// AT4/CT1 use a wider radius because their Kakao Local registered coordinates
-    /// are often offset 100–250 m from the visible map tile icon (large outdoor sites,
-    /// palace complexes, archaeological parks, etc.).
-    private static func categorySearchParams(for code: String, baseRadius: Int, isDirectPOITap: Bool) -> (radius: Int, size: Int) {
-        switch code {
-        case "AT4":
-            // Direct POI taps are often on the rendered icon, which can be much farther than
-            // 250–500m from Kakao Local's registered coordinate for large outdoor attractions.
-            return (max(baseRadius, isDirectPOITap ? 900 : 500), 15)
-        case "CT1":
-            return (max(baseRadius, isDirectPOITap ? 700 : 400), 10)
-        default:    return (baseRadius, 5)
+    /// Parallel category queries; dedupes by place `id`.
+    func searchPlacesUnionCategories(
+        categoryGroupCodes: [String],
+        coordinate: CLLocationCoordinate2D,
+        radius: Int,
+        size: Int = 15
+    ) async -> [KakaoPlace] {
+        guard isAvailable, !categoryGroupCodes.isEmpty else { return [] }
+        let r = min(20_000, max(1, radius))
+        return await withTaskGroup(of: [KakaoPlace].self) { group in
+            for code in categoryGroupCodes {
+                group.addTask {
+                    await self.searchPlacesByCategory(
+                        categoryGroupCode: code,
+                        coordinate: coordinate,
+                        radius: r,
+                        size: size
+                    )
+                }
+            }
+            var byId: [String: KakaoPlace] = [:]
+            for await chunk in group {
+                for place in chunk {
+                    if byId[place.id] == nil { byId[place.id] = place }
+                }
+            }
+            return Array(byId.values)
         }
     }
 
-    /// Merges category searches in parallel; dedupes by `id`. Caller sorts by distance.
-    func searchNearbyPlacesForMapTap(
-        coordinate: CLLocationCoordinate2D,
-        radius: Int,
-        isDirectPOITap: Bool = false
-    ) async -> [KakaoPlace] {
-        guard isAvailable else { return [] }
+    /// Tourist attractions (AT4) and cultural venues (CT1) within `radius`.
+    func searchLandmarkPlacesNear(coordinate: CLLocationCoordinate2D, radius: Int) async -> [KakaoPlace] {
+        await searchPlacesUnionCategories(
+            categoryGroupCodes: ["AT4", "CT1"],
+            coordinate: coordinate,
+            radius: radius
+        )
+    }
 
-        let codes = Self.categoryGroupCodesForMapTap
-        let baseRadius = min(20_000, max(1, radius))
+    /// Restaurants and cafés within `radius`, for comparing proximity against landmarks.
+    func searchDiningPlacesNear(coordinate: CLLocationCoordinate2D, radius: Int) async -> [KakaoPlace] {
+        await searchPlacesUnionCategories(
+            categoryGroupCodes: ["FD6", "CE7"],
+            coordinate: coordinate,
+            radius: radius
+        )
+    }
+
+    /// Landmark tier — stretch radius/size so big sites survive coordinate skew vs the map icon.
+    private static func landmarkTierSearchParams(for code: String, baseRadius: Int, isDirectPOITap: Bool) -> (radius: Int, size: Int) {
+        switch code {
+        case "AT4":
+            return (max(baseRadius, isDirectPOITap ? 900 : 520), 15)
+        case "CT1":
+            return (max(baseRadius, isDirectPOITap ? 720 : 450), 12)
+        case "PO3":
+            return (max(baseRadius, isDirectPOITap ? 520 : 360), 10)
+        default:
+            return (baseRadius, 10)
+        }
+    }
+
+    /// Amenity tier — honour zoom-scaled search radius so cafés/restaurants stay distance-faithful.
+    private static func amenityTierSearchParams(for code: String, baseRadius: Int, isDirectPOITap: Bool) -> (radius: Int, size: Int) {
+        _ = isDirectPOITap
+        switch code {
+        case "FD6", "CE7":
+            return (baseRadius, 12)
+        case "AD5":
+            return (baseRadius, 10)
+        default:
+            return (baseRadius, 8)
+        }
+    }
+
+    private func searchMapTapCategoryTier(
+        codes: [String],
+        coordinate: CLLocationCoordinate2D,
+        baseRadius: Int,
+        isDirectPOITap: Bool,
+        tier: MapTapCategoryTier
+    ) async -> [KakaoPlace] {
+        guard !codes.isEmpty else { return [] }
         return await withTaskGroup(of: [KakaoPlace].self) { group in
             for code in codes {
                 group.addTask {
-                    let (r, size) = Self.categorySearchParams(for: code, baseRadius: baseRadius, isDirectPOITap: isDirectPOITap)
+                    let (r, size): (Int, Int) = switch tier {
+                    case .landmark:
+                        Self.landmarkTierSearchParams(for: code, baseRadius: baseRadius, isDirectPOITap: isDirectPOITap)
+                    case .amenity:
+                        Self.amenityTierSearchParams(for: code, baseRadius: baseRadius, isDirectPOITap: isDirectPOITap)
+                    }
                     return await self.searchPlacesByCategory(
                         categoryGroupCode: code,
                         coordinate: coordinate,
@@ -328,13 +407,55 @@ actor KakaoLocalService {
                     if byId[place.id] == nil { byId[place.id] = place }
                 }
             }
-            let results = Array(byId.values)
-            debugPrint("[Kakao] mapTap → \(results.count) nearby places (deduped)")
-            for place in results {
-                debugPrint("[Kakao] category  '\(place.place_name)'  group=\(place.category_group_code)  name='\(place.category_name)'  → poi=\(place.poiCategoryRaw ?? "nil")")
-            }
-            return results
+            return Array(byId.values)
         }
+    }
+
+    private enum MapTapCategoryTier {
+        case landmark
+        case amenity
+    }
+
+    /// Dedupes by Kakao `id`. If a place appears in both tiers, keep the **landmark-tier** document (wider search may carry the canonical row).
+    private static func mergeMapTapLandmarkAndAmenityTiers(landmarks: [KakaoPlace], amenities: [KakaoPlace]) -> [KakaoPlace] {
+        var byId: [String: KakaoPlace] = [:]
+        for p in amenities { byId[p.id] = p }
+        for p in landmarks { byId[p.id] = p }
+        return Array(byId.values)
+    }
+
+    /// Parallel **landmark** + **amenity** category fan-out, merged for `PlaceSearchViewModel` ranking / disambiguation.
+    func searchNearbyPlacesForMapTap(
+        coordinate: CLLocationCoordinate2D,
+        radius: Int,
+        isDirectPOITap: Bool = false
+    ) async -> [KakaoPlace] {
+        guard isAvailable else { return [] }
+
+        let baseRadius = min(20_000, max(1, radius))
+        async let landmarkRows = searchMapTapCategoryTier(
+            codes: Self.mapTapLandmarkCategoryCodes,
+            coordinate: coordinate,
+            baseRadius: baseRadius,
+            isDirectPOITap: isDirectPOITap,
+            tier: .landmark
+        )
+        async let amenityRows = searchMapTapCategoryTier(
+            codes: Self.mapTapAmenityCategoryCodes,
+            coordinate: coordinate,
+            baseRadius: baseRadius,
+            isDirectPOITap: isDirectPOITap,
+            tier: .amenity
+        )
+        let (landmarks, amenities) = await (landmarkRows, amenityRows)
+        let results = Self.mergeMapTapLandmarkAndAmenityTiers(landmarks: landmarks, amenities: amenities)
+        debugPrint("[Kakao] mapTap landmark-tier → \(landmarks.count) (deduped within tier)")
+        debugPrint("[Kakao] mapTap amenity-tier → \(amenities.count) (deduped within tier)")
+        debugPrint("[Kakao] mapTap merged → \(results.count) nearby places (deduped across tiers)")
+        for place in results {
+            debugPrint("[Kakao] category  '\(place.place_name)'  group=\(place.category_group_code)  name='\(place.category_name)'  → poi=\(place.poiCategoryRaw ?? "nil")")
+        }
+        return results
     }
 
     // MARK: - Reverse geocode

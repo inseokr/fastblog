@@ -222,10 +222,19 @@ struct KakaoTappableMapView: UIViewRepresentable {
             )
             let zoom = kakaoMap.zoomLevel
             debugPrint("[KakaoMap] terrain tapped lat=\(coord.latitude) lon=\(coord.longitude) zoom=\(zoom)")
+            debugPrint(
+                String(
+                    format: "[POI-debug] KakaoMap event=terrain lat=%.6f lon=%.6f zoom=%d (not a tile POI hit)",
+                    coord.latitude,
+                    coord.longitude,
+                    zoom)
+            )
             DispatchQueue.main.async { self.parent.onTap(coord, zoom, false) }
         }
 
         /// Fires when the user taps a built-in Kakao tile POI or a custom label-layer POI.
+        /// (Kakao Maps iOS SDK v2 does not expose the basemap POI title here—only `layerID`, `poiID`,
+        /// and `position`—unlike legacy `MTMapPOIItem` callbacks. Nearby identity is refined via Kakao Local.)
         /// Passes `isDirectPOITap: true` so the resolution layer can widen its attraction search —
         /// large outdoor sites (e.g. 첨성대) often have a registered coordinate offset by 150–250 m
         /// from the visible map icon.
@@ -238,6 +247,15 @@ struct KakaoTappableMapView: UIViewRepresentable {
             )
             let zoom = kakaoMap.zoomLevel
             debugPrint("[KakaoMap] POI tapped layerID=\(layerID) poiID=\(poiID) lat=\(coord.latitude) lon=\(coord.longitude) zoom=\(zoom)")
+            debugPrint(
+                String(
+                    format: "[POI-debug] KakaoMap event=poiTap layer=%@ id=%@ lat=%.6f lon=%.6f zoom=%d (directPOI→true; no SDK title)",
+                    layerID,
+                    poiID,
+                    coord.latitude,
+                    coord.longitude,
+                    zoom)
+            )
             DispatchQueue.main.async { self.parent.onTap(coord, zoom, true) }
         }
 
