@@ -623,6 +623,17 @@ struct PlaceStopRowView: View {
             || stop.photos.contains(where: { !($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
     }
 
+    @ViewBuilder
+    private var sentimentPillForRow: some View {
+        if hasCaptionTextForCategoryRow || isEditMode {
+            UserSentimentPill(
+                sentiment: stop.sentiment,
+                isEditMode: isEditMode,
+                onChanged: onSentimentChanged
+            )
+        }
+    }
+
     /// Shown when edit mode allows picking a category and none is set yet (excluding inferred-from-title presentation).
     private var showAddCategoryPlaceholder: Bool {
         isEditMode
@@ -668,14 +679,59 @@ struct PlaceStopRowView: View {
                                     }
 
                                     if !stop.placeTitleIsManual {
-                                        HStack(alignment: .center, spacing: 8) {
-                                            Button { onEditName?() } label: {
-                                                tapToRenamePill
-                                            }
-                                            .buttonStyle(.plain)
-                                            .accessibilityLabel("Tap to rename")
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            HStack(alignment: .center, spacing: 8) {
+                                                Button { onEditName?() } label: {
+                                                    tapToRenamePill
+                                                }
+                                                .buttonStyle(.plain)
+                                                .accessibilityLabel("Tap to rename")
 
-                                            if showAddCategoryBesideTapToRename, let pickCategory = onEditCategory {
+                                                if showAddCategoryBesideTapToRename, let pickCategory = onEditCategory {
+                                                    Button {
+                                                        pickCategory()
+                                                    } label: {
+                                                        AddPlaceCategoryPlaceholderChip(verticalPadding: isEditMode ? 6 : 5)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .accessibilityLabel("Add place category")
+                                                }
+                                            }
+                                            sentimentPillForRow
+                                        }
+                                    } else {
+                                        if let subtitle = stop.placeSubtitle, !subtitle.isEmpty {
+                                            Text(subtitle)
+                                                .font(.footnote)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        HStack(alignment: .center, spacing: 8) {
+                                            if let cat = categoryPresentForRow {
+                                                let categoryAccent = cat.color
+                                                if hasResolvedPlaceNameForCategory, let pickCategory = onEditCategory {
+                                                    Button {
+                                                        pickCategory()
+                                                    } label: {
+                                                        PlaceCategoryChip(
+                                                            symbol: cat.symbol,
+                                                            label: cat.label,
+                                                            accentColor: categoryAccent,
+                                                            isEditMode: isEditMode,
+                                                            verticalPadding: isEditMode ? 6 : 5
+                                                        )
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .accessibilityLabel("Change place category, \(cat.label)")
+                                                } else {
+                                                    PlaceCategoryChip(
+                                                        symbol: cat.symbol,
+                                                        label: cat.label,
+                                                        accentColor: categoryAccent,
+                                                        isEditMode: isEditMode,
+                                                        verticalPadding: isEditMode ? 6 : 5
+                                                    )
+                                                }
+                                            } else if showAddCategoryInCategoryRow, let pickCategory = onEditCategory {
                                                 Button {
                                                     pickCategory()
                                                 } label: {
@@ -684,22 +740,10 @@ struct PlaceStopRowView: View {
                                                 .buttonStyle(.plain)
                                                 .accessibilityLabel("Add place category")
                                             }
+
+                                            sentimentPillForRow
                                         }
                                     }
-                                }
-                                if stop.placeTitleIsManual {
-                                    Button { onEditName?() } label: {
-                                        ZStack {
-                                            Circle()
-                                                .fill(colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.08))
-                                            Image(systemName: "square.and.pencil")
-                                                .font(.system(size: 14, weight: .semibold))
-                                                .foregroundStyle(rowTitle)
-                                        }
-                                        .frame(width: 28, height: 28)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("Edit place name")
                                 }
                             }
                         } else {
@@ -748,7 +792,21 @@ struct PlaceStopRowView: View {
                         }
                         Spacer()
                         if isEditMode {
-                            HStack(spacing: 4) {
+                            HStack(spacing: 12) {
+                                if stop.placeTitleIsManual {
+                                    Button { onEditName?() } label: {
+                                        ZStack {
+                                            Circle()
+                                                .fill(colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.08))
+                                            Image(systemName: "square.and.pencil")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundStyle(rowTitle)
+                                        }
+                                        .frame(width: 28, height: 28)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Edit place name")
+                                }
                                 Button(action: onDelete) {
                                     Image(systemName: "eye.slash")
                                         .font(.system(size: 14, weight: .semibold))
@@ -770,7 +828,7 @@ struct PlaceStopRowView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    if !(isEditMode && !stop.placeTitleIsManual),
+                    if !isEditMode,
                        let subtitle = stop.placeSubtitle,
                        !subtitle.isEmpty {
                         Text(subtitle)
@@ -786,7 +844,7 @@ struct PlaceStopRowView: View {
             // Category chip + sentiment — aligned with photo section edges (same POI presentation as My Places / map).
             let categoryPresent = categoryPresentForRow
             let hasCaptionText = hasCaptionTextForCategoryRow
-            if categoryPresent != nil || showAddCategoryInCategoryRow || hasCaptionText || isEditMode {
+            if (!isEditMode) && (categoryPresent != nil || showAddCategoryInCategoryRow || hasCaptionText) {
                 HStack(alignment: .center, spacing: 8) {
                     if let cat = categoryPresent {
                         let categoryAccent = cat.color
@@ -822,13 +880,7 @@ struct PlaceStopRowView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel("Add place category")
                     }
-                    if hasCaptionText || isEditMode {
-                        UserSentimentPill(
-                            sentiment: stop.sentiment,
-                            isEditMode: isEditMode,
-                            onChanged: onSentimentChanged
-                        )
-                    }
+                    sentimentPillForRow
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)

@@ -52,14 +52,14 @@ final class KakaoMapTestViewModel: ObservableObject {
     // MARK: - Actions
 
     /// Resolves tap like production: Kakao category POI search first, then reverse geocode.
-    func handleTap(_ coord: CLLocationCoordinate2D, zoom: Int, search: PlaceSearchViewModel) async {
+    func handleTap(_ coord: CLLocationCoordinate2D, zoom: Int, isDirectPOITap: Bool, search: PlaceSearchViewModel) async {
         center = coord
         lastTapCoord = coord
         lastTapName = nil
         isGeocoding = true
         defer { isGeocoding = false }
 
-        switch await search.resolveKakaoMapTapPOI(near: coord, kakaoZoomLevel: zoom) {
+        switch await search.resolveKakaoMapTapPOI(near: coord, kakaoZoomLevel: zoom, isDirectPOITap: isDirectPOITap) {
         case .single(let name, _, _):
             lastTapName = name
         case .ambiguous(let candidates):
@@ -104,8 +104,8 @@ struct KakaoMapTestView: View {
                 title: vm.lastTapName,
                 zoomInTrigger: vm.zoomInTrigger,
                 zoomOutTrigger: vm.zoomOutTrigger,
-                onTap: { coord, zoom in
-                    Task { await vm.handleTap(coord, zoom: zoom, search: searchVM) }
+                onTap: { coord, zoom, isDirectPOITap in
+                    Task { await vm.handleTap(coord, zoom: zoom, isDirectPOITap: isDirectPOITap, search: searchVM) }
                 }
             )
             .ignoresSafeArea()

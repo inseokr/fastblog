@@ -16,8 +16,9 @@ struct KakaoTappableMapView: UIViewRepresentable {
     let title: String?
     var zoomInTrigger: Int = 0
     var zoomOutTrigger: Int = 0
-    /// Second parameter is Kakao zoom level (1…21, higher = closer). Used for POI search radius.
-    var onTap: (CLLocationCoordinate2D, Int) -> Void
+    /// Second parameter is Kakao zoom level (1…21, higher = closer). Third is true when the user
+    /// tapped directly on a built-in Kakao tile POI (vs. bare terrain). Used to widen the attraction search.
+    var onTap: (CLLocationCoordinate2D, Int, Bool) -> Void
 
     // MARK: - UIViewRepresentable
 
@@ -221,12 +222,13 @@ struct KakaoTappableMapView: UIViewRepresentable {
             )
             let zoom = kakaoMap.zoomLevel
             debugPrint("[KakaoMap] terrain tapped lat=\(coord.latitude) lon=\(coord.longitude) zoom=\(zoom)")
-            DispatchQueue.main.async { self.parent.onTap(coord, zoom) }
+            DispatchQueue.main.async { self.parent.onTap(coord, zoom, false) }
         }
 
         /// Fires when the user taps a built-in Kakao tile POI or a custom label-layer POI.
-        /// Forwarding this alongside `terrainDidTapped` ensures a direct tap on a POI icon
-        /// triggers the same search flow as tapping nearby terrain.
+        /// Passes `isDirectPOITap: true` so the resolution layer can widen its attraction search —
+        /// large outdoor sites (e.g. 첨성대) often have a registered coordinate offset by 150–250 m
+        /// from the visible map icon.
         @objc func poiDidTapped(kakaoMap: KakaoMap, layerID: String, poiID: String, position: MapPoint) {
             // Skip taps on our own center pin — that location is already selected.
             guard layerID != Self.layerID || poiID != Self.pinID else { return }
@@ -236,7 +238,7 @@ struct KakaoTappableMapView: UIViewRepresentable {
             )
             let zoom = kakaoMap.zoomLevel
             debugPrint("[KakaoMap] POI tapped layerID=\(layerID) poiID=\(poiID) lat=\(coord.latitude) lon=\(coord.longitude) zoom=\(zoom)")
-            DispatchQueue.main.async { self.parent.onTap(coord, zoom) }
+            DispatchQueue.main.async { self.parent.onTap(coord, zoom, true) }
         }
 
         /// Keeps `currentZoomLevel` aligned with pinch / pan so +/- buttons stay consistent.

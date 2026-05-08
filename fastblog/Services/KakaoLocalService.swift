@@ -156,6 +156,22 @@ struct KakaoLotAddress: Decodable {
     let address_name: String
 }
 
+struct KakaoRegionResponse: Decodable {
+    let documents: [KakaoRegionDoc]
+}
+
+/// One administrative-area document from `/v2/local/geo/coord2regioncode.json`.
+/// `region_type` is "B" (법정동 — statutory, used in addresses) or "H" (행정동 — administrative).
+struct KakaoRegionDoc: Decodable {
+    let region_type: String
+    let address_name: String
+    let region_1depth_name: String
+    let region_2depth_name: String
+    let region_3depth_name: String
+    let x: Double
+    let y: Double
+}
+
 // MARK: - Service
 
 actor KakaoLocalService {
@@ -216,17 +232,23 @@ actor KakaoLocalService {
 
     /// Travel-relevant Kakao category group codes used for map-tap POI resolution.
     /// Ordered roughly by likelihood of appearing in a travel blog; excludes low-value
-    /// categories (schools, nurseries, academies, real estate, public offices) to keep
-    /// the parallel-request fan-out to 10 instead of 18.
+    /// categories (nurseries, academies, real estate) to keep the parallel-request fan-out reasonable.
+    ///
+    /// Kakao Local supports a fixed list of group codes for `/v2/local/search/category.json`:
+    /// MT1, CS2, PS3, SC4, AC5, PK6, OL7, SW8, BK9, CT1, AG2, PO3, AT4, AD5, FD6, CE7, HP8, PM9.
     static let categoryGroupCodesForMapTap: [String] = [
         "FD6",  // restaurants
         "CE7",  // cafes
         "AT4",  // tourist attractions
         "AD5",  // accommodations / hotels
         "CT1",  // cultural facilities (museums, galleries)
+        "PO3",  // public institutions (palaces, observatories, memorials sometimes land here)
         "CS2",  // convenience stores
         "MT1",  // large marts / supermarkets
         "SW8",  // subway stations
+        "PK6",  // parking
+        "OL7",  // gas / charging
+        "BK9",  // banks
         "HP8",  // hospitals
         "PM9",  // pharmacies
     ]
@@ -262,20 +284,41 @@ actor KakaoLocalService {
         return response.documents
     }
 
+    /// Per-category (radius, size) overrides for map-tap searches.
+    /// AT4/CT1 use a wider radius because their Kakao Local registered coordinates
+    /// are often offset 100–250 m from the visible map tile icon (large outdoor sites,
+    /// palace complexes, archaeological parks, etc.).
+    private static func categorySearchParams(for code: String, baseRadius: Int, isDirectPOITap: Bool) -> (radius: Int, size: Int) {
+        switch code {
+        case "AT4":
+            // Direct POI taps are often on the rendered icon, which can be much farther than
+            // 250–500m from Kakao Local's registered coordinate for large outdoor attractions.
+            return (max(baseRadius, isDirectPOITap ? 900 : 500), 15)
+        case "CT1":
+            return (max(baseRadius, isDirectPOITap ? 700 : 400), 10)
+        default:    return (baseRadius, 5)
+        }
+    }
+
     /// Merges category searches in parallel; dedupes by `id`. Caller sorts by distance.
-    func searchNearbyPlacesForMapTap(coordinate: CLLocationCoordinate2D, radius: Int) async -> [KakaoPlace] {
+    func searchNearbyPlacesForMapTap(
+        coordinate: CLLocationCoordinate2D,
+        radius: Int,
+        isDirectPOITap: Bool = false
+    ) async -> [KakaoPlace] {
         guard isAvailable else { return [] }
 
         let codes = Self.categoryGroupCodesForMapTap
-        let r = min(20_000, max(1, radius))
+        let baseRadius = min(20_000, max(1, radius))
         return await withTaskGroup(of: [KakaoPlace].self) { group in
             for code in codes {
                 group.addTask {
-                    await self.searchPlacesByCategory(
+                    let (r, size) = Self.categorySearchParams(for: code, baseRadius: baseRadius, isDirectPOITap: isDirectPOITap)
+                    return await self.searchPlacesByCategory(
                         categoryGroupCode: code,
                         coordinate: coordinate,
                         radius: r,
-                        size: 5   // we only need the nearest result per category
+                        size: size
                     )
                 }
             }
@@ -317,5 +360,32 @@ actor KakaoLocalService {
         }
         debugPrint("[Kakao] reverseGeocode → \(response.documents.first?.bestPlaceName ?? "nil")")
         return response.documents.first
+    }
+
+    // MARK: - Region code (neighborhood fallback for uncategorized POIs)
+
+    /// Returns the smallest administrative area containing `coordinate`.
+    /// Prefers the B-type (법정동) document because Kakao Local `address_name` fields use statutory names.
+    func reverseGeocodeToRegionCode(coordinate: CLLocationCoordinate2D) async -> KakaoRegionDoc? {
+        guard isAvailable else { return nil }
+
+        var components = URLComponents(string: "https://dapi.kakao.com/v2/local/geo/coord2regioncode.json")!
+        components.queryItems = [
+            URLQueryItem(name: "x", value: String(coordinate.longitude)),
+            URLQueryItem(name: "y", value: String(coordinate.latitude))
+        ]
+        guard let url = components.url else { return nil }
+
+        var request = URLRequest(url: url)
+        request.setValue("KakaoAK \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        guard let (data, _) = try? await session.data(for: request),
+              let response = try? JSONDecoder().decode(KakaoRegionResponse.self, from: data) else {
+            debugPrint("[Kakao] reverseGeocodeToRegionCode(\(coordinate.latitude),\(coordinate.longitude)) failed")
+            return nil
+        }
+        let result = response.documents.first(where: { $0.region_type == "B" }) ?? response.documents.first
+        debugPrint("[Kakao] reverseGeocodeToRegionCode → \(result?.address_name ?? "nil") type=\(result?.region_type ?? "nil")")
+        return result
     }
 }

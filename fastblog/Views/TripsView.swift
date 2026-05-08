@@ -47,6 +47,10 @@ struct TripsView: View {
     /// Gates map visibility — map is hidden until its initial position is explicitly set,
     /// preventing the MapKit auto-fit animation from the default .automatic position.
     @State private var mapInitialPositionReady = false
+    /// Keeps SwiftUI `Map`'s CAMetalLayer in the tree briefly after annotation-backed display ends so
+    /// in-flight Metal command buffers can finish (Metal validation asserts if the drawable is freed early).
+    @State private var retainTripsMapForMetalDrain = false
+    @State private var tripsMapMetalDrainTask: Task<Void, Never>?
     @State private var tripForPopup: TripDraft?
     @State private var selectedTripID: UUID?
     /// When true, skip the map-animate-to-trip in onChange (to avoid loop when map pan drives selection).
@@ -136,6 +140,28 @@ struct TripsView: View {
     /// `.automatic` with zero annotations (corner “growing” artifact) even if `allTrips` is non-empty.
     private var hasTripsPlottableOnMap: Bool {
         allTrips.contains { $0.centerCoordinate != nil }
+    }
+
+    /// Includes a short retained window after annotations disappear — see ``retainTripsMapForMetalDrain``.
+    private var hostsTripsMetalMapLayer: Bool {
+        hasTripsPlottableOnMap || retainTripsMapForMetalDrain
+    }
+
+    private func kickOffTripsMapMetalDrainRetain() {
+        tripsMapMetalDrainTask?.cancel()
+        retainTripsMapForMetalDrain = true
+        tripsMapMetalDrainTask = Task { @MainActor in
+            defer { tripsMapMetalDrainTask = nil }
+            try? await Task.sleep(nanoseconds: 650_000_000)
+            guard !Task.isCancelled else { return }
+            retainTripsMapForMetalDrain = false
+        }
+    }
+
+    private func cancelTripsMapMetalDrainRetain() {
+        tripsMapMetalDrainTask?.cancel()
+        tripsMapMetalDrainTask = nil
+        retainTripsMapForMetalDrain = false
     }
 
     /// True when the newest trip’s latest date is in the current month — used to hide "Load newer trips" when already in current month.
@@ -237,6 +263,17 @@ struct TripsView: View {
             }
             .alert("No Photos Available", isPresented: $showNoPhotosAlert, actions: noPhotosAlertActions, message: noPhotosAlertMessage)
             .preferredColorScheme(nil)
+            .onChange(of: hasTripsPlottableOnMap) { old, plottable in
+                if !plottable {
+                    mapInitialPositionReady = false
+                }
+                if plottable {
+                    cancelTripsMapMetalDrainRetain()
+                    return
+                }
+                guard old else { return }
+                kickOffTripsMapMetalDrainRetain()
+            }
     }
 
     @ViewBuilder
@@ -483,31 +520,27 @@ struct TripsView: View {
     /// Trips list non-empty: map (when plottable) + chrome. Never used when `allTrips` is empty.
     private var populatedTripsMainStack: some View {
         ZStack(alignment: .bottom) {
-            // Skip the map when nothing can be annotated — same MapKit .automatic artifact as
-            // an empty trip list if we mount the map with zero annotations.
-            if !hasTripsPlottableOnMap {
+            // Skip removing the SwiftUI Map subtree the instant annotations disappear —
+            // draining retain windows avoid CAMetalLayer teardown while Metal still references the drawable.
+            // When there's nothing plot-worthy and we're not draining, show only the backdrop.
+            if !hostsTripsMetalMapLayer {
                 tripsEmptyBackdrop.ignoresSafeArea()
             } else {
                 // Hide the map until its initial position is explicitly set — prevents the
                 // MapKit .automatic camera flying in from a default region before onAppear fires.
                 tripsEmptyBackdrop.ignoresSafeArea()
                 mapViewLayer
-                    .opacity(mapInitialPositionReady ? 1 : 0)
+                    .opacity((mapInitialPositionReady && hasTripsPlottableOnMap) ? 1 : 0)
             }
             tripsForegroundChrome
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(colorScheme == .dark ? Color.black : Color(uiColor: .systemBackground))
-        .onChange(of: hasTripsPlottableOnMap) { _, plottable in
-            if !plottable {
-                mapInitialPositionReady = false
-            }
-        }
     }
 
     private var mainContent: some View {
         Group {
-            if allTrips.isEmpty {
+            if allTrips.isEmpty, !retainTripsMapForMetalDrain {
                 TripsNoTripsScene(
                     backdrop: tripsEmptyBackdrop,
                     photoAuth: photoAuth,
@@ -550,7 +583,7 @@ struct TripsView: View {
                     }
             }
         }
-        .id(allTrips.isEmpty ? "trips_scene_empty" : "trips_scene_populated")
+        .id((allTrips.isEmpty && !retainTripsMapForMetalDrain) ? "trips_scene_empty" : "trips_scene_populated")
         .navigationTitle("Trips")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)

@@ -49,6 +49,9 @@ struct CameraRollToBlogView: View {
     @State private var showTagline  = false
     @State private var showContinue = false
 
+    @State private var showPrivacyPolicy = false
+    @State private var showTermsOfService = false
+
     // MARK: - Hardcoded photo tile data (xFraction: left edge / screenWidth, shifted right for visual balance)
 
     private let fallingPhotos: [FallingPhotoData] = [
@@ -119,6 +122,12 @@ struct CameraRollToBlogView: View {
         }
         .preferredColorScheme(.dark)
         .task { await startAnimation() }
+        .sheet(isPresented: $showPrivacyPolicy) {
+            PrivacyPolicyView()
+        }
+        .sheet(isPresented: $showTermsOfService) {
+            TermsOfServiceView()
+        }
     }
 
     // MARK: - Phase 1: Camera roll label
@@ -550,14 +559,20 @@ struct CameraRollToBlogView: View {
                         .foregroundColor(.white.opacity(0.35))
 
                     HStack(spacing: 4) {
-                        Button("Privacy Policy") { }
-                            .foregroundColor(.white.opacity(0.5))
+                        Button("Privacy Policy") {
+                            showPrivacyPolicy = true
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.white.opacity(0.5))
 
                         Text("and")
                             .foregroundColor(.white.opacity(0.35))
 
-                        Button("Terms of Service") { }
-                            .foregroundColor(.white.opacity(0.5))
+                        Button("Terms of Service") {
+                            showTermsOfService = true
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.white.opacity(0.5))
                     }
                 }
                 .font(.caption)
