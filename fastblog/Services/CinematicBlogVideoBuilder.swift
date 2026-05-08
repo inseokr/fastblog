@@ -1631,28 +1631,13 @@ enum CinematicBlogVideoBuilder {
                 let panelRect = integralRect(CGRect(x: bandX, y: bandY, width: bandW, height: bandH))
                 let panelCorner = min(26, max(14, panelRect.height * 0.22))
                 let panelPath = UIBezierPath(roundedRect: panelRect, cornerRadius: panelCorner)
-                UIColor.black.withAlphaComponent(0.44).setFill()
+                UIColor.black.withAlphaComponent(0.56).setFill()
                 panelPath.fill()
-                UIColor.white.withAlphaComponent(0.14).setStroke()
-                panelPath.lineWidth = 1
-                panelPath.stroke()
 
-                // Stroke + light shadow so type stays readable even at panel edges.
-                let shadowAttribs: [NSAttributedString.Key: Any] = {
-                    var a = storyAttribs
-                    a[.strokeColor] = UIColor.black.withAlphaComponent(0.55)
-                    a[.strokeWidth] = -3
-                    let shadow = NSShadow()
-                    shadow.shadowColor = UIColor.black.withAlphaComponent(0.45)
-                    shadow.shadowOffset = CGSize(width: 0, height: 1)
-                    shadow.shadowBlurRadius = 4
-                    a[.shadow] = shadow
-                    return a
-                }()
                 (capTrimmed as NSString).draw(
                     with: capRect,
                     options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    attributes: shadowAttribs,
+                    attributes: storyAttribs,
                     context: nil
                 )
             }

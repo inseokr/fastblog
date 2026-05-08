@@ -81,3 +81,63 @@ struct POIInfoSheet: View {
         }
     }
 }
+
+// MARK: - Blog recap place title (Google search)
+
+/// Pull-up sheet for a blog place row — same chrome as ``POIInfoSheet``, loads ``StoryPlaceGoogleSearch`` URL in-app.
+struct PlaceGoogleSearchSheet: View {
+    let placeTitle: String
+    let placeSubtitle: String?
+    /// Row header copy (e.g. ``PlaceStop/cleanedPlaceTitle``).
+    let displayTitle: String
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var currentPageURL: URL? = nil
+
+    private var searchURL: URL? {
+        StoryPlaceGoogleSearch.url(placeName: placeTitle, placeSubtitle: placeSubtitle)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Capsule()
+                .fill(Color(white: 0.5).opacity(0.4))
+                .frame(width: 36, height: 4)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+
+            HStack(alignment: .center) {
+                Text(displayTitle.isEmpty ? "Place" : displayTitle)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button("Done") {
+                    dismiss()
+                }
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.blue)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+
+            Divider()
+
+            if let url = searchURL {
+                GoogleSearchEmbeddedWebView(url: url, currentPageURL: $currentPageURL)
+            } else {
+                Text("Couldn’t open web results for this place.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding()
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.hidden)
+    }
+}

@@ -221,6 +221,7 @@ struct PlaceStopRowView: View {
     @State private var playingVibePhotoId: UUID? = nil
     @StateObject private var voiceMemoPlayer = VibePlayer()
     @State private var playingVoiceMemoPhotoId: UUID? = nil
+    @State private var showPlaceGoogleSearchSheet = false
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
 
@@ -379,8 +380,7 @@ struct PlaceStopRowView: View {
             if hasCaption {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(caption)
-                        .font(.blog(selectedBlogFont, size: 16))
-                        .lineSpacing(6)
+                        .font(.callout)
                         .foregroundColor(rowStoryReadColor)
                         .lineLimit(isExpanded ? nil : 4)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -705,8 +705,10 @@ struct PlaceStopRowView: View {
                         } else {
                             HStack(alignment: .top, spacing: 10) {
                                 Group {
-                                    if let searchURL = StoryPlaceGoogleSearch.url(placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle) {
-                                        Link(destination: searchURL) {
+                                    if StoryPlaceGoogleSearch.url(placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle) != nil {
+                                        Button {
+                                            showPlaceGoogleSearchSheet = true
+                                        } label: {
                                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                                 Text(stop.cleanedPlaceTitle)
                                                     .font(.blog(selectedBlogFont, size: 22, bold: true))
@@ -718,7 +720,14 @@ struct PlaceStopRowView: View {
                                             }
                                         }
                                         .buttonStyle(.plain)
-                                        .accessibilityLabel("Open \(stop.placeTitle) in browser")
+                                        .accessibilityLabel("Web results for \(stop.placeTitle)")
+                                        .sheet(isPresented: $showPlaceGoogleSearchSheet) {
+                                            PlaceGoogleSearchSheet(
+                                                placeTitle: stop.placeTitle,
+                                                placeSubtitle: stop.placeSubtitle,
+                                                displayTitle: stop.cleanedPlaceTitle
+                                            )
+                                        }
                                     } else if let navigate = onNavigate {
                                         Button {
                                             navigate()

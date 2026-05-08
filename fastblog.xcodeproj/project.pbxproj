@@ -78,7 +78,6 @@
 		BB000146 /* PhotosPermissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000145 /* PhotosPermissionView.swift */; };
 		BB000148 /* PlacePhotoModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000147 /* PlacePhotoModalView.swift */; };
 		BB00014A /* PlaceStopActionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000149 /* PlaceStopActionSheet.swift */; };
-		BB0003E5 /* TransportModePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E4 /* TransportModePickerSheet.swift */; };
 		BB00014C /* PlaceStopRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00014B /* PlaceStopRowView.swift */; };
 		BB00014E /* PrivacyPolicyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00014D /* PrivacyPolicyView.swift */; };
 		BB000150 /* ProfileMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00014F /* ProfileMapView.swift */; };
@@ -197,9 +196,7 @@
 		BB0002B3 /* SlideshowMusicPlaybackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */; };
 		BB0002B5 /* SlideshowBundledMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B4 /* SlideshowBundledMusic.swift */; };
 		BB0002B7 /* BlogVideoExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B6 /* BlogVideoExportService.swift */; };
-		BB000310 /* CinematicTravelSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000311 /* CinematicTravelSegment.swift */; };
 		BB0002B9 /* BlogVideoExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B8 /* BlogVideoExportOptionsSheet.swift */; };
-		BB00030C /* BlogVideoPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00030D /* BlogVideoPreviewView.swift */; };
 		BB0002BA /* CinematicBlogVideoBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002BB /* CinematicBlogVideoBuilder.swift */; };
 		BB0002C1 /* PlaceStopCategoryPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002C2 /* PlaceStopCategoryPickerSheet.swift */; };
 		BB0002C3 /* PlacePOICategoryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002C4 /* PlacePOICategoryPresentation.swift */; };
@@ -220,6 +217,8 @@
 		BB000306 /* AtmosphericWaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000307 /* AtmosphericWaveformView.swift */; };
 		BB000309 /* TripDistanceFromHomeOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000308 /* TripDistanceFromHomeOnboardingView.swift */; };
 		BB00030B /* SlideBlockTextEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00030A /* SlideBlockTextEditView.swift */; };
+		BB00030C /* BlogVideoPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00030D /* BlogVideoPreviewView.swift */; };
+		BB000310 /* CinematicTravelSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000311 /* CinematicTravelSegment.swift */; };
 		BB0003A1 /* PDFExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003A2 /* PDFExportOptionsSheet.swift */; };
 		BB0003B1 /* VisitedCitiesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B0 /* VisitedCitiesService.swift */; };
 		BB0003B3 /* VisitedCitiesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B2 /* VisitedCitiesSheet.swift */; };
@@ -229,14 +228,15 @@
 		BB0003D1 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = AA000063 /* ZIPFoundation */; };
 		BB0003D3 /* BlogBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003D2 /* BlogBackupService.swift */; };
 		BB0003E1 /* GoogleSearchEmbeddedWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E0 /* GoogleSearchEmbeddedWebView.swift */; };
-		BB00040D /* POIInfoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00040C /* POIInfoSheet.swift */; };
 		BB0003E3 /* UndoToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E2 /* UndoToastView.swift */; };
+		BB0003E5 /* TransportModePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E4 /* TransportModePickerSheet.swift */; };
 		BB000401 /* TripCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000400 /* TripCluster.swift */; };
 		BB000403 /* TripClusterAnnotationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000402 /* TripClusterAnnotationView.swift */; };
 		BB000405 /* BlogDropService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000404 /* BlogDropService.swift */; };
 		BB000407 /* BlogDropSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000406 /* BlogDropSheet.swift */; };
 		BB000409 /* EditBlogPhotoFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000408 /* EditBlogPhotoFlowView.swift */; };
 		BB00040B /* CameraRollToBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00040A /* CameraRollToBlogView.swift */; };
+		BB00040D /* POIInfoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00040C /* POIInfoSheet.swift */; };
 		BB00A001 /* Analytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00A002 /* Analytics.swift */; };
 		BB00AE01 /* AnalyticsEventType.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AE02 /* AnalyticsEventType.swift */; };
 		BB00AI01 /* AnalyticsIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AI02 /* AnalyticsIdentity.swift */; };
@@ -338,7 +338,6 @@
 		BB000145 /* PhotosPermissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotosPermissionView.swift; sourceTree = "<group>"; };
 		BB000147 /* PlacePhotoModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePhotoModalView.swift; sourceTree = "<group>"; };
 		BB000149 /* PlaceStopActionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopActionSheet.swift; sourceTree = "<group>"; };
-		BB0003E4 /* TransportModePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportModePickerSheet.swift; sourceTree = "<group>"; };
 		BB00014B /* PlaceStopRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopRowView.swift; sourceTree = "<group>"; };
 		BB00014D /* PrivacyPolicyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyPolicyView.swift; sourceTree = "<group>"; };
 		BB00014F /* ProfileMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMapView.swift; sourceTree = "<group>"; };
@@ -459,9 +458,7 @@
 		BB0002B4 /* SlideshowBundledMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowBundledMusic.swift; sourceTree = "<group>"; };
 		BB0002B6 /* BlogVideoExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogVideoExportService.swift; sourceTree = "<group>"; };
 		BB0002B8 /* BlogVideoExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoExportOptionsSheet.swift; path = StoryBook/BlogVideoExportOptionsSheet.swift; sourceTree = "<group>"; };
-		BB00030D /* BlogVideoPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoPreviewView.swift; path = StoryBook/BlogVideoPreviewView.swift; sourceTree = "<group>"; };
 		BB0002BB /* CinematicBlogVideoBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicBlogVideoBuilder.swift; sourceTree = "<group>"; };
-		BB000311 /* CinematicTravelSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicTravelSegment.swift; sourceTree = "<group>"; };
 		BB0002C2 /* PlaceStopCategoryPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopCategoryPickerSheet.swift; sourceTree = "<group>"; };
 		BB0002C4 /* PlacePOICategoryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePOICategoryPresentation.swift; sourceTree = "<group>"; };
 		BB0002C8 /* PlacePOICategoryCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePOICategoryCatalog.swift; sourceTree = "<group>"; };
@@ -481,6 +478,8 @@
 		BB000307 /* AtmosphericWaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmosphericWaveformView.swift; sourceTree = "<group>"; };
 		BB000308 /* TripDistanceFromHomeOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDistanceFromHomeOnboardingView.swift; sourceTree = "<group>"; };
 		BB00030A /* SlideBlockTextEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideBlockTextEditView.swift; sourceTree = "<group>"; };
+		BB00030D /* BlogVideoPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoPreviewView.swift; path = StoryBook/BlogVideoPreviewView.swift; sourceTree = "<group>"; };
+		BB000311 /* CinematicTravelSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicTravelSegment.swift; sourceTree = "<group>"; };
 		BB0003A2 /* PDFExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFExportOptionsSheet.swift; sourceTree = "<group>"; };
 		BB0003B0 /* VisitedCitiesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesService.swift; sourceTree = "<group>"; };
 		BB0003B2 /* VisitedCitiesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesSheet.swift; sourceTree = "<group>"; };
@@ -489,14 +488,15 @@
 		BB0003C4 /* AppChromeMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppChromeMetrics.swift; sourceTree = "<group>"; };
 		BB0003D2 /* BlogBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogBackupService.swift; sourceTree = "<group>"; };
 		BB0003E0 /* GoogleSearchEmbeddedWebView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleSearchEmbeddedWebView.swift; sourceTree = "<group>"; };
-		BB00040C /* POIInfoSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = POIInfoSheet.swift; sourceTree = "<group>"; };
 		BB0003E2 /* UndoToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoToastView.swift; sourceTree = "<group>"; };
+		BB0003E4 /* TransportModePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportModePickerSheet.swift; sourceTree = "<group>"; };
 		BB000400 /* TripCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCluster.swift; sourceTree = "<group>"; };
 		BB000402 /* TripClusterAnnotationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripClusterAnnotationView.swift; sourceTree = "<group>"; };
 		BB000404 /* BlogDropService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogDropService.swift; sourceTree = "<group>"; };
 		BB000406 /* BlogDropSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogDropSheet.swift; sourceTree = "<group>"; };
 		BB000408 /* EditBlogPhotoFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditBlogPhotoFlowView.swift; sourceTree = "<group>"; };
 		BB00040A /* CameraRollToBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollToBlogView.swift; sourceTree = "<group>"; };
+		BB00040C /* POIInfoSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = POIInfoSheet.swift; sourceTree = "<group>"; };
 		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
 		BB00AE02 /* AnalyticsEventType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsEventType.swift; sourceTree = "<group>"; };
 		BB00AI02 /* AnalyticsIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsIdentity.swift; sourceTree = "<group>"; };
@@ -1334,7 +1334,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Debug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
@@ -1370,7 +1370,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Release.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;

@@ -197,6 +197,7 @@ struct PlacePhotoModalView: View {
     @FocusState private var isCaptionFocused: Bool
     @State private var showRenameSheet = false
     @State private var showNavigationAppChooser = false
+    @State private var showPlaceGoogleSearchSheet = false
     @State private var navigationDoNotShowAgain = false
     @AppStorage(Self.navigationChooserSuppressedKey) private var navigationChooserSuppressed = false
     @AppStorage(Self.navigationChooserPreferredAppKey) private var navigationChooserPreferredAppRaw = ""
@@ -274,6 +275,11 @@ struct PlacePhotoModalView: View {
             return t.isEmpty ? nil : t
         }
         return placeSubtitle
+    }
+
+    /// Matches recap place row / ``StoryPlaceGoogleSearch`` — used to show or hide web search affordances.
+    private var canOpenPlaceWebSearch: Bool {
+        StoryPlaceGoogleSearch.url(placeName: placeTitle, placeSubtitle: effectivePlaceSubtitle) != nil
     }
 
     private var effectivePlaceCategoryRaw: String? {
@@ -744,7 +750,8 @@ struct PlacePhotoModalView: View {
                     }
                 },
                 onNavigate: { handleNavigationTap() },
-                onLink: { openGoogleSearch() },
+                onLink: { presentPlaceGoogleSearchSheet() },
+                canOpenWebSearch: canOpenPlaceWebSearch,
                 showDownloadAction: shouldShowManualDownloadAction,
                 onDownload: { saveCurrentInAppCaptureToPhotos() }
             )
@@ -848,6 +855,13 @@ struct PlacePhotoModalView: View {
         .sheet(isPresented: $showWritingStyleSheet) {
             StoryWritingStyleSheet()
                 .interactiveDismissDisabled(false)
+        }
+        .sheet(isPresented: $showPlaceGoogleSearchSheet) {
+            PlaceGoogleSearchSheet(
+                placeTitle: placeTitle,
+                placeSubtitle: effectivePlaceSubtitle,
+                displayTitle: placeTitle.cleanedAsPlaceTitle
+            )
         }
         .confirmationDialog("Choose writing style", isPresented: $showEnhanceStylePicker, titleVisibility: .visible) {
             Button("Use \(currentStyleTitle)") {
@@ -1504,9 +1518,9 @@ struct PlacePhotoModalView: View {
         }
     }
     
-    private func openGoogleSearch() {
-        guard let url = googleSearchURL(placeName: placeTitle) else { return }
-        UIApplication.shared.open(url)
+    private func presentPlaceGoogleSearchSheet() {
+        guard canOpenPlaceWebSearch else { return }
+        showPlaceGoogleSearchSheet = true
     }
 
     private func saveCurrentInAppCaptureToPhotos() {
@@ -1549,19 +1563,6 @@ struct PlacePhotoModalView: View {
                 }
             }
         }
-    }
-
-    /// Builds `https://www.google.com/search?q=…` for a place title plus optional subtitle (e.g. city).
-    private func googleSearchURL(placeName: String) -> URL? {
-        let parts = [placeName, effectivePlaceSubtitle]
-            .compactMap { $0 }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard !parts.isEmpty else { return nil }
-        let query = parts.joined(separator: ", ")
-        var components = URLComponents(string: "https://www.google.com/search")
-        components?.queryItems = [URLQueryItem(name: "q", value: query)]
-        return components?.url
     }
 
     /// After `isEditing` becomes true, the caption `TextField` only exists inside `safeAreaInset`.
@@ -1756,6 +1757,7 @@ private struct PlaceDetailTopChrome: View {
     let onToggleVibe: () -> Void
     let onNavigate: () -> Void
     let onLink: () -> Void
+    let canOpenWebSearch: Bool
     let showDownloadAction: Bool
     let onDownload: () -> Void
 
@@ -1854,6 +1856,11 @@ private struct PlaceDetailTopChrome: View {
                                             Label("Edit caption", systemImage: "text.alignleft")
                                         }
                                     }
+                                    if canOpenWebSearch {
+                                        Button(action: onLink) {
+                                            Label("Web results", systemImage: "safari")
+                                        }
+                                    }
                                     Button {
                                         onMenuRemovePhoto(currentPhotoId)
                                     } label: {
@@ -1876,6 +1883,7 @@ private struct PlaceDetailTopChrome: View {
                                     onSparkles: { },
                                     onNavigate: onNavigate,
                                     onLink: onLink,
+                                    showWebSearchLink: canOpenWebSearch,
                                     showDownloadAction: showDownloadAction,
                                     onDownload: onDownload
                                 )
@@ -2002,6 +2010,8 @@ struct RightActionStack: View {
     var onSparkles: () -> Void
     var onNavigate: () -> Void
     var onLink: () -> Void
+    /// When false, hides the in-app web search control (no place query to open).
+    var showWebSearchLink: Bool = true
     var showDownloadAction: Bool = false
     var onDownload: () -> Void = { }
 
@@ -2028,15 +2038,17 @@ struct RightActionStack: View {
             }
             .buttonStyle(.plain)
 
-            Button(action: onLink) {
-                StoryPlaceExternalLinkIcon(titleFontSize: 22, foregroundColor: .white)
-                    .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
-                    .background(Color.white.opacity(0.22))
-                    .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+            if showWebSearchLink {
+                Button(action: onLink) {
+                    StoryPlaceExternalLinkIcon(titleFontSize: 22, foregroundColor: .white)
+                        .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
+                        .background(Color.white.opacity(0.22))
+                        .clipShape(Circle())
+                        .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Web results for place")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open in browser")
 
             if showDownloadAction {
                 Button(action: onDownload) {

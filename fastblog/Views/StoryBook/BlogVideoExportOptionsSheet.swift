@@ -35,7 +35,6 @@ struct BlogVideoExportOptionsSheet: View {
                         durationSection
                         photoCaptionsSection
                         musicSection
-                        categoryFilterSection
                         placesSection
                     }
                     .padding(20)
@@ -190,9 +189,11 @@ struct BlogVideoExportOptionsSheet: View {
     // MARK: - Places Section
 
     private var placesSection: some View {
+        let available = availableCategoryRawsForDraft()
         let days = filteredDaysForPlacePicker()
         let highlightIDs = highlightIDsForVisibleStops()
         let highlightSelected = isHighlightsOnlySelected(highlightIDs: highlightIDs)
+        let isAllCategoriesSelected = options.includedPlaceCategoryRaws == nil
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 sectionHeader("Places", icon: "mappin.and.ellipse")
@@ -234,6 +235,50 @@ struct BlogVideoExportOptionsSheet: View {
                     }
                 }
             }
+
+            if !available.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        // "All" pill
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                options.includedPlaceCategoryRaws = nil
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "square.grid.2x2")
+                                    .font(.caption.weight(.semibold))
+                                Text("All")
+                                    .font(.caption.weight(.semibold))
+                                    .lineLimit(1)
+                                if isAllCategoriesSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption2.weight(.bold))
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(isAllCategoriesSelected
+                                          ? Color.accentColor
+                                          : Color(uiColor: .tertiarySystemGroupedBackground).opacity(0.4))
+                            )
+                            .foregroundColor(isAllCategoriesSelected ? .white : Color.secondary.opacity(0.45))
+                        }
+                        .buttonStyle(.plain)
+
+                        ForEach(available, id: \.self) { raw in
+                            categoryPill(raw: raw)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .padding(14)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .appChromeCornerRadius(12)
+            }
+
             if !days.isEmpty {
                 VStack(alignment: .leading, spacing: 16) {
                     ForEach(Array(days.enumerated()), id: \.element.id) { dayOffset, day in
@@ -613,48 +658,10 @@ struct BlogVideoExportOptionsSheet: View {
         return "\(secs)s"
     }
 
-    // MARK: - Category Filter
-
-    private var categoryFilterSection: some View {
-        let available = availableCategoryRawsForDraft()
-        guard !available.isEmpty else { return AnyView(EmptyView()) }
-        return AnyView(
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    sectionHeader("Categories", icon: "line.3.horizontal.decrease.circle")
-                    Spacer()
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            if options.includedPlaceCategoryRaws == nil {
-                                options.includedPlaceCategoryRaws = []
-                            } else {
-                                options.includedPlaceCategoryRaws = nil
-                            }
-                        }
-                    } label: {
-                        Text(options.includedPlaceCategoryRaws == nil ? "Deselect All" : "Select All")
-                            .font(.caption.weight(.medium))
-                            .foregroundColor(.accentColor)
-                    }
-                }
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(available, id: \.self) { raw in
-                            categoryPill(raw: raw)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-                .padding(14)
-                .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .appChromeCornerRadius(12)
-            }
-        )
-    }
-
     private func categoryPill(raw: String) -> some View {
-        let isSelected = isCategoryIncluded(raw)
+        let isAllActive = options.includedPlaceCategoryRaws == nil
+        // A pill is "on" only when specific categories are chosen AND this one is in the set
+        let isSelected = !isAllActive && isCategoryIncluded(raw)
         let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
         return Button {
             toggleCategory(raw)
@@ -662,27 +669,23 @@ struct BlogVideoExportOptionsSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: p.symbol)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(isSelected ? .white : p.color)
                 Text(p.label)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(isSelected ? .white : .primary)
                     .lineLimit(1)
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(.white.opacity(0.95))
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(
                 Capsule(style: .continuous)
-                    .fill(isSelected ? p.color : p.color.opacity(0.18))
+                    .fill(isSelected
+                          ? p.color
+                          : Color(uiColor: .tertiarySystemGroupedBackground).opacity(0.4))
             )
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(p.color.opacity(isSelected ? 0 : 0.35), lineWidth: 1)
-            )
+            .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(Color.secondary.opacity(0.45)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -711,16 +714,18 @@ struct BlogVideoExportOptionsSheet: View {
 
     private func toggleCategory(_ raw: String) {
         withAnimation(.easeInOut(duration: 0.15)) {
-            let all = Set(availableCategoryRawsForDraft())
             if options.includedPlaceCategoryRaws == nil {
-                options.includedPlaceCategoryRaws = all.subtracting([raw])
+                // "All" active → select just this category
+                options.includedPlaceCategoryRaws = [raw]
             } else if options.includedPlaceCategoryRaws!.contains(raw) {
+                // Already selected → deselect; revert to All if nothing left
                 options.includedPlaceCategoryRaws!.remove(raw)
-            } else {
-                options.includedPlaceCategoryRaws!.insert(raw)
-                if options.includedPlaceCategoryRaws == all {
+                if options.includedPlaceCategoryRaws!.isEmpty {
                     options.includedPlaceCategoryRaws = nil
                 }
+            } else {
+                // Not selected → add to selection
+                options.includedPlaceCategoryRaws!.insert(raw)
             }
         }
     }
