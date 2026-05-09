@@ -268,12 +268,37 @@ struct BlogSettingsSheet: View {
                     .foregroundStyle(.white)
             }
             Button {
+                AppAnalytics.trackEvent(name: "Blog-Change-BlogTitle")
+                showTitleChange = true
+            } label: {
+                Text(draft.title)
+                    .font(.subheadline)
+                    .foregroundStyle(Color(white: 0.6))
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Button {
                 AppAnalytics.trackEvent(name: "Blog-Pick-CoverPhoto")
                 coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
                 showCoverChange = true
             } label: {
                 Label("Change Cover Photo", systemImage: "photo")
                     .foregroundStyle(.white)
+            }
+            if let coverId = draft.selectedCoverPhotoIdentifier, !coverId.isEmpty {
+                Button {
+                    AppAnalytics.trackEvent(name: "Blog-Pick-CoverPhoto")
+                    coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
+                    showCoverChange = true
+                } label: {
+                    AssetPhotoView(assetIdentifier: coverId, cornerRadius: 10, targetSize: CGSize(width: 400, height: 300))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 160)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
             }
         }
     }

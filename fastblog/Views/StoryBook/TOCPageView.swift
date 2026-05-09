@@ -10,6 +10,7 @@ struct TOCPageView: View {
     var onDayTap: ((TOCEntry) -> Void)? = nil
 
     @Environment(\.storyBlogColor) private var blogColor
+    @Environment(\.storyRasterizesForExport) private var rasterizesForExport
 
     private var primaryColor: Color { blogColor == .black ? .white : .black }
     private var bgColor: Color { blogColor == .black ? .black : .white }
@@ -43,7 +44,8 @@ struct TOCPageView: View {
                 Spacer(minLength: 0)
             }
             .padding(.top, pageIndex == 1 ? 0 : StoryPageLayout.tocTopPadding)
-            .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight)
+            // Exported story PDFs do not have the reader's bottom bar; avoid the odd empty band.
+            .padding(.bottom, rasterizesForExport ? 0 : StoryPageLayout.storyChromeBottomOverlayHeight)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .background(bgColor.ignoresSafeArea())
@@ -51,12 +53,23 @@ struct TOCPageView: View {
 
     // MARK: - Header
 
-    /// Layout height stays `tocCoverStripHeight`; the image draws into the top safe area (no white "guardrail").
+    /// A compact, intentional header — fill the top safe-area with the page background,
+    /// and show the cover as a small "postcard" instead of a random cropped sliver.
     private func coverStrip(topSafeInset: CGFloat) -> some View {
-        Color.clear
-            .frame(height: StoryPageLayout.tocCoverStripHeight)
-            .frame(maxWidth: .infinity)
-            .background(alignment: .top) {
+        ZStack(alignment: .bottomLeading) {
+            // Fill the top safe-area so we never show a white "guardrail".
+            bgColor
+                .frame(height: topSafeInset)
+                .frame(maxWidth: .infinity)
+                .ignoresSafeArea(edges: .top)
+
+            // Header band (fixed height for layout packing).
+            Rectangle()
+                .fill(bgColor)
+                .frame(height: StoryPageLayout.tocCoverStripHeight)
+                .frame(maxWidth: .infinity)
+
+            HStack(spacing: 12) {
                 Group {
                     if let img = overview.coverPhoto {
                         Image(uiImage: img)
@@ -70,11 +83,30 @@ struct TOCPageView: View {
                         )
                     }
                 }
-                .frame(height: StoryPageLayout.tocCoverStripHeight + topSafeInset)
-                .frame(maxWidth: .infinity)
+                .frame(width: 64, height: 64)
                 .clipped()
-                .ignoresSafeArea(edges: .top)
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(appChromeBaseRadius: 14, style: .continuous)
+                        .stroke(primaryColor.opacity(blogColor == .black ? 0.18 : 0.12), lineWidth: 1)
+                )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(overview.tripTitle)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(primaryColor)
+                        .lineLimit(2)
+
+                    Text(overview.dateRange)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(primaryColor.opacity(0.7))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .padding(.horizontal, Self.horizontalInset)
+            .padding(.bottom, 10)
+        }
     }
 
     private var contentsTitleBlock: some View {
@@ -84,11 +116,13 @@ struct TOCPageView: View {
                     .font(.system(size: 28, weight: .heavy))
                     .foregroundColor(primaryColor)
                 Spacer(minLength: 8)
-                Image("PDFLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(appChromeBaseRadius: 6, style: .continuous))
+                if !rasterizesForExport {
+                    Image("PDFLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 6, style: .continuous))
+                }
             }
             .padding(.top, 8)
 

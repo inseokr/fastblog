@@ -1350,7 +1350,8 @@ enum StoryPageLayout {
                 isLastDay: isLastDay,
                 nextDayName: nextDayName,
                 metrics: metrics,
-                fontTheme: fontTheme
+                fontTheme: fontTheme,
+                dayStoryShownOnMapPage: day.mapSnapshot != nil
             )
             dayPages.append(contentsOf: contentPages.map { .dayContent($0) })
         }
@@ -1419,16 +1420,19 @@ enum StoryPageLayout {
         isLastDay: Bool,
         nextDayName: String?,
         metrics: Metrics,
-        fontTheme: FontTheme
+        fontTheme: FontTheme,
+        dayStoryShownOnMapPage: Bool
     ) -> [DayContentPage] {
 
         var allSlots: [ContentSlot] = []
 
-        // Day caption (only emitted once — DayContentPageView shows it only on isFirstPage)
-        if let caption = day.dayCaption {
-            let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                allSlots.append(.dayCaption(trimmed))
+        // Day caption on the first text page unless it is overlaid on the full-bleed day map (`DayMapPageView`).
+        if !dayStoryShownOnMapPage {
+            if let caption = day.dayCaption {
+                let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    allSlots.append(.dayCaption(trimmed))
+                }
             }
         }
 

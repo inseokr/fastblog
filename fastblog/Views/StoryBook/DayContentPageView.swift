@@ -6,6 +6,7 @@ struct DayContentPageView: View {
     @Environment(\.storyFontTheme) private var fontTheme
     @Environment(\.storyBlogColor) private var blogColor
     @Environment(\.storyRecapTopContentInset) private var recapTopContentInset
+    @Environment(\.storyRasterizesForExport) private var rasterizesForExport
     private var primaryColor: Color { blogColor == .black ? .white : .black }
     private var bgColor: Color { blogColor == .black ? .black : .white }
 
@@ -33,11 +34,14 @@ struct DayContentPageView: View {
 
                 Spacer(minLength: 12)
 
-                Image("PDFLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(appChromeBaseRadius: 8, style: .continuous))
+                // Keep reader chrome, but omit logos in exported PDFs.
+                if !rasterizesForExport {
+                    Image("PDFLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 8, style: .continuous))
+                }
             }
             .frame(height: 44, alignment: .center)
             Divider()
@@ -50,13 +54,14 @@ struct DayContentPageView: View {
         .padding(.horizontal, 16)
         // Default `recapTopContentInset` is 0 (standalone); Recap story mode passes a few pt — not full safe area (see `StoryRenderMetrics`).
         .padding(.top, (recapTopContentInset > 0 ? 0 : 2) + recapTopContentInset)
-        .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight)
+        // Exported story PDFs do not have the reader's bottom bar; avoid the odd empty band.
+        .padding(.bottom, rasterizesForExport ? 0 : StoryPageLayout.storyChromeBottomOverlayHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(bgColor.ignoresSafeArea())
         .overlay(alignment: .bottom) {
             // "The End" sits inside the chrome-reserve zone (above the Cancel/Share bar),
             // so it doesn't consume any photo space on non-final pages.
-            if page.isLastPageOfTrip {
+            if page.isLastPageOfTrip, !rasterizesForExport {
                 HStack {
                     Spacer()
                     Text("The End")

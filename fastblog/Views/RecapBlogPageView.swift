@@ -6178,13 +6178,19 @@ Your blog remains private unless you choose to share it.
     /// Appends library picks to the managed place, fills missing metadata from the place/day, and copies pixels into the in-app gallery.
     @MainActor
     private func importLibraryPhotosIntoStop(assetIdentifiers: [String], dayId: UUID, stopId: UUID) async {
+        guard let initDayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let initStop = draft.days[initDayIdx].placeStops.first(where: { $0.id == stopId }) else { return }
+
+        let placeTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: initStop)
+
+        // Re-validate indices after the async pause — other @MainActor work may have run during geocoding.
         guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
               let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
 
-        var stop = draft.days[dayIdx].placeStops[stopIdx]
         let day = draft.days[dayIdx]
+        var stop = draft.days[dayIdx].placeStops[stopIdx]
         var existingIds = Set(stop.photos.compactMap(\.localIdentifier))
-        let placeTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: stop)
+        var photosToCache: [(assetId: String, timestamp: Date)] = []
 
         for rawId in assetIdentifiers {
             let id = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -6203,15 +6209,23 @@ Your blog remains private unless you choose to share it.
             )
             stop.photos.append(recap)
             existingIds.insert(id)
-
-            if let img = await ImageLoader.shared.loadImage(assetIdentifier: id, targetSize: CGSize(width: 2048, height: 2048)) {
-                InAppCameraPhotoStore.shared.addPhoto(image: img, timestamp: timestamp)
-            }
+            photosToCache.append((assetId: id, timestamp: timestamp))
         }
 
+        guard !photosToCache.isEmpty else { return }
+
+        // Update draft before image caching so the photo appears in the grid immediately.
+        // In limited access mode photos are not pre-cached, so loadImage can take many seconds;
+        // waiting for it before writing draft causes the photo to never appear during that wait.
         stop.photos.sort { $0.timestamp < $1.timestamp }
         draft.days[dayIdx].placeStops[stopIdx] = stop
         persistRecapBlogDetail()
+
+        for (assetId, timestamp) in photosToCache {
+            if let img = await ImageLoader.shared.loadImage(assetIdentifier: assetId, targetSize: CGSize(width: 2048, height: 2048)) {
+                InAppCameraPhotoStore.shared.addPhoto(image: img, timestamp: timestamp)
+            }
+        }
     }
 
     private func importBloggoPhotosIntoStop(captureIds: [UUID], dayId: UUID, stopId: UUID) {
