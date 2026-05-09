@@ -159,8 +159,12 @@ enum StoryPageLayout {
         h += 12
         return h
     }
-    /// Hero strip above CONTENTS on the first TOC page (cover photo + page indicator).
-    static let tocCoverStripHeight: CGFloat = 88
+    /// Hero strip above CONTENTS on the first TOC page (cover + trip summary).
+    /// ~20% of the story viewport height (Story Mode / storybook PDF) so the cover reads as a real header, not a sliver.
+    static var tocCoverStripHeight: CGFloat {
+        let raw = StoryRenderMetrics.effectiveStoryViewportHeight * 0.20
+        return max(96, min(raw, 260))
+    }
     /// First TOC page: small inset below the last row (page numbers sit on the cover strip, not here).
     static let tocFirstPageBottomChrome: CGFloat = 12
     /// Continuation TOC pages: invisible CONTENTS row + divider + 8pt gap before first day (matches gap before trip title on page 1).

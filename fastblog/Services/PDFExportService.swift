@@ -89,7 +89,8 @@ struct PDFPhotoShapeOptions: Codable, Equatable {
 
 struct PDFExportOptions: Codable, Equatable {
     var fontTheme: FontTheme = .classic
-    var colorStyle: BlogColor = .white
+    /// Default to dark story / PDF chrome; users can switch to light in export settings.
+    var colorStyle: BlogColor = .black
     var photoShapeOptions: PDFPhotoShapeOptions = PDFPhotoShapeOptions()
 }
 

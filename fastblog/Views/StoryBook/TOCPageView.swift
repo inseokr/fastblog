@@ -53,59 +53,43 @@ struct TOCPageView: View {
 
     // MARK: - Header
 
-    /// A compact, intentional header — fill the top safe-area with the page background,
-    /// and show the cover as a small "postcard" instead of a random cropped sliver.
+    /// Full-bleed trip cover: height matches `StoryPageLayout.tocCoverStripHeight` (~20% of story viewport).
+    /// Trip name/dates live under “CONTENTS” below — no duplicate summary beside the image.
     private func coverStrip(topSafeInset: CGFloat) -> some View {
-        ZStack(alignment: .bottomLeading) {
-            // Fill the top safe-area so we never show a white "guardrail".
+        let stripH = StoryPageLayout.tocCoverStripHeight
+
+        return VStack(spacing: 0) {
             bgColor
                 .frame(height: topSafeInset)
                 .frame(maxWidth: .infinity)
                 .ignoresSafeArea(edges: .top)
 
-            // Header band (fixed height for layout packing).
-            Rectangle()
-                .fill(bgColor)
-                .frame(height: StoryPageLayout.tocCoverStripHeight)
-                .frame(maxWidth: .infinity)
-
-            HStack(spacing: 12) {
-                Group {
-                    if let img = overview.coverPhoto {
-                        Image(uiImage: img)
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        LinearGradient(
-                            colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.15)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    }
+            Group {
+                if let img = overview.coverPhoto {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    LinearGradient(
+                        colors: [Color.gray.opacity(0.35), Color.gray.opacity(0.15)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 }
-                .frame(width: 64, height: 64)
-                .clipped()
-                .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(appChromeBaseRadius: 14, style: .continuous)
-                        .stroke(primaryColor.opacity(blogColor == .black ? 0.18 : 0.12), lineWidth: 1)
-                )
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(overview.tripTitle)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(primaryColor)
-                        .lineLimit(2)
-
-                    Text(overview.dateRange)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(primaryColor.opacity(0.7))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, Self.horizontalInset)
-            .padding(.bottom, 10)
+            .frame(height: stripH)
+            .frame(maxWidth: .infinity)
+            .clipped()
+            /// Soft edge so the photo meets the CONTENTS block without a hard seam.
+            .overlay(alignment: .bottom) {
+                LinearGradient(
+                    colors: [Color.clear, bgColor.opacity(0.55)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: min(28, stripH * 0.22))
+                .allowsHitTesting(false)
+            }
         }
     }
 

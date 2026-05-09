@@ -10,10 +10,18 @@
       "WebFetch(domain:apis.map.kakao.com)",
       "Read(//Users/inseo/Library/Developer/Xcode/DerivedData/fastblog-bjgdkhkzwbbyyncqbwhmulntjpie/SourcePackages/checkouts/KakaoMapsSDK-SPM/**)",
       "Read(//Users/inseo/Library/Developer/Xcode/DerivedData/**)",
-      "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog log --oneline --all -- \"fastblog/Views/InAppCameraCaptionOverlay.swift\")"
+      "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog log --oneline --all -- \"fastblog/Views/InAppCameraCaptionOverlay.swift\")",
+      "Bash(awk '/showsTextEditLine\\\\s*=\\\\s*true/ {print NR\": \"$0}' /Users/inseo/Documents/GitHub/fastblog/fastblog/fastblog/Views/CarouselStudioSheet.swift)",
+      "Bash(xargs -I {} basename {})",
+      "Bash(xargs -I {} sh -c 'echo \"=== $\\(basename {}\\) ===\" && head -30 {}')",
+      "Read(//Users/inseo/.claude/**)",
+      "Bash(claude mcp *)",
+      "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog branch -a)",
+      "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog log --oneline BLOGGO-443-use-ondevice-ai-to-figure-out-the-transport-betwee -20)"
     ],
     "additionalDirectories": [
-      "/Users/inseo/Documents/GitHub/shazam/shazam/Capper/Views"
+      "/Users/inseo/Documents/GitHub/shazam/shazam/Capper/Views",
+      "/Users/inseo/.claude"
     ]
   }
 }
