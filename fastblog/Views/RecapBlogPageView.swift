@@ -1208,7 +1208,11 @@ struct RecapBlogPageView: View {
                         presentSplitPlaceStopSheet(dayId: pair.dayId, stop: stop)
                     },
                     onAddFromLibrary: { showLibraryImportForManageStop = true },
-                    onAddFromBloggoGallery: { showBloggoGalleryImportForManageStop = true }
+                    onAddFromBloggoGallery: { showBloggoGalleryImportForManageStop = true },
+                    isLimitedPhotoLibraryAccess: photoAuth.status == .limited,
+                    onExpandSharedPhotoLibrary: {
+                        presentLimitedLibraryPickerForManageStopImport(dayId: pair.dayId, stopId: pair.stopId)
+                    }
                 )
             }
             .sheet(isPresented: $showLibraryImportForManageStop) {
@@ -2329,6 +2333,36 @@ struct RecapBlogPageView: View {
                     // No automatic rescan here; blogs use existing trips/photos.
                     // We only care about updated access for future scans/edits.
                     let _ = photoCountBeforePicker
+                }
+            }
+        }
+    }
+
+    /// Image assets readable with the current Photos authorization (the limited subset when access is `.limited`).
+    private func imageAssetLocalIdentifiersAccessible() -> Set<String> {
+        var set = Set<String>()
+        let result = PHAsset.fetchAssets(with: .image, options: nil)
+        set.reserveCapacity(result.count)
+        result.enumerateObjects { asset, _, _ in
+            set.insert(asset.localIdentifier)
+        }
+        return set
+    }
+
+    /// System limited-library UI (same as Trips / Settings **Select more photos**). Imports any newly shared assets into this place stop.
+    private func presentLimitedLibraryPickerForManageStopImport(dayId: UUID, stopId: UUID) {
+        DispatchQueue.main.async {
+            guard let topVC = topViewControllerForPresentation() else { return }
+            let idsBefore = imageAssetLocalIdentifiersAccessible()
+            PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: topVC) { _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    photoAuth.refreshStatus()
+                    let idsAfter = imageAssetLocalIdentifiersAccessible()
+                    let added = idsAfter.subtracting(idsBefore)
+                    guard !added.isEmpty else { return }
+                    Task { @MainActor in
+                        await importLibraryPhotosIntoStop(assetIdentifiers: Array(added), dayId: dayId, stopId: stopId)
+                    }
                 }
             }
         }
@@ -6175,6 +6209,26 @@ Your blog remains private unless you choose to share it.
         }
     }
 
+    /// Resolves a library asset after PHPicker returns its local identifier.
+    ///
+    /// With **limited** photo library access, `PHAsset.fetchAssets(withLocalIdentifiers:)` often returns empty on the first
+    /// query while Photos finishes extending the user's authorized asset set. Imports still proceed using place/day fallbacks;
+    /// longer retry schedules help attach richer metadata when the asset appears.
+    private func fetchPHAssetForLibraryImport(localIdentifier id: String) async -> PHAsset? {
+        let isLimited = PHPhotoLibrary.authorizationStatus(for: .readWrite) == .limited
+        let delaysMs: [UInt64] = isLimited
+            ? [0, 50, 120, 250, 500, 900, 1600, 2500, 3500, 5000]
+            : [0, 50, 120, 250, 500, 900, 1600]
+        for delayMs in delaysMs {
+            if delayMs > 0 {
+                try? await Task.sleep(nanoseconds: delayMs * 1_000_000)
+            }
+            let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+            if let asset = assets.firstObject { return asset }
+        }
+        return nil
+    }
+
     /// Appends library picks to the managed place, fills missing metadata from the place/day, and copies pixels into the in-app gallery.
     @MainActor
     private func importLibraryPhotosIntoStop(assetIdentifiers: [String], dayId: UUID, stopId: UUID) async {
@@ -6195,8 +6249,9 @@ Your blog remains private unless you choose to share it.
         for rawId in assetIdentifiers {
             let id = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !id.isEmpty, !existingIds.contains(id) else { continue }
-            let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
-            guard let asset = assets.firstObject else { continue }
+            // Under limited library access, `PHAsset.fetchAssets` can stay empty briefly after PHPicker returns.
+            // Still append the pick so it is included in the blog; metadata falls back to place/day when asset is nil.
+            let asset = await fetchPHAssetForLibraryImport(localIdentifier: id)
 
             let coord = PlaceLibraryPhotoImport.resolvedCoordinate(asset: asset, stop: stop)
             let timestamp = PlaceLibraryPhotoImport.resolvedTimestamp(asset: asset, stop: stop, day: day, placeTimeZone: placeTZ)

@@ -695,6 +695,33 @@ struct PlaceStopRowView: View {
                                                     }
                                                     .buttonStyle(.plain)
                                                     .accessibilityLabel("Add place category")
+                                                } else if let cat = categoryPresentForRow {
+                                                    // Named category persists even when MapKit/autocomplete never marked the title manual
+                                                    // (“Tap to rename” flow). Previously we hid Add category without painting the chip.
+                                                    let categoryAccent = cat.color
+                                                    if hasResolvedPlaceNameForCategory, let pickCategory = onEditCategory {
+                                                        Button {
+                                                            pickCategory()
+                                                        } label: {
+                                                            PlaceCategoryChip(
+                                                                symbol: cat.symbol,
+                                                                label: cat.label,
+                                                                accentColor: categoryAccent,
+                                                                isEditMode: isEditMode,
+                                                                verticalPadding: isEditMode ? 6 : 5
+                                                            )
+                                                        }
+                                                        .buttonStyle(.plain)
+                                                        .accessibilityLabel("Change place category, \(cat.label)")
+                                                    } else {
+                                                        PlaceCategoryChip(
+                                                            symbol: cat.symbol,
+                                                            label: cat.label,
+                                                            accentColor: categoryAccent,
+                                                            isEditMode: isEditMode,
+                                                            verticalPadding: isEditMode ? 6 : 5
+                                                        )
+                                                    }
                                                 }
                                             }
                                             sentimentPillForRow

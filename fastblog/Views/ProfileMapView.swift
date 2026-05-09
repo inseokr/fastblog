@@ -13,13 +13,15 @@ struct ProfileMapView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @StateObject private var viewModel: ProfileMapViewModel
-    @State private var mapPosition: MapCameraPosition = .automatic
-    
+    @State private var mapPosition: MapCameraPosition
+
     @State private var isSearchActive = false
     @FocusState private var isSearchFocused: Bool
 
     init(createdRecapStore: CreatedRecapBlogStore, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
-        _viewModel = StateObject(wrappedValue: ProfileMapViewModel(createdRecapStore: createdRecapStore))
+        let vm = ProfileMapViewModel(createdRecapStore: createdRecapStore)
+        _viewModel = StateObject(wrappedValue: vm)
+        _mapPosition = State(initialValue: .region(vm.mapRegion))
         _selectedCreatedRecap = selectedCreatedRecap
     }
 
@@ -76,9 +78,9 @@ struct ProfileMapView: View {
             // mapPosition is set reactively via onChange(of: mapRegionChangeCounter),
             // but seed it here too so there's no blank frame.
             mapPosition = .region(viewModel.mapRegion)
-            // Seed scroll position synchronously — onChange(of: selectedTripID)
-            // may not fire in the same run loop tick as the view appearing.
-            scrolledTripID = viewModel.visibleTrips.first?.sourceTripId
+            // Use the trip selectedTripID that onAppear() just resolved (first trip
+            // with a coordinate), so the card strip scrolls to match the map center.
+            scrolledTripID = viewModel.selectedTripID ?? viewModel.visibleTrips.first?.sourceTripId
         }
         .onChange(of: viewModel.mapRegionChangeCounter) { _, _ in
             withAnimation {
@@ -258,9 +260,9 @@ struct ProfileMapView: View {
 
     private var bottomTripList: some View {
         GeometryReader { geo in
-            let cardWidth = min(geo.size.width * 0.80, 340)
-            let cardHeight: CGFloat = 104
-            
+            let cardWidth = min(geo.size.width * 0.90, 384)
+            let cardHeight = ProfileMapCarouselLayout.cardHeight
+
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(viewModel.visibleTrips, id: \.sourceTripId) { trip in
@@ -304,7 +306,7 @@ struct ProfileMapView: View {
                 }
             }
         }
-        .frame(height: 144)
+        .frame(height: ProfileMapCarouselLayout.stripHeight)
         .padding(.bottom, 24)
     }
 
@@ -322,6 +324,14 @@ struct ProfileMapView: View {
         .buttonStyle(.plain)
     }
 
+}
+
+// MARK: - Profile map bottom carousel layout
+
+private enum ProfileMapCarouselLayout {
+    static let cardHeight: CGFloat = 126
+    /// Vertical padding inside the horizontal `ScrollView` (10 × 2) plus card height.
+    static let stripHeight: CGFloat = cardHeight + 40
 }
 
 // MARK: - Safe Collection Subscript (shared by map views)
@@ -365,22 +375,21 @@ private struct ProfileMapCardView: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 coverImage
 
                 VStack(alignment: .leading, spacing: 4) {
                     tripInfo
                 }
-                .padding(.vertical, 12)
-
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 10)
 
                 if showsTrailingNavigateButton {
                     chevronButton
                 }
             }
-            .padding(.trailing, 12)
-            .frame(height: 104)
+            .padding(.horizontal, 12)
+            .frame(height: ProfileMapCarouselLayout.cardHeight)
             .background(.ultraThinMaterial)
             .appChromeCornerRadius(20)
             .overlay(
@@ -423,34 +432,45 @@ private struct ProfileMapCardView: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(.white.opacity(0.88))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                         Text(countryLine)
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(.white.opacity(0.72))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 } else if let cityLine {
                     Text(cityLine)
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(.white.opacity(0.85))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if let countryLine {
                     Text(countryLine)
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(.white.opacity(0.85))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
             // Trip duration (and places) directly under the country info
             Text("\(blog.totalPlaceVisitCount) Place\(blog.totalPlaceVisitCount == 1 ? "" : "s") • \(blog.tripDurationDays) Day\(blog.tripDurationDays == 1 ? "" : "s")")
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.7))
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.72))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
             if let caption = blog.caption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(caption)
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.6))
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -497,7 +517,7 @@ struct TripAnnotationView: View {
                 .foregroundColor(.white)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 80)
+                .frame(maxWidth: 118)
                 .shadow(color: .black.opacity(0.5), radius: 1)
         }
     }
@@ -644,8 +664,8 @@ struct CountryMapView: View {
 
     private var bottomBlogStrip: some View {
         GeometryReader { geo in
-            let cardWidth = min(geo.size.width * 0.80, 340)
-            let cardHeight: CGFloat = 104
+            let cardWidth = min(geo.size.width * 0.90, 384)
+            let cardHeight = ProfileMapCarouselLayout.cardHeight
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
@@ -694,7 +714,7 @@ struct CountryMapView: View {
                 if let newID { scrolledTripID = newID }
             }
         }
-        .frame(height: 144)
+        .frame(height: ProfileMapCarouselLayout.stripHeight)
         .padding(.bottom, 24)
     }
 

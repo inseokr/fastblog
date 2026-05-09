@@ -931,8 +931,19 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
-    /// Representative coordinate for a blog (first photo with location in its trip draft). Nil if no draft or no location.
+    /// Representative coordinate for a blog: first itinerary place with a location (saved blog detail), else first GPS photo in the trip draft.
     func coordinate(for sourceTripId: UUID) -> CLLocationCoordinate2D? {
+        if let detail = blogDetailsBySourceId[sourceTripId] {
+            for day in detail.days.sorted(by: { $0.dayIndex < $1.dayIndex }) {
+                for stop in day.placeStops.sorted(by: { $0.orderIndex < $1.orderIndex }) {
+                    if let c = stop.representativeLocation?.clCoordinate { return c }
+                    let included = stop.photos.filter(\.isIncluded)
+                    if let p = included.first(where: { $0.location != nil }), let loc = p.location {
+                        return loc.clCoordinate
+                    }
+                }
+            }
+        }
         guard let trip = tripDraftsBySourceId[sourceTripId] else { return nil }
         let first = trip.days.flatMap(\.photos).first(where: { $0.location != nil })
         return first?.location?.clCoordinate
