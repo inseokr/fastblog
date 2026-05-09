@@ -2,6 +2,19 @@
 import UIKit
 import MapKit
 import CoreLocation
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
+
+// MARK: - LLM transport inference response type (iOS 26+)
+#if canImport(FoundationModels)
+@available(iOS 26, *)
+@Generable
+private struct TransportInference {
+    @Guide(description: "Most likely transport mode. Must be exactly one of: walking, driving, taxi, bus, train, subway, flying")
+    var mode: String
+}
+#endif
 
 // MARK: - TravelMode
 
@@ -14,14 +27,73 @@ enum TravelMode: String, Codable, CaseIterable, Equatable {
     case subway   // manual  →  tram.tunnel.fill
     case flying   // > 50 km  →  airplane (Bezier arc)
 
-    /// Auto-detects walking / driving / flying based on distance.
+    /// Distance-only fallback for when LLM is unavailable.
     /// Bus and train are never auto-detected — they require an explicit user choice.
     static func detect(from a: CLLocationCoordinate2D, to b: CLLocationCoordinate2D) -> TravelMode {
         let meters = CLLocation(latitude: a.latitude, longitude: a.longitude)
             .distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
-        if meters < 500 { return .walking }
-        if meters < 50_000 { return .driving }
+        if meters < 500     { return .walking }
+        if meters < 804_672 { return .driving }  // up to 500 miles → driving
         return .flying
+    }
+
+    /// On-device LLM inference using distance, time gap, place names and categories.
+    /// Hard physical boundaries apply first; LLM refines the middle range.
+    /// Falls back to `detect()` if the model is unavailable or errors.
+    @available(iOS 26, *)
+    static func infer(from a: PlaceStop, to b: PlaceStop) async -> TravelMode {
+        guard let coordA = a.representativeLocation?.clCoordinate,
+              let coordB = b.representativeLocation?.clCoordinate else { return .driving }
+
+        let meters = CLLocation(latitude: coordA.latitude, longitude: coordA.longitude)
+            .distance(from: CLLocation(latitude: coordB.latitude, longitude: coordB.longitude))
+
+        // Hard boundaries: LLM can't override physics
+        if meters < 300     { return .walking }
+        if meters > 804_672 { return .flying }  // 500 miles
+
+        #if canImport(FoundationModels)
+        let prompt = buildInferencePrompt(distanceMeters: meters, from: a, to: b)
+        do {
+            let session = LanguageModelSession()
+            let result = try await session.respond(to: prompt, generating: TransportInference.self)
+            if let mode = TravelMode(rawValue: result.content.mode) { return mode }
+        } catch { }
+        #endif
+
+        return detect(from: coordA, to: coordB)
+    }
+
+    private static func buildInferencePrompt(distanceMeters: Double, from a: PlaceStop, to b: PlaceStop) -> String {
+        let km = distanceMeters / 1000
+        var lines: [String] = [String(format: "Distance: %.1f km", km)]
+
+        if let gap = timeDifferenceMinutes(a: a, b: b) {
+            lines.append(gap < 60
+                ? "Time between visits: \(gap) min"
+                : String(format: "Time between visits: %.1f hr", Double(gap) / 60))
+        }
+
+        lines.append("From: \(a.placeTitle)\(a.placeSubtitle.map { ", \($0)" } ?? "")")
+        lines.append("To: \(b.placeTitle)\(b.placeSubtitle.map { ", \($0)" } ?? "")")
+        if let cat = a.placeCategory { lines.append("From type: \(cat)") }
+        if let cat = b.placeCategory { lines.append("To type: \(cat)") }
+
+        return """
+        Infer the transport mode a traveller used to move between two stops.
+        Reply with exactly one word: walking, driving, taxi, bus, train, subway, or flying.
+
+        \(lines.joined(separator: "\n"))
+        """
+    }
+
+    private static func timeDifferenceMinutes(a: PlaceStop, b: PlaceStop) -> Int? {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        guard let tA = a.visitedTimeDigitized.flatMap({ fmt.date(from: $0) }),
+              let tB = b.visitedTimeDigitized.flatMap({ fmt.date(from: $0) }),
+              tB > tA else { return nil }
+        return Int(tB.timeIntervalSince(tA) / 60)
     }
 
     var sfSymbolName: String {

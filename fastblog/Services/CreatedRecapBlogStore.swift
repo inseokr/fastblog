@@ -2119,7 +2119,45 @@ final class CreatedRecapBlogStore: ObservableObject {
 
         // Fetch weather for each day from Open-Meteo.
         detail = await applyWeather(to: detail)
+
+        // Infer transport mode for each consecutive stop pair using on-device LLM (iOS 26+).
+        // visitedTimeDigitized must be set above before this runs.
+        if #available(iOS 26, *) {
+            detail = await applyTransportModeInference(to: detail)
+        }
+
         return detail
+    }
+
+    @available(iOS 26, *)
+    private func applyTransportModeInference(to detail: RecapBlogDetail) async -> RecapBlogDetail {
+        var result = detail
+        for dayIdx in result.days.indices {
+            let stops = result.days[dayIdx].placeStops
+            for stopIdx in stops.indices {
+                guard !Task.isCancelled else { return result }
+                guard result.days[dayIdx].placeStops[stopIdx].transportModeToNextStop == nil else { continue }
+                guard stopIdx + 1 < stops.count else { continue }
+                let a = result.days[dayIdx].placeStops[stopIdx]
+                let b = result.days[dayIdx].placeStops[stopIdx + 1]
+                result.days[dayIdx].placeStops[stopIdx].transportModeToNextStop = await TravelMode.infer(from: a, to: b)
+            }
+        }
+        return result
+    }
+
+    /// Called when a blog page opens. Fills in any missing transport modes using the on-device LLM.
+    /// No-op on iOS < 26 or if all stops already have a stored mode.
+    func inferTransportModesIfNeeded(for blogId: UUID) async {
+        guard #available(iOS 26, *) else { return }
+        guard var detail = blogDetailsBySourceId[blogId] else { return }
+        let needsInference = detail.days.contains { day in
+            day.placeStops.dropLast().contains { $0.transportModeToNextStop == nil }
+        }
+        guard needsInference else { return }
+        detail = await applyTransportModeInference(to: detail)
+        blogDetailsBySourceId[blogId] = detail
+        saveBlogDetail(detail, asDraft: true)
     }
 
     // MARK: - Day-by-day processing (rate limit 50 geocode/min)

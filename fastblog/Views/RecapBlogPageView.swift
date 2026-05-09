@@ -564,6 +564,7 @@ struct RecapBlogPageView: View {
         }
         .onAppear {
             refreshMissingPhotosTooltipVisibility()
+            Task { await createdRecapStore.inferTransportModesIfNeeded(for: blogId) }
         }
         .onDisappear {
             // Overlay blogs dismiss entirely — do not mark "initial exit" or the next open will flip to
