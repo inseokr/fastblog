@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 /// When the selected day changes due to thumbnail-strip past-edge scroll, we scroll to first or last thumbnail of the new day.
 enum DayChangeScrollEdge {
@@ -123,6 +124,7 @@ struct PhotoSelectView: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
+        .background(PopGestureDisabler())
         .navigationTitle(embedded ? "Photo Selection" : "Select Photos")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -391,6 +393,24 @@ struct ThumbnailCell: View {
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+// Disables the NavigationStack's edge-swipe-back gesture while the photo viewer
+// is visible, preventing it from competing with the left/right photo-navigation swipe.
+private struct PopGestureDisabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> VC { .init() }
+    func updateUIViewController(_: VC, context: Context) {}
+
+    final class VC: UIViewController {
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            navigationController?.interactivePopGestureRecognizer?.isEnabled = false
+        }
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+        }
     }
 }
 
