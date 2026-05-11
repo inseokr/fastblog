@@ -292,6 +292,8 @@ struct RecapBlogPageView: View {
     /// The day ID currently having its caption AI-generated (nil when idle).
     /// Day caption full-screen overlay trigger.
     @State private var dayCaptionEditItem: DayCaptionEditItem?
+    /// Trip-level opening story (`tripNarrative`) full-screen overlay.
+    @State private var showTripNarrativeEdit = false
     /// Place caption full-screen overlay trigger.
     @State private var placeCaptionEditItem: PlaceCaptionEditItem?
     /// Photo caption full-screen overlay trigger.
@@ -487,6 +489,12 @@ struct RecapBlogPageView: View {
                     .zIndex(131)
             }
 
+            if showTripNarrativeEdit {
+                tripNarrativeEditLayer()
+                    .transition(.opacity)
+                    .zIndex(133)
+            }
+
             if let item = placePhotoModalItem {
                 placePhotoModalOverlay(item: item)
                     // Clear under the sliding panel so the blog shows through during dismiss; instant removal avoids an extra fade on black.
@@ -545,6 +553,7 @@ struct RecapBlogPageView: View {
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
+        .animation(.easeOut(duration: 0.22), value: showTripNarrativeEdit)
         .animation(.easeInOut(duration: 0.22), value: showPanorama)
         .animation(.easeInOut(duration: 0.28), value: fullScreenMapDay?.id)
         .animation(.easeInOut(duration: 0.38), value: placePhotoModalItem?.id)
@@ -963,6 +972,7 @@ struct RecapBlogPageView: View {
         fullScreenMapDay != nil ||
         placeCaptionEditItem != nil ||
         dayCaptionEditItem != nil ||
+        showTripNarrativeEdit ||
         (placePhotoModalItem != nil && !revealRecapNavigationDuringPhotoDismiss) ||
         photoCaptionEditItem != nil
     }
@@ -3297,7 +3307,7 @@ struct RecapBlogPageView: View {
         guard hasFinishedInitialLoad else { return }
         let blockingChrome = showStoryMode || showPanorama || isExportingPDF || showAuth || showGuestSecondSaveLimitModal
             || placePhotoModalItem != nil || dayCaptionEditItem != nil || placeCaptionEditItem != nil
-            || photoCaptionEditItem != nil || earlyAccessSheetPresented
+            || photoCaptionEditItem != nil || earlyAccessSheetPresented || showTripNarrativeEdit
         if blockingChrome {
             if showMissingPhotosTooltip {
                 withAnimation(.easeInOut(duration: 0.2)) { showMissingPhotosTooltip = false }
@@ -4593,6 +4603,35 @@ Your blog remains private unless you choose to share it.
         )
     }
 
+    @ViewBuilder
+    private func tripNarrativeEditLayer() -> some View {
+        TripNarrativeEditSheet(
+            blogTitle: draft.title,
+            narrative: bindingForTripNarrative(),
+            onSave: {
+                showTripNarrativeEdit = false
+                AppAnalytics.track(.blogStory(blogId: blogId.uuidString))
+                persistRecapBlogDetail()
+            },
+            onCancel: {
+                showTripNarrativeEdit = false
+            },
+            onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
+                await StoryCaptionService.shared.translateText(userText: userText)
+            } : nil
+        )
+    }
+
+    private func bindingForTripNarrative() -> Binding<String> {
+        Binding(
+            get: { draft.tripNarrative ?? "" },
+            set: { newValue in
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                draft.tripNarrative = trimmed.isEmpty ? nil : newValue
+            }
+        )
+    }
+
     /// Full-screen fade overlay (not a sheet) so the editor does not slide up from the bottom.
     @ViewBuilder
     private func placeCaptionEditLayer(item: PlaceCaptionEditItem, stop: PlaceStop) -> some View {
@@ -5064,6 +5103,18 @@ Your blog remains private unless you choose to share it.
                         .foregroundColor(recapChromeForeground.opacity(colorScheme == .dark ? 0.9 : 1))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .lineLimit(tripNarrativeExpanded ? nil : 4)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if isEditMode {
+                                showTripNarrativeEdit = true
+                            } else {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    tripNarrativeExpanded.toggle()
+                                }
+                            }
+                        }
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint(isEditMode ? "Opens the trip story editor" : "Shows the full trip story")
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             tripNarrativeExpanded.toggle()
@@ -5082,95 +5133,102 @@ Your blog remains private unless you choose to share it.
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             }
-            if LocalLLMStoryCaptionGenerator.isCapable && isEditMode {
+            if isEditMode {
                 if !hasNarrative {
-                    Text("Your trip story will appear here…")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary.opacity(0.9))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(Color(white: 0.1))
-                        .appChromeCornerRadius(10)
-                        .padding(.horizontal, 16)
+                    Button {
+                        showTripNarrativeEdit = true
+                    } label: {
+                        Text("Your trip story will appear here…")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary.opacity(0.9))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(Color(white: 0.1))
+                            .appChromeCornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 16)
                 }
-                if isGeneratingTripNarrative {
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                            .scaleEffect(0.75)
-                            .tint(.secondary)
-                            .padding(.trailing, 20)
-                            .padding(.top, hasNarrative ? 0 : 8)
-                    }
-                } else if !hasNarrative {
-                    HStack {
-                        Spacer()
-                        Button {
-                            triggerTripNarrative()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "wand.and.sparkles")
-                                    .font(.system(size: 13, weight: .medium))
-                                Text("Generate story")
-                                    .font(.footnote.weight(.medium))
-                            }
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+                if LocalLLMStoryCaptionGenerator.isCapable {
+                    if isGeneratingTripNarrative {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .scaleEffect(0.75)
+                                .tint(.secondary)
+                                .padding(.trailing, 20)
+                                .padding(.top, hasNarrative ? 0 : 8)
+                        }
+                    } else if !hasNarrative {
+                        HStack {
+                            Spacer()
+                            Button {
+                                triggerTripNarrative()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "wand.and.sparkles")
+                                        .font(.system(size: 13, weight: .medium))
+                                    Text("Generate story")
+                                        .font(.footnote.weight(.medium))
+                                }
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
                                 )
-                            )
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.trailing, 16)
-                        .padding(.top, hasNarrative ? 2 : 8)
-                    }
-                } else {
-                    HStack(spacing: 12) {
-                        Spacer()
-                        Button {
-                            draft.tripNarrative = nil
-                            tripNarrativeExpanded = false
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.uturn.backward")
-                                    .font(.caption)
-                                Text("Revert")
-                                    .font(.caption)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
+                                .clipShape(Capsule())
                             }
-                            .foregroundColor(.secondary)
+                            .buttonStyle(.plain)
+                            .padding(.trailing, 16)
+                            .padding(.top, hasNarrative ? 2 : 8)
                         }
-                        .buttonStyle(.plain)
-                        Button {
-                            triggerTripNarrative()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "wand.and.sparkles")
-                                    .font(.system(size: 13, weight: .medium))
-                                Text("Regenerate")
-                                    .font(.footnote.weight(.medium))
+                    } else {
+                        HStack(spacing: 12) {
+                            Spacer()
+                            Button {
+                                draft.tripNarrative = nil
+                                tripNarrativeExpanded = false
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.uturn.backward")
+                                        .font(.caption)
+                                    Text("Revert")
+                                        .font(.caption)
+                                }
+                                .foregroundColor(.secondary)
                             }
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+                            .buttonStyle(.plain)
+                            Button {
+                                triggerTripNarrative()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "wand.and.sparkles")
+                                        .font(.system(size: 13, weight: .medium))
+                                    Text("Regenerate")
+                                        .font(.footnote.weight(.medium))
+                                }
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
                                 )
-                            )
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
-                            .clipShape(Capsule())
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.trailing, 16)
                         }
-                        .buttonStyle(.plain)
-                        .padding(.trailing, 16)
+                        .padding(.top, 2)
                     }
-                    .padding(.top, 2)
                 }
             }
         }

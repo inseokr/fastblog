@@ -2,9 +2,3 @@
 description: fastblog — align Cursor with Claude project skills (CLAUDE.md + .ai/skills)
 alwaysApply: true
 ---
-
-# fastblog — Cursor agent instructions
-
-Treat **`CLAUDE.md`** at the repository root as the canonical brief: build command, Vision availability notes, and how to register new Swift files in `fastblog.xcodeproj/project.pbxproj`.
-
-**Before writing or reviewing Swift/SwiftUI code**, read `CLAUDE.md`, then use the Read tool on the **relevant** `.ai/skills/` files for the task (see the `@.ai/skills/...` lines in `CLAUDE.md`—you do not need to load every skill every time).

@@ -229,6 +229,7 @@
 		BB0003D3 /* BlogBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003D2 /* BlogBackupService.swift */; };
 		BB0003E1 /* GoogleSearchEmbeddedWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E0 /* GoogleSearchEmbeddedWebView.swift */; };
 		BB0003E3 /* UndoToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E2 /* UndoToastView.swift */; };
+		BB0003E7 /* TripNarrativeEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E6 /* TripNarrativeEditSheet.swift */; };
 		BB0003E5 /* TransportModePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E4 /* TransportModePickerSheet.swift */; };
 		BB000401 /* TripCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000400 /* TripCluster.swift */; };
 		BB000403 /* TripClusterAnnotationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000402 /* TripClusterAnnotationView.swift */; };
@@ -489,6 +490,7 @@
 		BB0003D2 /* BlogBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogBackupService.swift; sourceTree = "<group>"; };
 		BB0003E0 /* GoogleSearchEmbeddedWebView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleSearchEmbeddedWebView.swift; sourceTree = "<group>"; };
 		BB0003E2 /* UndoToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoToastView.swift; sourceTree = "<group>"; };
+		BB0003E6 /* TripNarrativeEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNarrativeEditSheet.swift; sourceTree = "<group>"; };
 		BB0003E4 /* TransportModePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportModePickerSheet.swift; sourceTree = "<group>"; };
 		BB000400 /* TripCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCluster.swift; sourceTree = "<group>"; };
 		BB000402 /* TripClusterAnnotationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripClusterAnnotationView.swift; sourceTree = "<group>"; };
@@ -748,6 +750,7 @@
 				BB0001B3 /* Onboarding */,
 				BB0001CB /* Components */,
 				2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */,
+				BB0003E6 /* TripNarrativeEditSheet.swift */,
 				B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */,
 				BB0003E0 /* GoogleSearchEmbeddedWebView.swift */,
 				BB00040C /* POIInfoSheet.swift */,
@@ -1185,6 +1188,7 @@
 				0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */,
 				BB000309 /* TripDistanceFromHomeOnboardingView.swift in Sources */,
 				315C7029393A82205980943C /* DayCaptionEditSheet.swift in Sources */,
+				BB0003E7 /* TripNarrativeEditSheet.swift in Sources */,
 				719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */,
 				BB0003E1 /* GoogleSearchEmbeddedWebView.swift in Sources */,
 				BB00040D /* POIInfoSheet.swift in Sources */,
