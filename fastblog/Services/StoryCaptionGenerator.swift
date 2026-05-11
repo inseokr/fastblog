@@ -288,7 +288,7 @@ struct EnhanceOverallPlaceStoryContext {
 
 // MARK: - Narrative Context Types (LLM-only, no template fallback)
 
-/// Input context for a 4–6 line place narrative generated on demand.
+/// Input context for a short place narrative (at most 3 sentences) generated on demand.
 struct PlaceNarrativeContext {
     let tags: [String]
     let placeName: String
@@ -302,7 +302,7 @@ struct PlaceNarrativeContext {
     let existingStory: String?
 }
 
-/// Input context for a 4–6 line day narrative generated on demand.
+/// Input context for a short day narrative (at most 3 sentences) generated on demand.
 struct DayNarrativeContext {
     /// Human-readable date string (e.g. "Saturday Jan-18").
     let dayDateText: String
@@ -312,7 +312,7 @@ struct DayNarrativeContext {
     let weatherSummary: String?
 }
 
-/// Input context for a 5–6 line trip opening narrative generated on demand.
+/// Input context for a short trip opening narrative (at most 3 sentences) generated on demand.
 struct TripNarrativeContext {
     let tripTitle: String
     let dateRangeText: String

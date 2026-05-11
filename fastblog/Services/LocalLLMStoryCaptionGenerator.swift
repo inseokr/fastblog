@@ -237,7 +237,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
     // MARK: - Narrative Generation (LLM-only, no template fallback)
 
-    /// Generates a 4–6 line narrative for a place visit. Returns nil when LLM is unavailable.
+    /// Generates a short place narrative (at most 3 sentences, one per line). Returns nil when LLM is unavailable.
     func generatePlaceNarrative(context: PlaceNarrativeContext) async -> String? {
 #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
@@ -247,7 +247,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         return nil
     }
 
-    /// Generates a 4–6 line narrative for a travel day. Returns nil when LLM is unavailable.
+    /// Generates a short day narrative (at most 3 sentences, one per line). Returns nil when LLM is unavailable.
     func generateDayNarrative(context: DayNarrativeContext) async -> String? {
 #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
@@ -257,7 +257,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         return nil
     }
 
-    /// Generates a 5–6 line trip opening narrative. Returns nil when LLM is unavailable.
+    /// Generates a short trip opening narrative (at most 3 sentences, one per line). Returns nil when LLM is unavailable.
     func generateTripNarrative(context: TripNarrativeContext) async -> String? {
 #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
@@ -268,6 +268,36 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
     }
 
 #if canImport(FoundationModels)
+
+    /// Shared rules to keep on-device copy tied to trip data and reduce invented travel drama.
+    private static let groundedTravelBlogRules = """
+        Grounding — follow strictly:
+        • Use only what this prompt supplies: place names, subtitles, tags, photo captions, user notes, weather, dates, day summaries, and listed place stories. Do not invent events, people, dialogue, schedules, prices, or historical claims.
+        • Never invent travel logistics or mishaps — for example flight delays, cancellations, gate changes, long security lines, missed connections, lost luggage, overbooking, train breakdowns, or traffic disasters — unless that exact situation appears in the user’s text or in a place/day story given here.
+        • At airports, train stations, bus terminals, ferry terminals, or similar hubs: the user may only have visited the building or grounds. Describe the stop in neutral, scene-level terms from the hints. Do not assume flying, boarding, departing, arriving, or any delay; those are inventions unless explicitly stated in the provided notes or stories.
+        • Prefer plain, observational travel-blog prose over a dramatic plot, cliffhangers, or made-up beats to sound literary. If the hints are thin, keep the output simple and short-feeling in substance — do not fabricate a rich backstory to fill every line.
+        """
+
+    /// Brevity and anti–laundry-list rules for place/day/trip “Tell Story” narratives.
+    private static let compactNarrativeFormatRules = """
+        Length and shape:
+        • At most 3 sentences total. Use 1, 2, or 3 only if the evidence supports it — never more than 3.
+        • Output exactly one sentence per line. No blank lines between sentences. Do not prefix lines with “Sentence 1” or any meta labels.
+        • Each sentence must introduce something new. Do not restate the same setting in different words (e.g. multiple sentences about sky color, air temperature, water clarity, grass, trees, or leaves).
+        • Avoid a run of short “The X was Y” template lines. At most one simple weather or setting clause for the whole output unless the provided note explicitly describes a real change over time.
+        • Do not contradict yourself (e.g. gray sky then blue sky, warm then cold) in one passage unless the user’s text explicitly describes that change.
+        """
+
+    /// Keeps newline-separated narratives from exceeding `maxLines` when the model over-generates.
+    private static func clampNarrativeLineCount(_ text: String, maxLines: Int = 3) -> String {
+        let lines = text.split(whereSeparator: { $0.isNewline })
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard lines.count > maxLines else {
+            return lines.joined(separator: "\n")
+        }
+        return lines.prefix(maxLines).joined(separator: "\n")
+    }
 
     // MARK: - Prompt Modifiers
 
@@ -379,9 +409,9 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
                 """
         case .street:
             return """
-                This place is categorized as a street or general city area.
-                Focus on atmosphere, movement, culture, small observations.
-                Do not fabricate specific facts about the location.
+                This place is categorized as a street, transit hub, airport, station, or general city area.
+                Focus on atmosphere, light, space, and small observations supported by the tags or captions.
+                Do not fabricate specific facts. Do not assume flights, trains taken, delays, or arrivals/departures unless the user’s text or captions say so.
                 """
         case .unknown:
             return """
@@ -450,21 +480,19 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
         let baseSystem = """
             You are a travel storytelling assistant inside a mobile app called Bloggo.
-            Your job is to generate a short, engaging, emotionally inviting caption for a place visited during a trip.
+            Your job is to generate a short, natural caption for a place visited during a trip.
             The caption should:
-            • Feel natural and human
-            • Be warm and vivid
-            • Avoid sounding robotic or generic
+            • Feel human and readable — warm but not melodramatic
             • Stay under 3 sentences
-            • Focus on experience, atmosphere, and memory
+            • Focus on atmosphere and memory only when supported by the tags and context below
             Do not invent false historical facts. Do not exaggerate unrealistically.
-            Keep it grounded and authentic.
             No hashtags or emoji. No first person (no "I", "we", "my").
             Output only the caption text. No preamble like "Here is a caption" — just the caption.
             """
 
         let instructions = [
             baseSystem,
+            Self.groundedTravelBlogRules,
             categoryModifier(for: context.categoryID),
             nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
         ].joined(separator: "\n\n")
@@ -506,13 +534,14 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         let baseSystem = """
             You are a travel storytelling assistant inside a mobile app called Bloggo.
             Your job is to write one very short sentence that summarizes a place visit for a travel blog.
-            The sentence should feel natural, warm, and vivid.
+            The sentence should feel natural and clear — only merge ideas that appear in the captions or tags.
             No hashtags or emoji. No first person (no "I", "we", "my"). No exact timestamp.
             Output only the sentence. No preamble, no labels — just the sentence.
             """
 
         let instructions = [
             baseSystem,
+            Self.groundedTravelBlogRules,
             categoryModifier(for: context.categoryID),
             nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
         ].joined(separator: "\n\n")
@@ -541,13 +570,14 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         let datePart = context.dayDateText.isEmpty ? "" : " Date: \(context.dayDateText)."
 
         let instructions = """
-            You write one short, vivid sentence that summarises a travel day for a blog. \
-            You are given place stories from that day. Blend them into a single evocative sentence. \
+            You write one short sentence that summarises a travel day for a blog. \
+            You are given place stories from that day. Combine only what they actually say — no new events or mishaps. \
+            \(Self.groundedTravelBlogRules)
             No hashtags or emoji. No first person (no "I", "we", "my"). No date mention. \
             Output only the sentence. No preamble, no labels — just the sentence.
             """
         let prompt = """
-            Summarise this travel day into one vivid sentence.\(datePart)
+            Summarise this travel day into one sentence.\(datePart)
 
             Place stories:
             \(storiesBlock)
@@ -624,6 +654,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             You help people write their travel blog. \
             A user has written a rough note about a place they visited. \
             Complete and enrich it — keep their voice and key details, complete any unfinished thought. \
+            Never introduce events, logistics, or mishaps (delays, cancellations, etc.) the user did not write or clearly imply. \
             1-2 short sentences max. Simple, warm, casual — like telling a friend. \
             No hashtags or emoji. No first person (no "I", "we", "my"). \
             Output only the story. No preamble — just the text.
@@ -631,6 +662,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
         let instructions = [
             baseSystem,
+            Self.groundedTravelBlogRules,
             categoryModifier(for: context.categoryID),
             nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
         ].joined(separator: "\n\n")
@@ -704,7 +736,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             The user has started a one-sentence summary of their travel day. Your job is to complete and enrich it. \
             Rules (follow all strictly):
             • Preserve every specific detail the user already wrote.
-            • Never introduce places, activities, or details that the user did NOT mention.
+            • Never introduce places, activities, travel mishaps, or details that the user did NOT mention.
             • No sentence repetition — the output must be a single, non-repetitive sentence.
             • No date in the output. Casual, warm, like telling a friend.
             • No hashtags. No emoji. No first person (no "I", "we", "my").
@@ -748,25 +780,26 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         let instructions = [
             """
             You are a travel storytelling assistant in a mobile app called Bloggo.
-            Write a vivid, personal travel story about a place visit in 4 to 6 lines of flowing prose.
+            Write a very short travel-blog blurb about this place visit — plain language, no poetry padding.
+            Stay close to the place line, tags, context, and any existing note. Do not invent plot or extra scenes.
             Rules:
-            • 4 to 6 lines only — no bullet points, no headers.
-            • Each sentence on its own line, separated by a single newline.
-            • Rich sensory and emotional detail. Capture atmosphere and memory.
+            \(Self.compactNarrativeFormatRules)
             • No hashtags, no emoji, no first person (no "I", "we", "my").
             • No labels, quotes, captions, or meta-text of any kind.
             • \(userWritingStyleInstruction)
-            Output only the story text. No preamble — just the story.
+            Output only the story text. No preamble — just the lines.
             """,
+            Self.groundedTravelBlogRules,
             categoryModifier(for: context.categoryID),
             nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
         ].joined(separator: "\n\n")
         let prompt = """
-            Write a 4-6 line travel story for this place.\(placePart)\(contextBlock)\(seedPart)
+            Write at most 3 sentences (one sentence per line) for this place.\(placePart)\(contextBlock)\(seedPart)
             Tags: \(tagsLine).
-            Output only the story. No introduction, no first person.
+            Output only those lines. No introduction, no first person.
             """
-        return await runSession(instructions: instructions, prompt: prompt)
+        guard let raw = await runSession(instructions: instructions, prompt: prompt) else { return nil }
+        return Self.clampNarrativeLineCount(raw)
     }
 
     @available(iOS 26.0, *)
@@ -787,27 +820,28 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         }()
         let instructions = """
             You are a travel storytelling assistant in a mobile app called Bloggo.
-            Write a vivid, personal day story in 4 to 6 lines of flowing prose.
-            Weave together the places and moments of the day into one coherent story arc.
+            Write a very short travel-blog summary of this day — plain language, no filler.
+            Connect the listed places using only their names and the place stories provided — do not invent a plot, setbacks, or travel logistics not present there.
             Rules:
-            • 4 to 6 lines only — no bullet points, no headers.
-            • Each sentence on its own line, separated by a single newline.
-            • Show the rhythm of the day — where it started, how it flowed, how it felt.
+            \(Self.compactNarrativeFormatRules)
+            • Order may follow the list when it helps readability.
             • No hashtags, no emoji, no first person (no "I", "we", "my").
             • No labels, quotes, captions, or meta-text of any kind.
             • \(userWritingStyleInstruction)
-            Output only the story. No preamble — just the text.
+            \(Self.groundedTravelBlogRules)
+            Output only the lines. No preamble — just the text.
             """
         let prompt = """
-            Write a 4-6 line story for this travel day.
+            Write at most 3 sentences (one sentence per line) for this travel day from the evidence below only.
             \(datePart)\(weatherPart)
 
             Places visited:
             \(placesBlock)
 
-            Output only the story. No first person (I/we/my).
+            Output only those lines. No first person (I/we/my).
             """
-        return await runSession(instructions: instructions, prompt: prompt)
+        guard let raw = await runSession(instructions: instructions, prompt: prompt) else { return nil }
+        return Self.clampNarrativeLineCount(raw)
     }
 
     @available(iOS 26.0, *)
@@ -820,20 +854,20 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             : "Locations: " + context.locationChain.joined(separator: " → ") + "."
         let instructions = """
             You are a travel storytelling assistant in a mobile app called Bloggo.
-            Write a vivid trip opening story in 5 to 6 lines of flowing prose.
-            This will appear at the top of the travel blog as the introduction.
+            Write a very short trip introduction for the top of a travel blog — plain language, no filler.
+            Derive every beat from the trip title, date span, location line, and day summaries — no invented itinerary twists or travel mishaps.
             Rules:
-            • 5 to 6 lines only — no bullet points, no headers.
-            • Each sentence on its own line, separated by a single newline.
-            • Capture the spirit and mood of the whole trip in an evocative opening.
-            • Reference the places visited naturally — not as a list.
+            \(Self.compactNarrativeFormatRules)
+            • Tone is reflective and plain, not theatrical — mood only when supported by the day summaries.
+            • Reference the places visited naturally — not as a bare comma-separated list.
             • No hashtags, no emoji, no first person (no "I", "we", "my").
             • No labels, quotes, captions, or meta-text of any kind.
             • \(userWritingStyleInstruction)
-            Output only the story. No preamble — just the text.
+            \(Self.groundedTravelBlogRules)
+            Output only the lines. No preamble — just the text.
             """
         let prompt = """
-            Write a 5-6 line opening story for this trip blog.
+            Write at most 3 sentences (one sentence per line) as the trip opening from this data only.
             Trip: \(context.tripTitle).
             Dates: \(context.dateRangeText) (\(context.dayCount) days).
             \(locationLine)
@@ -841,9 +875,10 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             Day summaries:
             \(daySummariesBlock)
 
-            Output only the story. No first person (I/we/my).
+            Output only those lines. No first person (I/we/my).
             """
-        return await runSession(instructions: instructions, prompt: prompt)
+        guard let raw = await runSession(instructions: instructions, prompt: prompt) else { return nil }
+        return Self.clampNarrativeLineCount(raw)
     }
 
     // MARK: - Sentiment Analysis
@@ -965,6 +1000,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             Use ONLY facts supported by the photo tags, place name/area, optional place category hint, and approximate daypart (never clock times or exact dates). \
             Tags come from on-device Vision analysis — they are the ground truth for what appears in the image. \
             Do not invent people, relationships, events, business names, dish names, or landmarks not clearly supported. \
+            At airports or transit hubs, do not assume flights, delays, or boarding unless tags or place text clearly support it. \
             At most two sentences total. Short clauses, blog cadence — not stiff, not marketing fluff. \
             No hashtags or emoji. No first person (no "I", "we", "my"). \
             Output only the two sentences (or one if that fits the evidence). No preamble or quotation marks.
@@ -1023,6 +1059,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             Use the aggregated photo tags, optional existing photo captions, place name/area, photo count, and approximate daypart. \
             Tags are from on-device Vision — they outrank vague caption text if there is ever a conflict. \
             Do not invent people, events, business names, or details not supported by the hints. \
+            Never invent flight delays, cancellations, or other travel mishaps unless a caption explicitly says so. \
             At most two sentences. Warm, readable blog voice — not marketing, not a list of tags. \
             No hashtags or emoji. No first person (no "I", "we", "my"). \
             Never output clock times or full calendar dates — daypart words only when timing matters. \

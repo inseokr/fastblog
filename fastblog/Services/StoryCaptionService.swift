@@ -301,7 +301,7 @@ actor StoryCaptionService {
 
     // MARK: - Narrative Generation (LLM-only, hidden when not capable)
 
-    /// Generates a 4–6 line narrative for a place visit. Returns nil when the on-device LLM is unavailable.
+    /// Generates a short place narrative (at most 3 sentences). Returns nil when the on-device LLM is unavailable.
     func generatePlaceNarrative(stop: PlaceStop, dayDate: Date?) async -> String? {
         guard LocalLLMStoryCaptionGenerator.isCapable else { return nil }
         let included = stop.photos.filter(\.isIncluded)
@@ -333,7 +333,7 @@ actor StoryCaptionService {
         return await LocalLLMStoryCaptionGenerator.shared.generatePlaceNarrative(context: context)
     }
 
-    /// Generates a 4–6 line narrative for a travel day. Returns nil when the on-device LLM is unavailable.
+    /// Generates a short day narrative (at most 3 sentences). Returns nil when the on-device LLM is unavailable.
     func generateDayNarrative(day: RecapBlogDay) async -> String? {
         guard LocalLLMStoryCaptionGenerator.isCapable else { return nil }
         let placeEntries = day.placeStops.map { stop -> (name: String, story: String) in
@@ -347,7 +347,7 @@ actor StoryCaptionService {
         return await LocalLLMStoryCaptionGenerator.shared.generateDayNarrative(context: context)
     }
 
-    /// Generates a 5–6 line trip opening narrative. Returns nil when the on-device LLM is unavailable.
+    /// Generates a short trip opening narrative (at most 3 sentences). Returns nil when the on-device LLM is unavailable.
     func generateTripNarrative(detail: RecapBlogDetail) async -> String? {
         guard LocalLLMStoryCaptionGenerator.isCapable else { return nil }
         var locationSet: [String] = []

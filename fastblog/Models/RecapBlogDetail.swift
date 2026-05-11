@@ -37,7 +37,7 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
     var blogKey: Int?
     /// Places the user has removed from the blog. Preserved so they can be restored later.
     var removedPlaceStops: [RemovedPlaceEntry]
-    /// AI-generated trip opening narrative (5–6 lines). Shown at the top of the blog before Day 1.
+    /// AI-generated trip opening narrative (typically up to 3 short sentences). Shown at the top of the blog before Day 1.
     var tripNarrative: String?
 
     init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil, blogKey: Int? = nil, removedPlaceStops: [RemovedPlaceEntry] = [], tripNarrative: String? = nil) {
@@ -83,7 +83,7 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
     var placeStops: [PlaceStop]
     /// User-written or AI-generated caption for the whole day. Shown right below the day date text.
     var dayCaption: String?
-    /// AI-generated day narrative (4–6 lines). Overrides dayCaption in display when present.
+    /// AI-generated day narrative (typically up to 3 short sentences). Overrides dayCaption in display when present.
     var dayNarrative: String?
     /// True after reverse-geocoding and photo scoring have been applied for this day (used for day-by-day rate-limited processing).
     var isPlaceNamesResolved: Bool
@@ -200,7 +200,7 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     var noteText: String?
     /// Quick summary of this place derived from photo captions (e.g. LLM summary). Shown above/below place and time.
     var overallStory: String?
-    /// AI-generated place narrative (4–6 lines). Overrides overallStory in display when present.
+    /// AI-generated place narrative (typically up to 3 short sentences). Overrides overallStory in display when present.
     var placeNarrative: String?
     /// Server-assigned placeIndex in user.placeVisitHistory. Set after successful blog upload.
     var cloudPlaceIndex: Int?

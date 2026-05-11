@@ -283,9 +283,9 @@ struct PlacesVisitedView: View {
                     onViewBlog: {
                         guard let ref = place.relatedBlogs.first,
                               let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == ref.blogId }) else { return }
-                        selectedPlaceForModal = nil
+                        // Keep the place modal presented under the global recap overlay so dismissing
+                        // the blog returns here instead of leaving only the list/map underneath.
                         openCategoryPickerWhenPlaceModalOpens = false
-                        revealNavDuringModalDismiss = false
                         initialScrollToStopIdForRecap = ref.placeStopId
                         selectedCreatedRecap = recap
                     }
@@ -1274,9 +1274,9 @@ private struct PlacesVisitedMapView: View {
                     onViewBlog: {
                         guard let ref = place.relatedBlogs.first,
                               let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == ref.blogId }) else { return }
-                        selectedPlaceForModal = nil
+                        // Keep the place modal presented under the global recap overlay so dismissing
+                        // the blog returns here instead of leaving only the list/map underneath.
                         openCategoryPickerWhenPlaceModalOpens = false
-                        revealNavDuringModalDismiss = false
                         initialScrollToStopIdForRecap = ref.placeStopId
                         selectedCreatedRecap = recap
                     }

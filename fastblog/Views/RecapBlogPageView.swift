@@ -3094,9 +3094,6 @@ struct RecapBlogPageView: View {
                                 placeSubtitle: placeSubtitle
                             )
                         },
-                        onTranslateCaption: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
-                            await StoryCaptionService.shared.translateText(userText: userText)
-                        } : nil,
                         onAICaptionApplied: { photoId in
                             markPhotoCaptionAI(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
                         },
@@ -4596,9 +4593,6 @@ Your blog remains private unless you choose to share it.
             onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
                 AppAnalytics.track(.blogStoryAIStory(blogId: blogId.uuidString))
                 persistRecapBlogDetail()
-            } : nil,
-            onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
-                await StoryCaptionService.shared.translateText(userText: userText)
             } : nil
         )
     }
@@ -4615,10 +4609,7 @@ Your blog remains private unless you choose to share it.
             },
             onCancel: {
                 showTripNarrativeEdit = false
-            },
-            onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
-                await StoryCaptionService.shared.translateText(userText: userText)
-            } : nil
+            }
         )
     }
 
@@ -4679,9 +4670,6 @@ Your blog remains private unless you choose to share it.
             onFunPhotoInsightApplied: LocalLLMStoryCaptionGenerator.isCapable ? { photoId in
                 markPhotoCaptionAI(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
             } : nil,
-            onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
-                await StoryCaptionService.shared.translateText(userText: userText)
-            } : nil,
             onRequestEditPlaceName: {
                 showEditNameForStop = stop
             },
@@ -4725,9 +4713,6 @@ Your blog remains private unless you choose to share it.
             onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
                 markPhotoCaptionAI(dayId: item.dayId, stopId: item.stopId, photoId: item.photoId)
             } : nil,
-            onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
-                await StoryCaptionService.shared.translateText(userText: userText)
-            } : nil,
             onRequestFullPhotoView: {
                 placePhotoModalItem = PlacePhotoModalItem(
                     dayId: item.dayId,
@@ -4765,11 +4750,20 @@ Your blog remains private unless you choose to share it.
     }
 
     /// Overall place story (quick summary from photo captions); shown above/below place and time.
+    /// The getter matches `PlaceStopRowView` / `StoryBookBuilder`: manual `overallStory` wins, then AI `placeNarrative`, else `overallStory`.
+    /// Without that, the full-screen editor bound only to `overallStory` stayed empty when the visible text came from `placeNarrative`.
     private func bindingForOverallStory(dayId: UUID, stopId: UUID) -> Binding<String> {
         Binding(
             get: {
                 guard let day = draft.days.first(where: { $0.id == dayId }),
                       let stop = day.placeStops.first(where: { $0.id == stopId }) else { return "" }
+                let manual = (stop.overallStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if stop.overallStoryIsManual, !manual.isEmpty {
+                    return stop.overallStory ?? ""
+                }
+                if let narrative = stop.placeNarrative?.trimmingCharacters(in: .whitespacesAndNewlines), !narrative.isEmpty {
+                    return stop.placeNarrative ?? ""
+                }
                 return stop.overallStory ?? ""
             },
             set: { newValue in
@@ -4777,7 +4771,13 @@ Your blog remains private unless you choose to share it.
                       let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
                 var day = draft.days[dayIdx]
                 var stop = day.placeStops[stopIdx]
-                stop.overallStory = newValue.isEmpty ? nil : newValue
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    stop.overallStory = nil
+                    stop.placeNarrative = nil
+                } else {
+                    stop.overallStory = newValue.isEmpty ? nil : newValue
+                }
                 day.placeStops[stopIdx] = stop
                 draft.days[dayIdx] = day
             }

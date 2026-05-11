@@ -34,8 +34,6 @@ struct PlaceCaptionEditSheet: View {
     var onEnhanceApplied: (() -> Void)? = nil
     /// Called after “AI story” writes a **per-photo** caption; use to mark that photo’s caption as AI (not overall place story).
     var onFunPhotoInsightApplied: ((UUID) -> Void)? = nil
-    /// Pure translation — no AI story generation.
-    var onTranslate: ((String) async -> String)? = nil
     /// Parent presents `EditPlaceStopNameSheet` (same as blog edit-mode place row).
     var onRequestEditPlaceName: (() -> Void)? = nil
     /// When true, the place story was typed by the user — hide on-device place “AI story”.
@@ -44,7 +42,6 @@ struct PlaceCaptionEditSheet: View {
     var onGeneratePlaceAIShortStory: (() async -> String)? = nil
     @State private var editedText: String = ""
     @State private var isEnhancing = false
-    @State private var isTranslating = false
     @State private var isGeneratingAIShortStory = false
     @State private var selectedPhotoHasVisionTagsForAIStory = false
     @State private var showEnhanceStylePicker = false
@@ -297,7 +294,7 @@ struct PlaceCaptionEditSheet: View {
                             }
                         }
                         .buttonStyle(.plain)
-                        .disabled(isEnhancing || isTranslating || isGeneratingAIShortStory)
+                        .disabled(isEnhancing || isGeneratingAIShortStory)
                         .accessibilityLabel("Generate up to two sentences from on-device photo tags")
                     }
                 }
@@ -333,7 +330,7 @@ struct PlaceCaptionEditSheet: View {
                             }
                         }
                         .buttonStyle(.plain)
-                        .disabled(isEnhancing || isTranslating || isGeneratingAIShortStory)
+                        .disabled(isEnhancing || isGeneratingAIShortStory)
                         .accessibilityLabel("Generate up to two sentences for this place from trip context")
                     }
                 }
@@ -373,30 +370,6 @@ struct PlaceCaptionEditSheet: View {
                             .foregroundColor(.secondary)
                         }
                         .accessibilityLabel("Revert caption")
-                    }
-
-                    if let translate = onTranslate {
-                        Button {
-                            runTranslate(translate)
-                        } label: {
-                            if isTranslating {
-                                HStack(spacing: 4) {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle())
-                                        .scaleEffect(0.75)
-                                    Text("Translating…")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                            } else {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "translate")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                        .disabled(isEnhancing || isTranslating || isGeneratingAIShortStory)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -819,20 +792,6 @@ struct PlaceCaptionEditSheet: View {
                 editedText = result
                 isEnhancing = false
                 onEnhanceApplied?()
-            }
-        }
-    }
-
-    private func runTranslate(_ translate: @escaping (String) async -> String) {
-        guard !isGeneratingAIShortStory else { return }
-        if originalDraft == nil { originalDraft = editedText }
-        let textToTranslate = editedText
-        isTranslating = true
-        Task {
-            let result = await translate(textToTranslate)
-            await MainActor.run {
-                editedText = result
-                isTranslating = false
             }
         }
     }

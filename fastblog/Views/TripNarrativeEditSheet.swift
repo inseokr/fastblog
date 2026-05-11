@@ -12,10 +12,8 @@ struct TripNarrativeEditSheet: View {
     @Binding var narrative: String
     var onSave: () -> Void
     var onCancel: () -> Void
-    var onTranslate: ((String) async -> String)? = nil
 
     @State private var editedText: String = ""
-    @State private var isTranslating = false
     @State private var originalDraft: String?
     @FocusState private var isFocused: Bool
 
@@ -119,28 +117,6 @@ struct TripNarrativeEditSheet: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-
-                    if let translate = onTranslate {
-                        Button {
-                            runTranslate(translate)
-                        } label: {
-                            if isTranslating {
-                                HStack(spacing: 4) {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle())
-                                        .scaleEffect(0.75)
-                                    Text("Translating…")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                            } else {
-                                Image(systemName: "translate")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .disabled(isTranslating)
-                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
@@ -155,19 +131,6 @@ struct TripNarrativeEditSheet: View {
             editedText = narrative
             DispatchQueue.main.async {
                 isFocused = true
-            }
-        }
-    }
-
-    private func runTranslate(_ translate: @escaping (String) async -> String) {
-        if originalDraft == nil { originalDraft = editedText }
-        let textToTranslate = editedText
-        isTranslating = true
-        Task {
-            let result = await translate(textToTranslate)
-            await MainActor.run {
-                editedText = result
-                isTranslating = false
             }
         }
     }

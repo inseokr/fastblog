@@ -30,8 +30,6 @@ struct PhotoCaptionEditSheet: View {
     var onEnhance: ((String) async -> String)? = nil
     /// Called after AI successfully applies a result.
     var onEnhanceApplied: (() -> Void)? = nil
-    /// Pure translation — no AI story generation.
-    var onTranslate: ((String) async -> String)? = nil
     /// Parent presents recap `PlacePhotoModalView` for this photo.
     var onRequestFullPhotoView: (() -> Void)? = nil
     /// Match `PlacePhotoModalItem.id` while that modal is presented; when it becomes nil, editor text reloads from the caption binding.
@@ -41,7 +39,6 @@ struct PhotoCaptionEditSheet: View {
 
     @State private var editedText: String = ""
     @State private var isEnhancing = false
-    @State private var isTranslating = false
     @State private var isGeneratingFunPhotoInsight = false
     @State private var photoHasVisionTagsForAIStory = false
     @State private var showEnhanceStylePicker = false
@@ -202,7 +199,7 @@ struct PhotoCaptionEditSheet: View {
                                 }
                             }
                             .buttonStyle(.plain)
-                            .disabled(isEnhancing || isTranslating || isGeneratingFunPhotoInsight)
+                            .disabled(isEnhancing || isGeneratingFunPhotoInsight)
                             .accessibilityLabel("Generate up to two sentences from on-device photo tags")
                         }
                     }
@@ -243,28 +240,6 @@ struct PhotoCaptionEditSheet: View {
                                 .foregroundColor(.white.opacity(0.7))
                             }
                             .accessibilityLabel("Revert caption")
-                        }
-
-                        if let translate = onTranslate {
-                            Button {
-                                runTranslate(translate)
-                            } label: {
-                                if isTranslating {
-                                    HStack(spacing: 4) {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle())
-                                            .scaleEffect(0.75)
-                                        Text("Translating…")
-                                            .font(.subheadline)
-                                            .foregroundColor(.white.opacity(0.7))
-                                    }
-                                } else {
-                                    Image(systemName: "translate")
-                                        .font(.subheadline)
-                                        .foregroundColor(.white.opacity(0.7))
-                                }
-                            }
-                            .disabled(isEnhancing || isTranslating || isGeneratingFunPhotoInsight)
                         }
                     }
                     .padding(.horizontal, 20)
@@ -379,20 +354,6 @@ struct PhotoCaptionEditSheet: View {
                 editedText = result
                 isEnhancing = false
                 onEnhanceApplied?()
-            }
-        }
-    }
-
-    private func runTranslate(_ translate: @escaping (String) async -> String) {
-        guard !isGeneratingFunPhotoInsight else { return }
-        if originalDraft == nil { originalDraft = editedText }
-        let textToTranslate = editedText
-        isTranslating = true
-        Task {
-            let result = await translate(textToTranslate)
-            await MainActor.run {
-                editedText = result
-                isTranslating = false
             }
         }
     }

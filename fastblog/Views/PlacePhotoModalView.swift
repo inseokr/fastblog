@@ -144,8 +144,6 @@ struct PlacePhotoModalView: View {
     /// When provided, a magic wand button is shown in the caption editing panel (only when user has written text).
     /// Called with (photo, placeName, placeSubtitle, userText); returns enriched caption.
     var onGenerateCaption: ((RecapPhoto, String, String?, String) async -> String)?
-    /// When provided, a translate button is shown. Pure translation — no AI story generation.
-    var onTranslateCaption: ((String) async -> String)? = nil
     /// Called after the AI wand applies a caption. Used to mark captionIsManual = false and cascade overall story.
     var onAICaptionApplied: ((UUID) -> Void)?
     /// Called when the user manually edits a photo caption in the modal. Used to mark captionIsManual = true.
@@ -167,7 +165,6 @@ struct PlacePhotoModalView: View {
     /// On-device “AI story” for the current photo caption (LLM capable **and** Vision tags present).
     @State private var isGeneratingFunPhotoInsight = false
     @State private var currentPhotoHasVisionTagsForAIStory = false
-    @State private var isTranslatingCaption = false
     @State private var showEnhanceStylePicker = false
     @State private var showWritingStyleSheet = false
     @AppStorage(StoryWritingStyle.presetStorageKey) private var stylePresetId: String = ""
@@ -333,7 +330,6 @@ struct PlacePhotoModalView: View {
         onDismissSlideBegan: (() -> Void)? = nil,
         onViewBlog: (() -> Void)? = nil,
         onGenerateCaption: ((RecapPhoto, String, String?, String) async -> String)? = nil,
-        onTranslateCaption: ((String) async -> String)? = nil,
         onAICaptionApplied: ((UUID) -> Void)? = nil,
         onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil,
         onRemovePhoto: ((UUID) -> Void)? = nil,
@@ -360,7 +356,6 @@ struct PlacePhotoModalView: View {
         self.onDismissSlideBegan = onDismissSlideBegan
         self.onViewBlog = onViewBlog
         self.onGenerateCaption = onGenerateCaption
-        self.onTranslateCaption = onTranslateCaption
         self.onAICaptionApplied = onAICaptionApplied
         self.onPhotoCaptionManuallyEdited = onPhotoCaptionManuallyEdited
         self.onRemovePhoto = onRemovePhoto
@@ -1610,24 +1605,6 @@ struct PlacePhotoModalView: View {
                 photoCaption(photoId).wrappedValue = text
                 isGeneratingCaption = false
                 onAICaptionApplied?(photoId)
-            }
-        }
-    }
-
-    private func runTranslateForCurrentPhoto(_ translate: @escaping (String) async -> String) {
-        guard !isGeneratingFunPhotoInsight else { return }
-        let photoId = currentPhotoId
-        if captionOriginalDraftByPhotoId[photoId] == nil {
-            captionOriginalDraftByPhotoId[photoId] = editedCaptionText
-        }
-        isTranslatingCaption = true
-        let userText = editedCaptionText
-        Task {
-            let text = await translate(userText)
-            await MainActor.run {
-                editedCaptionText = text
-                photoCaption(photoId).wrappedValue = text
-                isTranslatingCaption = false
             }
         }
     }

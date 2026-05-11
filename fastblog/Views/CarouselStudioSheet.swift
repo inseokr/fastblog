@@ -4184,7 +4184,7 @@ private struct SplitPhotoRepositionCover: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .navigationTitle("Reposition")
+            .navigationTitle("Crop")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -5481,7 +5481,7 @@ struct SlideTextEditorView: View {
                         pipMultiRepositionSession = nil
                         splitRepositionSession = SplitRepositionSession(slideIndex: idx, initialSlot: .top)
                     } label: {
-                        Label("Reposition", systemImage: "crop")
+                        Label("Crop", systemImage: "crop")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(.white.opacity(0.88))
                             .lineLimit(1)
