@@ -2,7 +2,7 @@
 //  FindMoreTripsSheet.swift
 //  Capper
 //
-//  Layout: Start (Month | Year) and End (Month | Year) in a 2-column grid.
+//  Layout: Start and End columns — Month row, then Year row (both years on one line).
 //  If End is before Start within the same year, Start month is auto-clamped to End month.
 //
 
@@ -66,7 +66,7 @@ struct FindMoreTripsSheet: View {
                 viewModel.dismissFindMoreSheet()
                 dismiss()
             } label: {
-                Text("Close")
+                Image(systemName: "xmark")
                     .font(.body.weight(.bold))
                     .foregroundColor(Color(white: 0.7))
             }
@@ -230,12 +230,20 @@ struct FindMoreTripsSheet: View {
 
     private var dateRangeSection: some View {
         VStack(alignment: .leading, spacing: 20) {
-            dateBlock(label: "Start",
-                      month: $viewModel.findMoreStartMonth,
-                      year: $viewModel.findMoreStartYear)
-            dateBlock(label: "End",
-                      month: $viewModel.findMoreEndMonth,
-                      year: $viewModel.findMoreEndYear)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 12) {
+                    dateRangeCaption("Start")
+                    dateRangeCaption("End")
+                }
+                HStack(spacing: 12) {
+                    findMoreYearPicker(selection: $viewModel.findMoreStartYear)
+                    findMoreYearPicker(selection: $viewModel.findMoreEndYear)
+                }
+                HStack(spacing: 12) {
+                    findMoreMonthPicker(selection: $viewModel.findMoreStartMonth)
+                    findMoreMonthPicker(selection: $viewModel.findMoreEndMonth)
+                }
+            }
 
             if !viewModel.isDateRangeValid {
                 HStack(spacing: 6) {
@@ -250,44 +258,55 @@ struct FindMoreTripsSheet: View {
         }
     }
 
-    /// Full-width date block: label on top, Month and Year pickers side-by-side on one row.
-    private func dateBlock(label: String, month: Binding<Int>, year: Binding<Int>) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(label)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.white.opacity(0.7))
-                .textCase(.uppercase)
-                .tracking(0.5)
+    private func dateRangeCaption(_ label: String) -> some View {
+        Text(label)
+            .font(.caption)
+            .fontWeight(.semibold)
+            .foregroundColor(.white.opacity(0.7))
+            .textCase(.uppercase)
+            .tracking(0.5)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
-            HStack(spacing: 12) {
-                Picker("Year", selection: year) {
-                    ForEach(years, id: \.self) { y in
-                        Text(String(y)).tag(y)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(Color.white.opacity(0.1))
-                .appChromeCornerRadius(12)
-
-                Picker("Month", selection: month) {
-                    ForEach(1...12, id: \.self) { m in
-                        Text(monthNames[m - 1]).tag(m)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(Color.white.opacity(0.1))
-                .appChromeCornerRadius(12)
+    private func findMoreMonthPicker(selection: Binding<Int>) -> some View {
+        Menu {
+            ForEach(1...12, id: \.self) { m in
+                Button(monthNames[m - 1]) { selection.wrappedValue = m }
             }
+        } label: {
+            datePickerLabel(monthNames[selection.wrappedValue - 1])
         }
+    }
+
+    private func findMoreYearPicker(selection: Binding<Int>) -> some View {
+        Menu {
+            ForEach(years, id: \.self) { y in
+                Button(String(y)) { selection.wrappedValue = y }
+            }
+        } label: {
+            datePickerLabel(String(selection.wrappedValue))
+        }
+    }
+
+    private func datePickerLabel(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            Spacer(minLength: 0)
+            Text(text)
+                .font(.body)
+                .foregroundColor(.white)
+                .lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.7))
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity)
+        .background(Color.white.opacity(0.1))
+        .appChromeCornerRadius(12)
     }
 
 

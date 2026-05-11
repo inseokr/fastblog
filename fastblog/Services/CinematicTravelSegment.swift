@@ -11,7 +11,7 @@ import FoundationModels
 @available(iOS 26, *)
 @Generable
 private struct TransportInference {
-    @Guide(description: "Most likely transport mode. Must be exactly one of: walking, driving, taxi, bus, train, subway, flying")
+    @Guide(description: "Most likely transport between stops. Exactly one of: walking, driving, flying. Never taxi, bus, train, subway — users pick those manually.")
     var mode: String
 }
 #endif
@@ -27,8 +27,8 @@ enum TravelMode: String, Codable, CaseIterable, Equatable {
     case subway   // manual  →  tram.tunnel.fill
     case flying   // > 50 km  →  airplane (Bezier arc)
 
-    /// Distance-only fallback for when LLM is unavailable.
-    /// Bus and train are never auto-detected — they require an explicit user choice.
+    /// Distance-only fallback for when LLM is unavailable or returns an unusable mode.
+    /// Finer modes (taxi, bus, train, subway) are never auto-detected — they require an explicit user choice.
     static func detect(from a: CLLocationCoordinate2D, to b: CLLocationCoordinate2D) -> TravelMode {
         let meters = CLLocation(latitude: a.latitude, longitude: a.longitude)
             .distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
@@ -37,9 +37,13 @@ enum TravelMode: String, Codable, CaseIterable, Equatable {
         return .flying
     }
 
+    /// Modes the app may assign automatically (distance + optional on-device LLM). Finer modes are user-selected only.
+    private static let autoSelectableModes: Set<TravelMode> = [.walking, .driving, .flying]
+
     /// On-device LLM inference using distance, time gap, place names and categories.
+    /// Only `walking`, `driving` (car), or `flying` (airplane) may result; transit subtypes require an explicit user pick.
     /// Hard physical boundaries apply first; LLM refines the middle range.
-    /// Falls back to `detect()` if the model is unavailable or errors.
+    /// Falls back to `detect()` if the model is unavailable, errors, or returns a non-auto mode.
     @available(iOS 26, *)
     static func infer(from a: PlaceStop, to b: PlaceStop) async -> TravelMode {
         guard let coordA = a.representativeLocation?.clCoordinate,
@@ -57,11 +61,27 @@ enum TravelMode: String, Codable, CaseIterable, Equatable {
         do {
             let session = LanguageModelSession()
             let result = try await session.respond(to: prompt, generating: TransportInference.self)
-            if let mode = TravelMode(rawValue: result.content.mode) { return mode }
+            if let mode = travelModeParsedFromInferenceAnswer(result.content.mode),
+               autoSelectableModes.contains(mode) {
+                return mode
+            }
         } catch { }
         #endif
 
         return detect(from: coordA, to: coordB)
+    }
+
+    /// Parses the model string into a `TravelMode` when it names an auto-selectable segment; synonyms map to canonical raw values.
+    private static func travelModeParsedFromInferenceAnswer(_ raw: String) -> TravelMode? {
+        let s = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        if let exact = TravelMode(rawValue: s) { return exact }
+        switch s {
+        case "walk": return .walking
+        case "car", "road", "drive": return .driving
+        case "airplane", "plane", "flight", "fly", "air": return .flying
+        default: return nil
+        }
     }
 
     private static func buildInferencePrompt(distanceMeters: Double, from a: PlaceStop, to b: PlaceStop) -> String {
@@ -80,8 +100,9 @@ enum TravelMode: String, Codable, CaseIterable, Equatable {
         if let cat = b.placeCategory { lines.append("To type: \(cat)") }
 
         return """
-        Infer the transport mode a traveller used to move between two stops.
-        Reply with exactly one word: walking, driving, taxi, bus, train, subway, or flying.
+        Infer how a traveller most likely moved between two stops using only coarse ground vs air mobility.
+        Reply with exactly one word, one of: walking, driving, flying.
+        Do not reply with taxi, bus, train, or subway — those are never auto-selected; the traveller may correct later in the app.
 
         \(lines.joined(separator: "\n"))
         """
