@@ -4392,88 +4392,88 @@ extension CameraCaptureView {
 
     /// Creates a new trip draft from session moments, adds it as a blog, and shows "Blog has started, you can continue to add moments".
     /// Used when the first capture is a new trip (no existing blog or draft) — blog is created automatically.
+    /// Registration runs synchronously on the main actor so the next shutter tap routes through the active-blog path
+    /// instead of waiting on reverse-geocoding (which previously left a window where captures only sat in `sessionMoments`).
     private func createBlogFromSessionMomentsOnly(momentsWithImages: [CapturedMoment]) {
         // Switch UI to blog flow immediately so counter and gallery use sessionCapturesForDisplay.
         attachedCountThisSession = momentCount(from: sessionMoments)
         sessionMoments = []
         pendingBlogStartedAlert = true
         let location = cameraController.currentLocation
-        Task { @MainActor in
-            let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
-            var locationName = "Captured Moment"
-            var countryName: String? = nil
-            if let location {
-                let place = await GeocodingService.shared.place(for: location)
-                locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
-                countryName = place.countryName != "Unknown" ? place.countryName : nil
-            }
-            let photos: [MockPhoto] = momentsWithImages.compactMap { moment in
-                guard let localId = resolvedCaptureLocalIdentifier(for: moment, fallbackVibeURL: nil) else { return nil }
-                return MockPhoto(
-                    id: moment.id,
-                    imageName: "camera.fill",
-                    timestamp: moment.timestamp,
-                    locationName: locationName,
-                    countryName: countryName,
-                    isSelected: true,
-                    localIdentifier: localId,
-                    location: moment.location ?? photoLocation,
-                    caption: moment.caption
-                )
-            }
-            guard !photos.isEmpty else { return }
-            let cal = Calendar.current
-            let dateFormatter = DateFormatter()
-            dateFormatter.locale = Locale.current
-            dateFormatter.dateStyle = .medium
-            let byDay = Dictionary(grouping: photos) { cal.startOfDay(for: $0.timestamp) }
-            let sortedDays = byDay.sorted { $0.key < $1.key }
-            let days: [TripDay] = sortedDays.enumerated().map { index, pair in
-                let dayStart = pair.key
-                let dayPhotos = pair.value.sorted { $0.timestamp < $1.timestamp }
-                return TripDay(
-                    dayIndex: index,
-                    dateText: dateFormatter.string(from: dayStart),
-                    photos: dayPhotos
-                )
-            }
-            let tripId = UUID()
-            let title = cameraBlogTitleFromPhotos(photos: photos, locationName: locationName, countryName: countryName)
-            let dateRangeStr: String
-            if let first = sortedDays.first?.key, let last = sortedDays.last?.key {
-                dateRangeStr = first == last
-                    ? dateFormatter.string(from: first)
-                    : "\(dateFormatter.string(from: first)) – \(dateFormatter.string(from: last))"
-            } else {
-                dateRangeStr = dateFormatter.string(from: Date())
-            }
-            let trip = TripDraft(
-                id: tripId,
-                title: title,
-                dateRangeText: dateRangeStr,
-                days: days,
-                coverImageName: "camera.fill",
-                isScannedFromDefaultRange: false,
-                draftCreatedAgoText: "Draft created recently",
-                daysSeasonText: "",
-                coverTheme: "default",
-                coverAssetIdentifier: photos.first?.localIdentifier
+        let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
+        let placeholderLocationName = "Captured Moment"
+        let photos: [MockPhoto] = momentsWithImages.compactMap { moment in
+            guard let localId = resolvedCaptureLocalIdentifier(for: moment, fallbackVibeURL: moment.vibeURL) else { return nil }
+            return MockPhoto(
+                id: moment.id,
+                imageName: "camera.fill",
+                timestamp: moment.timestamp,
+                locationName: placeholderLocationName,
+                countryName: nil,
+                isSelected: true,
+                localIdentifier: localId,
+                location: moment.location ?? photoLocation,
+                caption: moment.caption
             )
-            tripsViewModel.addCameraTripDraft(trip)
-            createdRecapStore.addCreatedBlog(trip: trip)
-            if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == tripId }),
-               let endDate = blog.tripEndDate {
-                OnTheGoTripStore.markTripAsActive(blogId: tripId, title: blog.title, tripEndDate: endDate, country: blog.countryName)
+        }
+        guard !photos.isEmpty else { return }
+        let cal = Calendar.current
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale.current
+        dateFormatter.dateStyle = .medium
+        let byDay = Dictionary(grouping: photos) { cal.startOfDay(for: $0.timestamp) }
+        let sortedDays = byDay.sorted { $0.key < $1.key }
+        let days: [TripDay] = sortedDays.enumerated().map { index, pair in
+            let dayStart = pair.key
+            let dayPhotos = pair.value.sorted { $0.timestamp < $1.timestamp }
+            return TripDay(
+                dayIndex: index,
+                dateText: dateFormatter.string(from: dayStart),
+                photos: dayPhotos
+            )
+        }
+        let tripId = UUID()
+        let title = cameraBlogTitleFromPhotos(photos: photos, locationName: placeholderLocationName, countryName: nil)
+        let dateRangeStr: String
+        if let first = sortedDays.first?.key, let last = sortedDays.last?.key {
+            dateRangeStr = first == last
+                ? dateFormatter.string(from: first)
+                : "\(dateFormatter.string(from: first)) – \(dateFormatter.string(from: last))"
+        } else {
+            dateRangeStr = dateFormatter.string(from: Date())
+        }
+        let trip = TripDraft(
+            id: tripId,
+            title: title,
+            dateRangeText: dateRangeStr,
+            days: days,
+            coverImageName: "camera.fill",
+            isScannedFromDefaultRange: false,
+            draftCreatedAgoText: "Draft created recently",
+            daysSeasonText: "",
+            coverTheme: "default",
+            coverAssetIdentifier: photos.first?.localIdentifier
+        )
+        tripsViewModel.addCameraTripDraft(trip)
+        createdRecapStore.addCreatedBlog(trip: trip)
+        if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == tripId }),
+           let endDate = blog.tripEndDate {
+            OnTheGoTripStore.markTripAsActive(blogId: tripId, title: blog.title, tripEndDate: endDate, country: blog.countryName)
+        }
+        sessionSourceTripId = tripId
+        sessionTripTitle = title
+        // `RecapPhoto.id` matches `MockPhoto.id` / capture moment id from `buildBlogDetail(from:)`.
+        for p in photos {
+            if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == p.id }) {
+                sessionCapturesForDisplay[idx].injectedPhotoId = p.id
             }
-            sessionSourceTripId = tripId
-            sessionTripTitle = title
-            attachedCountThisSession = photos.count
-            // Inject any photos captured while this async Task was running (geocoding delay).
-            let lateArrivals = sessionMoments.filter { $0.previewImage != nil }
-            sessionMoments = []
-            for pending in lateArrivals {
-                injectCapturedImageIntoBlog(pending.previewImage, at: pending.timestamp, sourceTripId: tripId, momentId: pending.id, vibeURL: pending.vibeURL)
-            }
+        }
+        attachedCountThisSession = momentCount(from: sessionCapturesForDisplay)
+        // Any captures that arrived while this run was in flight (e.g. queued events) still land in `sessionMoments`.
+        let lateArrivals = sessionMoments.filter { $0.previewImage != nil }
+        sessionMoments = []
+        for pending in lateArrivals {
+            injectCapturedImageIntoBlog(pending.previewImage, at: pending.timestamp, sourceTripId: tripId, momentId: pending.id, vibeURL: pending.vibeURL)
         }
     }
 
