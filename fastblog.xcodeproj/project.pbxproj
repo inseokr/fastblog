@@ -15,7 +15,7 @@
 		03B8B65E2F7CD9D90088C39F /* high_beams.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B6592F7CD9D90088C39F /* high_beams.mp3 */; };
 		03B8B65F2F7CD9D90088C39F /* kings_and_queens.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B65A2F7CD9D90088C39F /* kings_and_queens.mp3 */; };
 		03B8B6602F7CD9D90088C39F /* all_season.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B6582F7CD9D90088C39F /* all_season.mp3 */; };
-		03B8B6612F7CD9D90088C39F /* let_you_go.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B65B2F7CD9D90088C39F /* let_you_go.mp3 */; };
+		03B8B6612F7CD9D90088C39F /* let you go - Cheers for Nothing.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B65B2F7CD9D90088C39F /* let you go - Cheers for Nothing.mp3 */; };
 		0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */; };
 		0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */; };
 		285D83E64056D6DBF8E9894F /* StoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27CCA2B392AD6D7D60A651A /* StoryPage.swift */; };
@@ -42,6 +42,7 @@
 		B1E500032F7E00010088C413 /* Echoes Through Midnight Streets.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500032F7E00010088C403 /* Echoes Through Midnight Streets.mp3 */; };
 		B1E500042F7E00010088C414 /* Mortals Funk Remix.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500042F7E00010088C404 /* Mortals Funk Remix.mp3 */; };
 		B1E500052F7E00010088C415 /* Royalty.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500052F7E00010088C405 /* Royalty.mp3 */; };
+		D1E500012F9E00010088C416 /* Momentum - Dy.lon.wav in Resources */ = {isa = PBXBuildFile; fileRef = C1E500012F9E00010088C406 /* Momentum - Dy.lon.wav */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
 		BB000106 /* MyBlogsProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000105 /* MyBlogsProfileViewModel.swift */; };
@@ -274,7 +275,7 @@
 		03B8B6582F7CD9D90088C39F /* all_season.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = all_season.mp3; sourceTree = "<group>"; };
 		03B8B6592F7CD9D90088C39F /* high_beams.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = high_beams.mp3; sourceTree = "<group>"; };
 		03B8B65A2F7CD9D90088C39F /* kings_and_queens.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = kings_and_queens.mp3; sourceTree = "<group>"; };
-		03B8B65B2F7CD9D90088C39F /* let_you_go.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = let_you_go.mp3; sourceTree = "<group>"; };
+		03B8B65B2F7CD9D90088C39F /* let you go - Cheers for Nothing.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "let you go - Cheers for Nothing.mp3"; sourceTree = "<group>"; };
 		03B8B65C2F7CD9D90088C39F /* vantage_point.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = vantage_point.mp3; sourceTree = "<group>"; };
 		0733072C4EA957FE04A03752 /* StoryPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StoryPageView.swift; path = StoryBook/StoryPageView.swift; sourceTree = "<group>"; };
 		0D31200382275E7A7520CD4F /* PlaceBlockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaceBlockView.swift; path = StoryBook/PlaceBlockView.swift; sourceTree = "<group>"; };
@@ -299,6 +300,7 @@
 		A1E500032F7E00010088C403 /* Echoes Through Midnight Streets.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "Echoes Through Midnight Streets.mp3"; sourceTree = "<group>"; };
 		A1E500042F7E00010088C404 /* Mortals Funk Remix.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "Mortals Funk Remix.mp3"; sourceTree = "<group>"; };
 		A1E500052F7E00010088C405 /* Royalty.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = Royalty.mp3; sourceTree = "<group>"; };
+		C1E500012F9E00010088C406 /* Momentum - Dy.lon.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "Momentum - Dy.lon.wav"; sourceTree = "<group>"; };
 		A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MapSnapshotHelper.swift; sourceTree = "<group>"; };
 		A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookViewModel.swift; sourceTree = "<group>"; };
 		AA000003 /* Bloggo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bloggo.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -578,7 +580,7 @@
 				03B8B6582F7CD9D90088C39F /* all_season.mp3 */,
 				03B8B6592F7CD9D90088C39F /* high_beams.mp3 */,
 				03B8B65A2F7CD9D90088C39F /* kings_and_queens.mp3 */,
-				03B8B65B2F7CD9D90088C39F /* let_you_go.mp3 */,
+				03B8B65B2F7CD9D90088C39F /* let you go - Cheers for Nothing.mp3 */,
 				03B8B65C2F7CD9D90088C39F /* vantage_point.mp3 */,
 				A1E500012F7E00010088C401 /* Ambient Electronica.mp3 */,
 				A1E500022F7E00010088C402 /* Afterhours.mp3 */,
@@ -587,6 +589,7 @@
 				A1E500052F7E00010088C405 /* Royalty.mp3 */,
 				037E25232F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 */,
 				037E25242F70FD0600C7E8B8 /* freemusicforvideo-vlogs-travel-youtube-462854.mp3 */,
+				C1E500012F9E00010088C406 /* Momentum - Dy.lon.wav */,
 				037E25272F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf */,
 				0354AFB52F6737A300C41BAA /* Bloggo.Debug.entitlements */,
 				0354AFB72F6737A300C41BAA /* Bloggo.Release.entitlements */,
@@ -965,12 +968,13 @@
 				03B8B65E2F7CD9D90088C39F /* high_beams.mp3 in Resources */,
 				03B8B65F2F7CD9D90088C39F /* kings_and_queens.mp3 in Resources */,
 				03B8B6602F7CD9D90088C39F /* all_season.mp3 in Resources */,
-				03B8B6612F7CD9D90088C39F /* let_you_go.mp3 in Resources */,
+				03B8B6612F7CD9D90088C39F /* let you go - Cheers for Nothing.mp3 in Resources */,
 				B1E500012F7E00010088C411 /* Ambient Electronica.mp3 in Resources */,
 				B1E500022F7E00010088C412 /* Afterhours.mp3 in Resources */,
 				B1E500032F7E00010088C413 /* Echoes Through Midnight Streets.mp3 in Resources */,
 				B1E500042F7E00010088C414 /* Mortals Funk Remix.mp3 in Resources */,
 				B1E500052F7E00010088C415 /* Royalty.mp3 in Resources */,
+				D1E500012F9E00010088C416 /* Momentum - Dy.lon.wav in Resources */,
 				037E252C2F70FD0600C7E8B8 /* freemusicforvideo-vlogs-travel-youtube-462854.mp3 in Resources */,
 				037E252E2F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf in Resources */,
 				037E252F2F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 in Resources */,
