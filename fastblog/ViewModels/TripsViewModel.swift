@@ -848,6 +848,7 @@ final class TripsViewModel: ObservableObject {
             return Set([id])
         }()
         let occupiedRanges = createdRecapStore.occupiedDateRanges(excludingSourceTripIds: occupiedRangesExcludedBlogIds)
+        let savedCaptureIds = createdRecapStore.allInAppCaptureIdentifiersInVisibleBlogs()
         let userId = currentUserId
         let previousLastScanned = forceFullScan ? nil : ScanSessionStore.lastScannedDate(for: userId)
 
@@ -888,7 +889,8 @@ final class TripsViewModel: ObservableObject {
                     into: allTrips,
                     occupiedDateRanges: occupiedRanges,
                     scanStart: .distantPast,
-                    scanEnd: Date()
+                    scanEnd: Date(),
+                    savedCaptureIdentifiers: savedCaptureIds
                 )
                 let preservedCameraDrafts = tripDrafts.filter { draft in
                     draft.coverImageName == "camera.fill"
@@ -989,7 +991,8 @@ final class TripsViewModel: ObservableObject {
                     into: tripDrafts,
                     occupiedDateRanges: occupiedRanges,
                     scanStart: fullWindowStart,
-                    scanEnd: windowEnd
+                    scanEnd: windowEnd,
+                    savedCaptureIdentifiers: savedCaptureIds
                 )
                 finishDefaultScanToIdle()
                 presentNewMomentsSheetIfNeeded()
@@ -1032,7 +1035,8 @@ final class TripsViewModel: ObservableObject {
                     into: windowTrips,
                     occupiedDateRanges: occupiedRanges,
                     scanStart: fullWindowStart,
-                    scanEnd: windowEnd
+                    scanEnd: windowEnd,
+                    savedCaptureIdentifiers: savedCaptureIds
                 )
                 let preservedCameraDrafts = tripDrafts.filter { draft in
                     draft.coverImageName == "camera.fill"

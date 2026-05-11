@@ -792,7 +792,8 @@ struct RecapBlogPageView: View {
                 NavigationStack {
                     CameraCaptureView(
                         tripsViewModel: TripsViewModel(createdRecapStore: createdRecapStore),
-                        postDismissToast: nil
+                        postDismissToast: nil,
+                        forcedTargetBlogId: blogId
                     )
                     .environmentObject(createdRecapStore)
                 }

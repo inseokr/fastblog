@@ -590,6 +590,20 @@ final class CreatedRecapBlogStore: ObservableObject {
         return stamps.max()
     }
 
+    /// In-app capture identifiers (`bloggo-capture:`) present in any visible recap blog.
+    /// Used to skip captures that are already part of a saved blog when merging Bloggo captures into trip drafts.
+    func allInAppCaptureIdentifiersInVisibleBlogs() -> Set<String> {
+        var ids = Set<String>()
+        for blog in visibleRecents {
+            guard let detail = blogDetailsBySourceId[blog.sourceTripId] else { continue }
+            for lid in detail.days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier) {
+                guard lid.hasPrefix(AppCapturePhotoService.prefix) else { continue }
+                ids.insert(lid)
+            }
+        }
+        return ids
+    }
+
     /// Photos library asset ids (`PHAsset.localIdentifier`) present in any visible recap blog.
     /// Excludes in-app captures (`bloggo-capture:`) so we can tell when a scanned trip has library photos not yet in a blog.
     func allPhotoLibraryLocalIdentifiersInVisibleBlogs() -> Set<String> {

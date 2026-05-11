@@ -1972,6 +1972,9 @@ struct CameraCaptureView: View {
     /// When set (ZStack overlay presentation), called instead of dismiss().
     var onDismissOverlay: (() -> Void)? = nil
     var onNavigateToBlog: ((UUID) -> Void)? = nil
+    /// When set, all captured photos are always routed to this blog regardless of date/on-the-go state.
+    /// Used when the camera is opened from inside an existing blog.
+    var forcedTargetBlogId: UUID? = nil
 
     @StateObject private var cameraController = CameraController()
 
@@ -4055,7 +4058,12 @@ extension CameraCaptureView {
             location: location,
             vibeURL: remainingVibeURL
         )
-        if let activeSourceTripId = activeBlogIdIfCapturedImageHandled(image, at: timestamp) {
+        if let forcedId = forcedTargetBlogId {
+            sessionSourceTripId = forcedId
+            sessionCapturesForDisplay.append(displayMoment)
+            photosCapturedThisSession += 1
+            injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: forcedId, momentId: displayMoment.id, vibeURL: vibeURL)
+        } else if let activeSourceTripId = activeBlogIdIfCapturedImageHandled(image, at: timestamp) {
             sessionSourceTripId = activeSourceTripId
             sessionCapturesForDisplay.append(displayMoment)
             photosCapturedThisSession += 1

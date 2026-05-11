@@ -1339,7 +1339,8 @@ final class PhotoLibraryTripService {
         into trips: [TripDraft],
         occupiedDateRanges: [(start: Date, end: Date)],
         scanStart: Date,
-        scanEnd: Date
+        scanEnd: Date,
+        savedCaptureIdentifiers: Set<String> = []
     ) -> [TripDraft] {
         let captureService = AppCapturePhotoService.shared
         let captureIds = captureService.allCaptureIds()
@@ -1374,7 +1375,7 @@ final class PhotoLibraryTripService {
         //   - the occupiedDateRanges filter (so a capture taken inside a published blog's
         //     date range still surfaces as its own "Bloggo Captures" card in the carousel,
         //     in addition to whatever the at-capture-time camera flow did with it)
-        // The only hard exclusion is: outside the scan window.
+        // Hard exclusions: outside the scan window, or already part of a saved blog.
         var candidates: [(id: UUID, info: AppCapturePhotoService.CaptureInfo)] = []
         for uuid in captureIds {
             guard let info = captureService.metadata(captureId: uuid) else {
@@ -1387,6 +1388,13 @@ final class PhotoLibraryTripService {
             guard ts >= scanStart && ts < scanEnd else {
 #if DEBUG
                 debugPrint("[BloGGoMerge] ✗ \(uuid.uuidString.prefix(8)) — OUT OF SCAN WINDOW  ts=\(dbgFmt.string(from: ts))  scanStart=\(dbgFmt.string(from: scanStart))  scanEnd=\(dbgFmt.string(from: scanEnd))")
+#endif
+                continue
+            }
+            let captureIdentifier = AppCapturePhotoService.identifier(for: uuid)
+            guard !savedCaptureIdentifiers.contains(captureIdentifier) else {
+#if DEBUG
+                debugPrint("[BloGGoMerge] ✗ \(uuid.uuidString.prefix(8)) — already in saved blog, skipping")
 #endif
                 continue
             }
