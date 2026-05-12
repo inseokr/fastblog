@@ -291,14 +291,18 @@ struct ContentView: View {
             if tripsViewModel.scanState != .idle {
                 LoadingScanView(
                     message: tripsViewModel.loadingMessage,
-                    progress: tripsViewModel.defaultScanProgress > 0 ? tripsViewModel.defaultScanProgress : nil,
+                    progress: tripsViewModel.defaultScanProgress,
                     onCancel: {
                         tripsViewModel.cancelDefaultScan()
                         pendingShowTripsWhenIdle = false
                         dismissTripsOverlay()
-                    }
+                    },
+                    progressStepLabelOverride: { p in
+                        p >= 0.9 ? "Almost done..." : "Please wait..."
+                    },
+                    useCenteredLayout: true
                 )
-                .transition(.opacity)
+                .transition(.identity)
                 .zIndex(20)
             }
         }

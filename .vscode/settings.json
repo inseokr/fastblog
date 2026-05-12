@@ -5,10 +5,21 @@
     "**/.derivedDataAgent2": true,
     "**/.derivedDataAgentBuild": true
   },
-  "search.exclude": {
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/build/**": true,
+    "**/TestResults/**": true,
     "**/.derivedData/**": true,
     "**/.derivedDataAgent/**": true,
     "**/.derivedDataAgent2/**": true,
     "**/.derivedDataAgentBuild/**": true
+  },
+  "search.exclude": {
+    "**/.derivedData/**": true,
+    "**/.derivedDataAgent/**": true,
+    "**/.derivedDataAgent2/**": true,
+    "**/.derivedDataAgentBuild/**": true,
+    "**/build/**": true,
+    "**/TestResults/**": true
   }
 }

@@ -14,8 +14,8 @@ struct ScanningAnimationView: View {
     /// The name of the image asset to show at the center. Defaults to "ScanIcon".
     var iconName: String
 
-    // Each ring gets its own speed multiplier so they expand at visibly different rates.
-    private static let durationMultipliers: [Double] = [0.92, 1.08, 0.96, 1.18]
+    /// Same expansion cadence for every ring so pulses stay phase-locked (mixed speeds moiré against the center icon).
+    private static let durationMultipliers: [Double] = [1.0, 1.0, 1.0, 1.0]
 
     init(ringCount: Int = 4, ringSpacing: CGFloat = 28, pulseDuration: Double = 1.8, showIcon: Bool = true, iconName: String = "ScanIcon") {
         self.ringCount = ringCount

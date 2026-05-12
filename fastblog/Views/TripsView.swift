@@ -147,6 +147,18 @@ struct TripsView: View {
         hasTripsPlottableOnMap || retainTripsMapForMetalDrain
     }
 
+    /// Bottom “More Memories” / Limited picker CTA — hide until map position or carousel selection is ready so it doesn’t flash early over an unsettled map.
+    private var showVisitedCitiesCTA: Bool {
+        guard viewModel.scanState == .idle else { return false }
+        if allTrips.isEmpty {
+            return true
+        }
+        if hasTripsPlottableOnMap {
+            return mapInitialPositionReady
+        }
+        return selectedTripID != nil
+    }
+
     private func kickOffTripsMapMetalDrainRetain() {
         tripsMapMetalDrainTask?.cancel()
         retainTripsMapForMetalDrain = true
@@ -329,25 +341,12 @@ struct TripsView: View {
     private var coreBody: some View {
         Group {
             if viewModel.scanState != .idle {
-                LoadingScanView(
-                    message: viewModel.loadingMessage,
-                    isOverlay: false,
-                    progress: nil,
-                    onCancel: nil,
-                    onUseCamera: {
-                        viewModel.cancelDefaultScan()
-                        showCameraCapture = true
-                    },
-                    onClose: {
-                        viewModel.cancelDefaultScan()
-                        if let onDismiss {
-                            onDismiss()
-                        } else {
-                            dismiss()
-                        }
-                    }
-                )
-                .transition(.opacity.animation(.easeInOut(duration: 0.4)))
+                // Solid navy only: ContentView’s LoadingScanView (zIndex 20) is the real scan UI.
+                // A second LoadingScanView here would show the blue “Use Camera” bar underneath and
+                // flash through during the parent’s opacity transition.
+                TripsView.emptyStateBackdropDark
+                    .ignoresSafeArea()
+                    .transition(.identity)
             } else if shouldShowSelectPhotosIntro {
                 SelectPhotosIntroView { dontShowAgain in
                     if dontShowAgain { skipSelectPhotosIntro = true }
@@ -359,9 +358,11 @@ struct TripsView: View {
                 .transition(.opacity.animation(.easeInOut(duration: 0.4)))
             } else {
                 mainContent
-                    // Instant handoff when the scan finds zero trips — avoids opacity lerp + MapKit
-                    // layering glitches; keep a short fade when the map-backed scene appears.
-                    .transition(allTrips.isEmpty ? .identity : .opacity.animation(.easeInOut(duration: 0.4)))
+                    // Instant handoff — avoids opacity lerp compounding with the parent fade-in
+                    // that ContentView drives when the scan completes. The ContentView animation
+                    // already provides the smooth reveal; an additional internal fade creates a
+                    // corner-grow artifact on the MapKit layer.
+                    .transition(.identity)
             }
         }
         .navigationDestination(item: $selectedTrip) { trip in
@@ -531,6 +532,10 @@ struct TripsView: View {
                 tripsEmptyBackdrop.ignoresSafeArea()
                 mapViewLayer
                     .opacity((mapInitialPositionReady && hasTripsPlottableOnMap) ? 1 : 0)
+                    // Use identity transition so the if→else branch switch (when hostsTripsMetalMapLayer
+                    // changes) never reveals the map via an animated fade — opacity(0) already gates
+                    // visibility and onAppear sets the camera before mapInitialPositionReady = true.
+                    .transition(.identity)
             }
             tripsForegroundChrome
         }
@@ -584,6 +589,11 @@ struct TripsView: View {
             }
         }
         .id((allTrips.isEmpty && !retainTripsMapForMetalDrain) ? "trips_scene_empty" : "trips_scene_populated")
+        .onChange(of: viewModel.openInAppCameraFromDefaultScanRequest) { _, token in
+            guard token != nil else { return }
+            showCameraCapture = true
+            viewModel.openInAppCameraFromDefaultScanRequest = nil
+        }
         .navigationTitle("Trips")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -968,7 +978,9 @@ struct TripsView: View {
                 }
                 tripCarousel
             }
-            visitedCitiesButton
+            if showVisitedCitiesCTA {
+                visitedCitiesButton
+            }
         }
         .padding(.bottom, 8)
         .background(

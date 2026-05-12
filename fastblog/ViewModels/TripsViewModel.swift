@@ -69,6 +69,8 @@ final class TripsViewModel: ObservableObject {
     @Published var loadingMessage: String = "Loading Past Trips…"
     /// Progress of the initial default scan (0.0 → 1.0). Reset to 0 on each new scan.
     @Published var defaultScanProgress: Double = 0
+    /// TripsView observes this when the user taps **Use Camera** on `ContentView`’s default-scan overlay (TripsView no longer renders a duplicate loader under that overlay).
+    @Published var openInAppCameraFromDefaultScanRequest: UUID?
     /// When true, `ContentView` should mount the Trips overlay and reveal it when this default scan returns to `.idle` (e.g. home-mile radius changed in Settings).
     @Published var openTripsWhenCurrentDefaultScanFinishes: Bool = false
 
@@ -802,6 +804,11 @@ final class TripsViewModel: ObservableObject {
         defaultScanProgress = 0
     }
 
+    /// Called from `ContentView`’s scan overlay when the user taps **Use Camera** (TripsView presents the capture flow).
+    func requestOpenInAppCameraFromDefaultScanOverlay() {
+        openInAppCameraFromDefaultScanRequest = UUID()
+    }
+
     private func finishDefaultScanToIdle() {
         openTripsWhenCurrentDefaultScanFinishes = false
         scanState = .idle
@@ -816,7 +823,7 @@ final class TripsViewModel: ObservableObject {
         openTripsWhenCurrentDefaultScanFinishes = openTripsWhenFinished
         showSelectPhotosIntroAfterScan = true
         scanState = .scanningDefault
-        loadingMessage = "Loading your recent trips…"
+        loadingMessage = "Checking for new moments…"
         defaultScanProgress = 0
         newlyScannedPhotos = []
         newMomentsMatchedBlog = nil
