@@ -1525,7 +1525,6 @@ private func makeSlidesManagementItems(
     var out: [SlidesManagementItem] = []
     var ord = 0
     for idx in slides.indices {
-        if isSlideHiddenBySiblingPIP(at: idx, in: slides) { continue }
         let slide = slides[idx]
         switch slide.kind {
         case .cover:
@@ -1538,6 +1537,9 @@ private func makeSlidesManagementItems(
             ord += 1
             out.append(SlidesManagementItem(id: slide.id, ordinal: ord, payload: .placeMap(rawIndex: idx)))
         case .placeStop:
+            // Skip slides absorbed into a sibling's PIP cluster — they are not separate
+            // carousel positions and should not appear as individual cards in the list.
+            guard !isSlideHiddenBySiblingPIP(at: idx, in: slides) else { continue }
             ord += 1
             out.append(SlidesManagementItem(id: slide.id, ordinal: ord, payload: .placeInDeck(rawIndex: idx)))
         }
@@ -4623,7 +4625,7 @@ struct SlideTextEditorView: View {
     @State private var showCarouselWidePlaceZoneSheet = false
     /// Carousel Studio: download icon opens a bottom sheet (Share / Download / PDF).
     @State private var showCarouselStudioExportHub = false
-    @State private var carouselStudioExportHubPhase: CarouselStudioExportHubPhase = .actions
+    @State private var carouselStudioExportHubPhase: CarouselStudioExportHubPhase = .pickDownloadSlides
     /// Indices selected in the download-only picker (subset of `studioDownloadCandidateIndices`).
     @State private var downloadSlidePickSelection: Set<Int> = []
     /// Indices selected in the Share flow (subset of `studioDownloadCandidateIndices`).
@@ -4649,7 +4651,6 @@ struct SlideTextEditorView: View {
     @State private var deferredExportHubWork: CarouselStudioDeferredExportHubWork?
 
     private enum CarouselStudioExportHubPhase {
-        case actions
         case pickDownloadSlides
         case pickShareSlides
     }
@@ -4763,70 +4764,14 @@ struct SlideTextEditorView: View {
         return visibleSlideIndices
     }
 
-    private var currentSlideQuickPickLabel: String {
-        let idx = editorPagerFocusedSlideIndex
-        guard slides.indices.contains(idx) else { return "Slide" }
-        switch slides[idx].kind {
-        case .cover: return "Cover photo"
-        case .mapRoute: return "Map"
-        case .placeIntroMap: return "Place map"
-        case .placeStop:
-            let raw = slides[idx].placeStop?.placeTitle ?? ""
-            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            return t.isEmpty ? "Photo" : t
-        }
-    }
-
     /// True when the download pick set is exactly the full candidate list.
     private var downloadPickSelectionMatchesAll: Bool {
         !studioDownloadCandidateIndices.isEmpty
             && Set(studioDownloadCandidateIndices) == downloadSlidePickSelection
     }
 
-    /// True when the pick matches "current slide only" (or the fallback first candidate if the current page is not listed).
-    private var downloadPickSelectionMatchesCurrentOnly: Bool {
-        let expected: Set<Int> = {
-            let idx = editorPagerFocusedSlideIndex
-            if studioDownloadCandidateIndices.contains(idx) {
-                return [idx]
-            }
-            if let first = studioDownloadCandidateIndices.first {
-                return [first]
-            }
-            return []
-        }()
-        return !expected.isEmpty && downloadSlidePickSelection == expected
-    }
-
     private func selectAllSlidesForDownloadPick() {
         downloadSlidePickSelection = Set(studioDownloadCandidateIndices)
-    }
-
-    private func selectCurrentSlideOnlyForDownloadPick() {
-        let idx = editorPagerFocusedSlideIndex
-        if studioDownloadCandidateIndices.contains(idx) {
-            downloadSlidePickSelection = [idx]
-        } else if let first = studioDownloadCandidateIndices.first {
-            downloadSlidePickSelection = [first]
-        } else {
-            downloadSlidePickSelection = []
-        }
-    }
-
-    /// Slide index the download grid should scroll to for “current slide” (matches `selectCurrentSlideOnlyForDownloadPick`).
-    private var downloadPickScrollToIndex: Int? {
-        let idx = editorPagerFocusedSlideIndex
-        if studioDownloadCandidateIndices.contains(idx) { return idx }
-        return studioDownloadCandidateIndices.first
-    }
-
-    private func scrollDownloadPickGridToCurrentSlide(using proxy: ScrollViewProxy) {
-        guard let idx = downloadPickScrollToIndex else { return }
-        DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.28)) {
-                proxy.scrollTo(idx, anchor: .center)
-            }
-        }
     }
 
     private func toggleDownloadPick(for index: Int) {
@@ -4842,25 +4787,6 @@ struct SlideTextEditorView: View {
 
     private func orderedPickedDownloadIndices() -> [Int] {
         studioDownloadCandidateIndices.filter { downloadSlidePickSelection.contains($0) }
-    }
-
-    private var orderedExportIndicesForMemoryHub: [Int] {
-        orderedStudioExportSlideIndices(slides: slides, singleSlideExport: isSingleSlideDownloadMode)
-    }
-
-    /// Soft memory notice in the export hub (non-blocking).
-    private var showSoftLargeExportHubNotice: Bool {
-        let n = orderedExportIndicesForMemoryHub.count
-        return n >= StudioExportMemoryGuidance.softWarningSlideThreshold
-    }
-
-    private var exportHubLargeDeckNoticePrimaryLine: String {
-        let n = orderedExportIndicesForMemoryHub.count
-        let lim = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
-        if n > lim {
-            return "You have \(n) slides selected — sharing allows up to \(lim) at once. Remove map slides, or open Share and deselect until you’re at \(lim) or fewer."
-        }
-        return "Large export (\(n) slides): sharing or saving everything at once can be slow or use a lot of memory."
     }
 
     private var studioCarouselHasMapSlides: Bool {
@@ -5023,7 +4949,7 @@ struct SlideTextEditorView: View {
     /// multi-photo in the preview grid and then tapping Edit would still let
     /// the user swipe across the very slides that were just collapsed away.
     private var visibleSlideIndices: [Int] {
-        slides.indices.filter { !isSlideHiddenBySiblingPIP(at: $0, in: slides) }
+        slides.indices.filter { slides[$0].isSelected && !isSlideHiddenBySiblingPIP(at: $0, in: slides) }
     }
 
     /// Position (0-based) of `currentIndex` within `visibleSlideIndices`, or `nil`
@@ -5154,11 +5080,8 @@ struct SlideTextEditorView: View {
         } else {
             return
         }
-        if idx < currentIndex {
-            currentIndex -= 1
-        } else if idx == currentIndex {
-            currentIndex = min(idx, max(0, slides.count - 1))
-        }
+        // Both place and map slides are hidden in-place (isSelected = false) — no array change,
+        // no index arithmetic needed. clampCurrentIndexIfNeeded jumps to nearest visible slide.
         scrollPageID = currentIndex
         selectedBlock = nil
         clampCurrentIndexIfNeeded()
@@ -5328,7 +5251,9 @@ struct SlideTextEditorView: View {
         guard slides.indices.contains(editorMutationSlideIndex) else { return }
         selectedPlaceZoneLayoutInSheet = slides[editorMutationSlideIndex].placeZoneLayout
         placeZoneLayoutAppliesToAllPlaceSlides = false
-        showPlaceZoneLayoutSheet = true
+        DispatchQueue.main.async {
+            showPlaceZoneLayoutSheet = true
+        }
     }
 
     /// Single vs multi-photo layout for the current place-stop slide. Keeps sibling
@@ -7243,370 +7168,224 @@ struct SlideTextEditorView: View {
         .transition(.opacity)
     }
 
-    /// Quick trims when the deck exceeds the share cap (e.g. remove all map slides).
+
+
+    private let exportHubGridColumns = [
+        GridItem(.flexible(minimum: 120), spacing: 10),
+        GridItem(.flexible(minimum: 120), spacing: 10)
+    ]
+
     @ViewBuilder
-    private func carouselStudioExportReductionPanel(subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Reduce your carousel")
-                .font(.subheadline.weight(.semibold))
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if studioCarouselHasMapSlides, let onExcludeAll = onExcludeAllMapsFromStudio {
+    private var exportHubSharePickContent: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Remove maps from share", isOn: sharePickOmitMapsToggleBinding)
+                    .font(.subheadline)
+                    .tint(CarouselStudioChrome.accent)
+                    .disabled(sharePickMapSlideIndices.isEmpty)
+                if sharePickMapSlideIndices.isEmpty {
+                    Text("No map slides in this share list.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+
+            ScrollView {
+                LazyVGrid(columns: exportHubGridColumns, spacing: 12) {
+                    ForEach(studioDownloadCandidateIndices, id: \.self) { idx in
+                        let selected = shareSlidePickSelection.contains(idx)
+                        GeometryReader { geo in
+                            let w = max(80, geo.size.width)
+                            CarouselStudioDownloadStylePickCard(
+                                slide: slides[idx],
+                                width: w,
+                                aspectRatio: aspectRatio,
+                                isInCarousel: selected,
+                                mode: .singleAction { toggleSharePick(for: idx) }
+                            )
+                        }
+                        .aspectRatio(aspectRatio, contentMode: .fit)
+                        .id(idx)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 2)
+            }
+
+            VStack(spacing: 8) {
+                let lim = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
+                let overLimit = pickedShareExportCount > lim
+                if overLimit {
+                    Label(
+                        "Select \(lim) or fewer slides — deselect some or toggle off maps above.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 Button {
-                    onExcludeAll()
+                    let order = orderedPickedShareIndices()
+                    guard !order.isEmpty, order.count <= CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage else { return }
+                    deferredExportHubWork = .sharePickedIndices(order, omitMapsFromShare: sharePickEffectivelyOmitsMapsFromShare)
+                    showCarouselStudioExportHub = false
                 } label: {
-                    Label("Remove all map slides", systemImage: "map.fill")
+                    let label = pickedShareExportCount > 0 ? "Share (\(pickedShareExportCount))" : "Share"
+                    Text(label)
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                 }
-                .buttonStyle(.bordered)
-                .tint(CarouselStudioChrome.accent)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .disabled(
+                    orderedPickedShareIndices().isEmpty
+                        || overLimit
+                        || exportActions.exportActionsDisabled()
+                )
             }
-            Text("You can also open the slide grid from the toolbar and remove individual slides.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
+            .padding(16)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { showCarouselStudioExportHub = false }
+            }
+            ToolbarItem(placement: .principal) {
+                Text("Share").font(.headline)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    @ViewBuilder
+    private var exportHubDownloadPickContent: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Button(action: selectAllSlidesForDownloadPick) {
+                    Text("Select All")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(downloadPickSelectionMatchesAll ? Color.primary : .white)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .background {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(downloadPickSelectionMatchesAll
+                                      ? Color(uiColor: .secondarySystemFill)
+                                      : CarouselStudioChrome.accent)
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+
+            ScrollView {
+                LazyVGrid(columns: exportHubGridColumns, spacing: 12) {
+                    ForEach(studioDownloadCandidateIndices, id: \.self) { idx in
+                        let selected = downloadSlidePickSelection.contains(idx)
+                        GeometryReader { geo in
+                            let w = max(80, geo.size.width)
+                            CarouselStudioDownloadStylePickCard(
+                                slide: slides[idx],
+                                width: w,
+                                aspectRatio: aspectRatio,
+                                isInCarousel: selected,
+                                mode: .singleAction { toggleDownloadPick(for: idx) }
+                            )
+                        }
+                        .aspectRatio(aspectRatio, contentMode: .fit)
+                        .id(idx)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 2)
+            }
+
+            VStack(spacing: 10) {
+                Button {
+                    let order = orderedPickedDownloadIndices()
+                    guard !order.isEmpty else { return }
+                    let limit = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
+                    if downloadOutputMode == .photo, order.count > limit {
+                        pendingBulkPhotosDownloadOrder = order
+                        showBulkPhotosDownloadConfirmation = true
+                    } else if downloadOutputMode == .pdf, order.count > limit {
+                        pendingBulkPdfDownloadOrder = order
+                        showBulkPdfDownloadConfirmation = true
+                    } else {
+                        deferredExportHubWork = downloadOutputMode == .photo
+                            ? .savePhotosIndices(order) : .exportPDFIndices(order)
+                        showCarouselStudioExportHub = false
+                    }
+                } label: {
+                    let n = orderedPickedDownloadIndices().count
+                    Text(n > 0 ? "Done (\(n))" : "Done")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .disabled(orderedPickedDownloadIndices().isEmpty || exportActions.exportActionsDisabled())
+            }
+            .padding(16)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { showCarouselStudioExportHub = false }
+            }
+            ToolbarItem(placement: .principal) {
+                Text("Download").font(.headline)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Section("Save as") {
+                        ForEach(DownloadOutputMode.allCases) { mode in
+                            Button { downloadOutputMode = mode } label: {
+                                HStack {
+                                    Label(mode.label, systemImage: mode.systemImage)
+                                    Spacer(minLength: 8)
+                                    if downloadOutputMode == mode {
+                                        Image(systemName: "checkmark")
+                                            .font(.body.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: downloadOutputMode.systemImage)
+                        .font(.system(size: 17, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                }
+                .accessibilityLabel("Save as")
+                .accessibilityValue(downloadOutputMode.label)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var carouselStudioExportHubSheetContent: some View {
-        let gridColumns = [
-            GridItem(.flexible(minimum: 120), spacing: 10),
-            GridItem(.flexible(minimum: 120), spacing: 10)
-        ]
-        return NavigationStack {
+        NavigationStack {
             Group {
                 switch carouselStudioExportHubPhase {
-                case .actions:
-                    VStack(spacing: 18) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 48, weight: .regular))
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(.primary)
-                            .frame(maxWidth: .infinity)
-
-                        Text("Export")
-                            .font(.title2.weight(.semibold))
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
-
-                        Text("Share to social apps, or download picks as photos. PDF uses the share sheet — pick Save to Files or another destination.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
-
-                        if showSoftLargeExportHubNotice {
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(.orange)
-                                Text(exportHubLargeDeckNoticePrimaryLine)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.leading)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .padding(12)
-                            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        }
-
-                        if orderedExportIndicesForMemoryHub.count > CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage {
-                            carouselStudioExportReductionPanel(subtitle: "Sharing allows up to \(CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage) slides at once.")
-                        }
-
-                        Button {
-                            selectAllSlidesForSharePick()
-                            carouselStudioExportHubPhase = .pickShareSlides
-                        } label: {
-                            Text("Share…")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(exportActions.exportActionsDisabled() || studioDownloadCandidateIndices.isEmpty)
-
-                        Button {
-                            selectAllSlidesForDownloadPick()
-                            downloadOutputMode = .photo
-                            carouselStudioExportHubPhase = .pickDownloadSlides
-                        } label: {
-                            Text("Download")
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
-                        .disabled(exportActions.exportActionsDisabled() || studioDownloadCandidateIndices.isEmpty)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .top)
-                    .padding(20)
-                    .navigationBarTitleDisplayMode(.inline)
-
-                case .pickShareSlides:
-                    VStack(spacing: 0) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Toggle("Remove maps from share", isOn: sharePickOmitMapsToggleBinding)
-                                .font(.subheadline)
-                                .tint(CarouselStudioChrome.accent)
-                                .disabled(sharePickMapSlideIndices.isEmpty)
-                            if sharePickMapSlideIndices.isEmpty {
-                                Text("No map slides in this share list (removed from the carousel or not included for export).")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Text(
-                                "Turn off to include map slides again if they’re selected below. "
-                                + "When on, day maps and place maps aren’t shared; if the only photo for a stop appeared only on its place map, that photo is shared as its own slide instead."
-                            )
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 10)
-                        .padding(.bottom, 8)
-
-                        ScrollView {
-                            LazyVGrid(columns: gridColumns, spacing: 12) {
-                                ForEach(studioDownloadCandidateIndices, id: \.self) { idx in
-                                    let selected = shareSlidePickSelection.contains(idx)
-                                    GeometryReader { geo in
-                                        let w = max(80, geo.size.width)
-                                        CarouselStudioDownloadStylePickCard(
-                                            slide: slides[idx],
-                                            width: w,
-                                            aspectRatio: aspectRatio,
-                                            isInCarousel: selected,
-                                            mode: .singleAction { toggleSharePick(for: idx) }
-                                        )
-                                    }
-                                    .aspectRatio(aspectRatio, contentMode: .fit)
-                                    .id(idx)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.top, 2)
-                        }
-
-                        VStack(spacing: 10) {
-                            if pickedShareExportCount > CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage {
-                                carouselStudioExportReductionPanel(
-                                    subtitle: "Select \(CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage) slides or fewer (currently \(pickedShareExportCount)), or trim the carousel below."
-                                )
-                            }
-                            Button {
-                                let order = orderedPickedShareIndices()
-                                guard !order.isEmpty else { return }
-                                guard order.count <= CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage else { return }
-                                deferredExportHubWork = .sharePickedIndices(order, omitMapsFromShare: sharePickEffectivelyOmitsMapsFromShare)
-                                showCarouselStudioExportHub = false
-                            } label: {
-                                Text("Share")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 10)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.regular)
-                            .disabled(
-                                orderedPickedShareIndices().isEmpty
-                                    || pickedShareExportCount > CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
-                                    || exportActions.exportActionsDisabled()
-                            )
-                        }
-                        .padding(16)
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    }
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button {
-                                carouselStudioExportHubPhase = .actions
-                                showCarouselStudioExportHub = false
-                            } label: {
-                                Image(systemName: "chevron.left")
-                            }
-                            .accessibilityLabel("Back")
-                        }
-                        ToolbarItem(placement: .principal) {
-                            Text("Share")
-                                .font(.headline)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-                case .pickDownloadSlides:
-                    ScrollViewReader { proxy in
-                        VStack(spacing: 0) {
-                            VStack(spacing: 10) {
-                                HStack(spacing: 8) {
-                                    Button(action: selectAllSlidesForDownloadPick) {
-                                        Text("Select All")
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(downloadPickSelectionMatchesAll ? .white : .primary)
-                                            .frame(maxWidth: .infinity, minHeight: 40)
-                                            .background {
-                                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                    .fill(downloadPickSelectionMatchesAll ? CarouselStudioChrome.accent : Color(uiColor: .secondarySystemFill))
-                                            }
-                                    }
-                                    .buttonStyle(.plain)
-
-                                    Button {
-                                        selectCurrentSlideOnlyForDownloadPick()
-                                        scrollDownloadPickGridToCurrentSlide(using: proxy)
-                                    } label: {
-                                        Text("Current Slide")
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(downloadPickSelectionMatchesCurrentOnly ? .white : .primary)
-                                            .lineLimit(1)
-                                            .minimumScaleFactor(0.9)
-                                            .frame(maxWidth: .infinity, minHeight: 40)
-                                            .background {
-                                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                    .fill(downloadPickSelectionMatchesCurrentOnly ? CarouselStudioChrome.accent : Color(uiColor: .secondarySystemFill))
-                                            }
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-
-                                Text("Current: \(currentSlideQuickPickLabel)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.top, 10)
-                            .padding(.bottom, 8)
-
-                            ScrollView {
-                                LazyVGrid(columns: gridColumns, spacing: 12) {
-                                    ForEach(studioDownloadCandidateIndices, id: \.self) { idx in
-                                        let selected = downloadSlidePickSelection.contains(idx)
-                                        GeometryReader { geo in
-                                            let w = max(80, geo.size.width)
-                                            CarouselStudioDownloadStylePickCard(
-                                                slide: slides[idx],
-                                                width: w,
-                                                aspectRatio: aspectRatio,
-                                                isInCarousel: selected,
-                                                mode: .singleAction { toggleDownloadPick(for: idx) }
-                                            )
-                                        }
-                                        .aspectRatio(aspectRatio, contentMode: .fit)
-                                        .id(idx)
-                                    }
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.top, 2)
-                            }
-
-                            VStack(spacing: 10) {
-                                Button {
-                                    let order = orderedPickedDownloadIndices()
-                                    guard !order.isEmpty else { return }
-                                    let limit = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
-                                    if downloadOutputMode == .photo, order.count > limit {
-                                        pendingBulkPhotosDownloadOrder = order
-                                        showBulkPhotosDownloadConfirmation = true
-                                    } else if downloadOutputMode == .pdf, order.count > limit {
-                                        pendingBulkPdfDownloadOrder = order
-                                        showBulkPdfDownloadConfirmation = true
-                                    } else {
-                                        if downloadOutputMode == .photo {
-                                            deferredExportHubWork = .savePhotosIndices(order)
-                                        } else {
-                                            deferredExportHubWork = .exportPDFIndices(order)
-                                        }
-                                        showCarouselStudioExportHub = false
-                                    }
-                                } label: {
-                                    Text("Done")
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 10)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.regular)
-                                .disabled(orderedPickedDownloadIndices().isEmpty || exportActions.exportActionsDisabled())
-                            }
-                            .padding(16)
-                            .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        }
-                        .onAppear {
-                            if downloadPickSelectionMatchesCurrentOnly {
-                                scrollDownloadPickGridToCurrentSlide(using: proxy)
-                            }
-                        }
-                        .onChange(of: downloadPickSelectionMatchesCurrentOnly) { _, isCurrentOnly in
-                            if isCurrentOnly {
-                                scrollDownloadPickGridToCurrentSlide(using: proxy)
-                            }
-                        }
-                    }
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button {
-                                carouselStudioExportHubPhase = .actions
-                                showCarouselStudioExportHub = false
-                            } label: {
-                                Image(systemName: "chevron.left")
-                            }
-                            .accessibilityLabel("Back")
-                        }
-                        ToolbarItem(placement: .principal) {
-                            Text("Download")
-                                .font(.headline)
-                        }
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Menu {
-                                Section("Export as") {
-                                    ForEach(DownloadOutputMode.allCases) { mode in
-                                        Button {
-                                            downloadOutputMode = mode
-                                        } label: {
-                                            HStack {
-                                                Label(mode.label, systemImage: mode.systemImage)
-                                                Spacer(minLength: 8)
-                                                if downloadOutputMode == mode {
-                                                    Image(systemName: "checkmark")
-                                                        .font(.body.weight(.semibold))
-                                                        .foregroundStyle(.secondary)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: downloadOutputMode.systemImage)
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .symbolRenderingMode(.hierarchical)
-                            }
-                            .accessibilityLabel("Download file type")
-                            .accessibilityValue(downloadOutputMode.label)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                case .pickShareSlides: exportHubSharePickContent
+                case .pickDownloadSlides: exportHubDownloadPickContent
                 }
             }
         }
-        .onChange(of: slides.count) { _, _ in
+        .onChange(of: studioDownloadCandidateIndices.count) { _, _ in
             guard carouselStudioExportHubPhase == .pickShareSlides else { return }
-            // Removing slides reindexes the deck; refresh the pick set so indices stay meaningful.
             selectAllSlidesForSharePick()
         }
         .presentationDetents([.large])
@@ -7662,22 +7441,30 @@ struct SlideTextEditorView: View {
         }
     }
 
-    /// Same system share sheet as Social Post Studio **⋯ → Share to social apps…** (`exportActions.share`). Hub entry keeps Download / PDF / slide picks.
     @ViewBuilder
     private func carouselStudioShareAndExportMenu(useExportHubGlyph: Bool) -> some View {
         let exportDisabled = exportActions.exportActionsDisabled()
+        let limit = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
         Menu {
             Button {
-                Task { await exportActions.share() }
+                if studioDownloadCandidateIndices.count <= limit {
+                    Task { await exportActions.share() }
+                } else {
+                    selectAllSlidesForSharePick()
+                    carouselStudioExportHubPhase = .pickShareSlides
+                    showCarouselStudioExportHub = true
+                }
             } label: {
                 Label("Share to social apps…", systemImage: "square.and.arrow.up")
             }
             .disabled(exportDisabled)
             Button {
-                carouselStudioExportHubPhase = .actions
+                selectAllSlidesForDownloadPick()
+                downloadOutputMode = .photo
+                carouselStudioExportHubPhase = .pickDownloadSlides
                 showCarouselStudioExportHub = true
             } label: {
-                Label("Export & download…", systemImage: "arrow.down.doc")
+                Label("Download…", systemImage: "arrow.down.to.line")
             }
             .disabled(exportDisabled)
         } label: {
@@ -7693,7 +7480,7 @@ struct SlideTextEditorView: View {
                     .foregroundStyle(.white)
             }
         }
-        .accessibilityLabel("Share or export")
+        .accessibilityLabel("Share or download")
     }
 
     @ToolbarContentBuilder
@@ -7776,7 +7563,14 @@ struct SlideTextEditorView: View {
                         selectedPlaceZoneLayoutInSheet = slides[idx].placeZoneLayout
                     }
                     placeZoneLayoutAppliesToAllPlaceSlides = true
-                    showPlaceZoneLayoutSheet = true
+                    // Defer so the navigation stack finishes presenting; otherwise the sheet
+                    // can appear then tear down in the same transition as layout settles.
+                    // One run-loop (DispatchQueue.main.async) is not enough when the enclosing
+                    // sheet is still animating — use a short sleep instead.
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(600))
+                        showPlaceZoneLayoutSheet = true
+                    }
                 }
             }
             .sheet(isPresented: $showPlaceZoneLayoutSheet) {
@@ -7803,9 +7597,6 @@ struct SlideTextEditorView: View {
                                 ForEach(CarouselPlaceZoneLayout.bulkZonePresets(for: activeMode)) { layout in
                                     Button {
                                         selectedPlaceZoneLayoutInSheet = layout
-                                        if !placeZoneLayoutAppliesToAllPlaceSlides {
-                                            commitPlaceZoneLayoutFromSheet(layout)
-                                        }
                                     } label: {
                                         PlaceZoneLayoutDiagramThumb(
                                             zone: layout,
@@ -7832,14 +7623,12 @@ struct SlideTextEditorView: View {
                                 showPlaceZoneLayoutSheet = false
                             }
                         }
-                        if placeZoneLayoutAppliesToAllPlaceSlides {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Apply") {
-                                    commitPlaceZoneLayoutFromSheet(selectedPlaceZoneLayoutInSheet)
-                                }
-                                .fontWeight(.semibold)
-                                .tint(.blue)
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Apply") {
+                                commitPlaceZoneLayoutFromSheet(selectedPlaceZoneLayoutInSheet)
                             }
+                            .fontWeight(.semibold)
+                            .tint(.blue)
                         }
                     }
                 }
@@ -8069,11 +7858,10 @@ struct SlideTextEditorView: View {
                 inlineTextEditSheet
             })
             .sheet(isPresented: $showCarouselStudioExportHub, onDismiss: {
-                carouselStudioExportHubPhase = .actions
+                carouselStudioExportHubPhase = .pickDownloadSlides
                 let work = deferredExportHubWork
                 deferredExportHubWork = nil
                 guard let work else { return }
-                // Let the nested hub sheet finish dismissing before the parent presents share / runs export.
                 DispatchQueue.main.async {
                     switch work {
                     case .sharePickedIndices(let order, let omitMapsFromShare):
@@ -9710,6 +9498,12 @@ struct SocialPostStudioSheet: View {
     /// Fired after load when the selected slide count still exceeds 34 after auto-PIP.
     @State private var showSocialCarouselOverflowAlert = false
     @State private var socialCarouselOverflowSlideCount = 0
+    /// Mirrors the child `SlideTextEditorView` AppStorage key so this view can defer the overflow
+    /// alert until after the first-run layout picker sheet is dismissed (the two conflict if simultaneous).
+    @AppStorage("carouselStudio.hasSeenPlaceLayoutPicker") private var hasSeenPlaceLayoutPicker = false
+    /// Set when overflow is detected but the first-run layout picker sheet hasn't shown yet;
+    /// cleared and overflow rechecked once `hasSeenPlaceLayoutPicker` flips to true.
+    @State private var pendingOverflowAfterFirstRunLayoutPicker = false
     /// Confirms save / PDF when slide count exceeds the per-package cap (34); JPEG share caps before this runs.
     private enum LargeStudioExportMemoryGate: Equatable {
         case saveToPhotos(indices: [Int])
@@ -9818,7 +9612,10 @@ struct SocialPostStudioSheet: View {
                             showStudioCoverPicker = true
                         },
                         onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
-                        onExcludeMapFromStudio: { idx in excludeMapSlide(at: idx) },
+                        onExcludeMapFromStudio: { idx in
+                            guard slides.indices.contains(idx), isCarouselStudioMapKind(slides[idx].kind) else { return }
+                            if slides[idx].isSelected { excludeMapSlide(at: idx) } else { restoreMapSlide(at: idx) }
+                        },
                         onOpenPhotoGroupPicker: { showPhotoGroupPicker = true },
                         isSingleSlideDownloadMode: exportFormat.isSingleSlide,
                         onDismissEditor: onDismissFromParent,
@@ -9942,11 +9739,7 @@ struct SocialPostStudioSheet: View {
                 "\(pkgsLeft) PDF file\(pkgsLeft == 1 ? "" : "s") remaining (up to \(CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage) slides each)."
             )
         }
-        .confirmationDialog(
-            "Sharing limit",
-            isPresented: $showShareJPEGHardCapConfirmation,
-            titleVisibility: .visible
-        ) {
+        .alert("Sharing limit", isPresented: $showShareJPEGHardCapConfirmation) {
             let cap = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
             Button("Share first \(cap)") {
                 guard let full = pendingShareJPEGHardCapSteps else { return }
@@ -9991,14 +9784,32 @@ struct SocialPostStudioSheet: View {
                 onRestoreExcludedPlacePhoto: { stopID, photoID in
                     restoreExcludedPhoto(stopID: stopID, photoID: photoID)
                 },
-                onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
-                onExcludeMapFromStudio: { idx in excludeMapSlide(at: idx) },
+                onExcludePlaceFromStudio: { idx in
+                    guard slides.indices.contains(idx), slides[idx].kind == .placeStop else { return }
+                    if slides[idx].isSelected {
+                        excludePlaceSlide(at: idx)
+                    } else {
+                        restorePlaceSlide(at: idx)
+                    }
+                },
+                onExcludeMapFromStudio: { idx in
+                    guard slides.indices.contains(idx), isCarouselStudioMapKind(slides[idx].kind) else { return }
+                    if slides[idx].isSelected { excludeMapSlide(at: idx) } else { restoreMapSlide(at: idx) }
+                },
                 removeMapsFromCarousel: slideManagementRemoveMapsFromCarouselBinding
             )
         }
         .onChange(of: showPhotoGroupPicker) { _, isPresented in
             if !isPresented, pendingSocialCarouselOverflowAfterSlidesPickerDismiss {
                 pendingSocialCarouselOverflowAfterSlidesPickerDismiss = false
+                checkSocialCarouselOverflow()
+            }
+        }
+        .onChange(of: hasSeenPlaceLayoutPicker) { _, isSeen in
+            // Once the first-run layout picker sheet is dismissed (child sets this key),
+            // show the overflow alert that was deferred to avoid competing modal presentations.
+            if isSeen, pendingOverflowAfterFirstRunLayoutPicker {
+                pendingOverflowAfterFirstRunLayoutPicker = false
                 checkSocialCarouselOverflow()
             }
         }
@@ -10020,7 +9831,10 @@ struct SocialPostStudioSheet: View {
                     showStudioCoverPicker = true
                 },
                 onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
-                onExcludeMapFromStudio: { idx in excludeMapSlide(at: idx) },
+                onExcludeMapFromStudio: { idx in
+                    guard slides.indices.contains(idx), isCarouselStudioMapKind(slides[idx].kind) else { return }
+                    if slides[idx].isSelected { excludeMapSlide(at: idx) } else { restoreMapSlide(at: idx) }
+                },
                 onOpenPhotoGroupPicker: { showPhotoGroupPicker = true },
                 isSingleSlideDownloadMode: exportFormat.isSingleSlide,
                 onExcludeAllMapsFromStudio: { excludeAllMapSlidesFromStudio() }
@@ -10077,7 +9891,16 @@ struct SocialPostStudioSheet: View {
     private var shareJPEGHardCapConfirmationMessage: String {
         let cap = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
         let n = pendingShareJPEGHardCapSteps?.count ?? 0
-        return "You have \(n) slides to share. Only the first \(cap) can be sent at once—the rest will be skipped."
+        return "You have \(n) slides selected. Only up to \(cap) can be shared at once with social apps—the rest will not be included. You can share again for the next batch, or trim your carousel first."
+    }
+
+    /// Presents after the current run loop so alerts reliably appear when the action was invoked from a `Menu`.
+    @MainActor
+    private func presentShareJPEGHardCapConfirmation(fullSteps: [ShareJPEGExportStep]) {
+        pendingShareJPEGHardCapSteps = fullSteps
+        DispatchQueue.main.async {
+            showShareJPEGHardCapConfirmation = true
+        }
     }
 
     /// Presents save outcome in the embedded editor (`SlideTextEditorView`) vs the studio chrome menu path.
@@ -10094,12 +9917,6 @@ struct SocialPostStudioSheet: View {
             savedAlertBody = message
             showSavedAlert = true
         }
-    }
-
-    @MainActor
-    private func presentShareJPEGHardCapConfirmation(fullSteps: [ShareJPEGExportStep]) {
-        pendingShareJPEGHardCapSteps = fullSteps
-        showShareJPEGHardCapConfirmation = true
     }
 
     private func savedPhotosOutcomeStrings(
@@ -10631,7 +10448,20 @@ struct SocialPostStudioSheet: View {
             pendingSocialCarouselOverflowAfterSlidesPickerDismiss = true
             return
         }
-        showSocialCarouselOverflowAlert = true
+        // If the first-run layout picker sheet hasn't appeared yet, it will auto-present shortly
+        // after load. Presenting the overflow alert at the same time causes SwiftUI to dismiss
+        // one or both modals. Defer until hasSeenPlaceLayoutPicker flips (sheet dismissed).
+        if opensInEditMode && !hasSeenPlaceLayoutPicker {
+            pendingOverflowAfterFirstRunLayoutPicker = true
+            return
+        }
+        // Defer to the next main-actor hop so the withTransaction mutations inside
+        // autoEnablePIPForAllGroups are fully committed before the alert is presented.
+        // Presenting an alert in the same transaction as a withTransaction state change
+        // can cause SwiftUI to immediately dismiss it.
+        Task { @MainActor in
+            showSocialCarouselOverflowAlert = true
+        }
     }
 
     // MARK: - Studio photo exclusion
@@ -10641,29 +10471,45 @@ struct SocialPostStudioSheet: View {
     private func excludeMapSlide(at index: Int) {
         guard slides.indices.contains(index),
               isCarouselStudioMapKind(slides[index].kind) else { return }
-        slides.remove(at: index)
+        slides[index].isSelected = false
     }
 
-    /// Removes every day map (`.mapRoute`) and place intro map (`.placeIntroMap`) slide for this session.
+    /// Restores a previously hidden map slide to the carousel (sets isSelected = true).
+    @MainActor
+    private func restoreMapSlide(at index: Int) {
+        guard slides.indices.contains(index),
+              isCarouselStudioMapKind(slides[index].kind) else { return }
+        slides[index].isSelected = true
+    }
+
+    /// Hides every day map (`.mapRoute`) and place intro map (`.placeIntroMap`) slide for this session.
     @MainActor
     private func excludeAllMapSlidesFromStudio() {
-        let indices = slides.indices.filter { isCarouselStudioMapKind(slides[$0].kind) }.sorted(by: >)
+        let indices = slides.indices.filter { isCarouselStudioMapKind(slides[$0].kind) }
         guard !indices.isEmpty else { return }
         for i in indices {
-            slides.remove(at: i)
+            slides[i].isSelected = false
         }
-        checkSocialCarouselOverflow()
     }
 
-    /// Removes a place photo slide from the carousel and remembers it so the user can add it back later.
+    /// Hides a place photo slide from the carousel (sets isSelected = false).
+    /// The slide stays in the array and remains visible in Slides Management as a dimmed card.
     @MainActor
     private func excludePlaceSlide(at index: Int) {
         guard slides.indices.contains(index),
               slides[index].kind == .placeStop,
-              let stop = slides[index].placeStop,
-              let hid = slides[index].heroPhotoID else { return }
-        excludedStudioPhotoKeys.insert(studioExclusionKey(stop: stop.id, photo: hid))
-        slides.remove(at: index)
+              let stop = slides[index].placeStop else { return }
+        slides[index].isSelected = false
+        Task { await rebuildPIPPayloadsForStop(stopID: stop.id) }
+    }
+
+    /// Restores a previously hidden place photo slide to the carousel (sets isSelected = true).
+    @MainActor
+    private func restorePlaceSlide(at index: Int) {
+        guard slides.indices.contains(index),
+              slides[index].kind == .placeStop,
+              let stop = slides[index].placeStop else { return }
+        slides[index].isSelected = true
         Task { await rebuildPIPPayloadsForStop(stopID: stop.id) }
     }
 
@@ -10727,7 +10573,13 @@ struct SocialPostStudioSheet: View {
         }
 
         let orderedPresentIDs = included.map(\.id).filter { pid in
-            indices.contains { slides[$0].heroPhotoID == pid }
+            // Include the photo if its slide is visible OR if it's PIP-hidden by a sibling
+            // (so the sibling's PIP cluster keeps showing it). Exclude only user-hidden slides
+            // (isSelected = false but NOT hidden by a sibling PIP).
+            indices.contains { idx in
+                slides[idx].heroPhotoID == pid
+                && (slides[idx].isSelected || isSlideHiddenBySiblingPIP(at: idx, in: slides))
+            }
         }
 
         var cache: [UUID: UIImage] = [:]
@@ -10950,15 +10802,11 @@ struct SocialPostStudioSheet: View {
             slides = result
             exportRenderAspectRatio = formatAspectRatio
             isLoading = false
-            let slidesPickerOpen = showPhotoGroupPicker
-            if slidesPickerOpen {
-                // Defer snapshot/overflow so Toggle bindings don’t assert mid-transaction when the deck reloads.
-                Task { @MainActor in
-                    guard generation == loadSlidesGeneration else { return }
-                    slideManagementDeckSnapshotBeforeRemovingMaps = nil
-                    checkSocialCarouselOverflow()
-                }
-            } else {
+            // Always defer: checkSocialCarouselOverflow calls withTransaction inside autoEnablePIPForAllGroups,
+            // which can flush the current transaction before showSocialCarouselOverflowAlert is set,
+            // causing the alert to appear and immediately disappear on the isLoading→false transition.
+            Task { @MainActor in
+                guard generation == loadSlidesGeneration else { return }
                 slideManagementDeckSnapshotBeforeRemovingMaps = nil
                 checkSocialCarouselOverflow()
             }
@@ -12012,9 +11860,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
     @Binding var removeMapsFromCarousel: Bool
     @Environment(\.dismiss) private var dismiss
 
-    @AppStorage("blogify.studioSkipExcludeConfirm") private var skipExcludeConfirm = false
     @AppStorage("blogify.slidesManagementTip.dismissed") private var slidesManagementTipDismissed = false
-    @State private var pendingExcludeRawIndex: Int?
 
     private var managementItems: [SlidesManagementItem] {
         makeSlidesManagementItems(blog: blog, slides: slides, excludedKeys: excludedKeys)
@@ -12037,17 +11883,75 @@ private struct CarouselPhotoGroupPickerSheet: View {
         }
     }
 
-    /// Deck indices that export / the pager show — excludes PIP-collapsed duplicates (`slides.count` is larger).
+    /// Deck indices that export / the pager show — excludes hidden and PIP-collapsed slides.
     private var slidesManagementVisibleDeckSlideCount: Int {
-        slides.indices.filter { !isSlideHiddenBySiblingPIP(at: $0, in: slides) }.count
+        slides.indices.filter { slides[$0].isSelected && !isSlideHiddenBySiblingPIP(at: $0, in: slides) }.count
     }
 
     private var mapSlidesInDeckCount: Int {
-        slides.filter { isCarouselStudioMapKind($0.kind) }.count
+        slides.filter { isCarouselStudioMapKind($0.kind) && $0.isSelected }.count
+    }
+
+    private var hasAnyMapSlides: Bool {
+        slides.contains(where: { isCarouselStudioMapKind($0.kind) })
     }
 
     private var slidesManagementNavigationSubtitle: String {
-        "\(exportSelectedSlideCount) of \(slidesManagementVisibleDeckSlideCount) selected for export · tap a card to edit"
+        "Tap a card to edit or remove from the carousel"
+    }
+
+    /// Always-visible summary above the scrolling grid (counts scroll away in the old layout).
+    private var slidesManagementPinnedSelectionBar: some View {
+        let sel = exportSelectedSlideCount
+        let visibleDeck = slidesManagementVisibleDeckSlideCount
+        let cap = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
+        let overShare = sel > cap
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                Text("\(sel)")
+                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(overShare ? Color.orange : CarouselStudioChrome.accent)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("slides selected for export")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("\(visibleDeck) slides in carousel\(removedPlaceCount > 0 ? " · \(removedPlaceCount) removed" : "")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            if removedPlaceCount > 0 {
+                Text("\(removedPlaceCount) photo\(removedPlaceCount == 1 ? "" : "s") removed from the carousel — restore from dimmed cards below.")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if overShare {
+                Label(
+                    "Sharing to social apps includes up to \(cap) slides at a time. Trim the deck or share in batches.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.orange)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
     }
 
     init(
@@ -12088,15 +11992,6 @@ private struct CarouselPhotoGroupPickerSheet: View {
         case .placeStop: return onExcludePlaceFromStudio != nil
         case .mapRoute, .placeIntroMap: return onExcludeMapFromStudio != nil
         case .cover: return false
-        }
-    }
-
-    private func requestExclude(at rawIndex: Int) {
-        guard canExcludeSlide(at: rawIndex) else { return }
-        if skipExcludeConfirm {
-            performExclude(at: rawIndex)
-        } else {
-            pendingExcludeRawIndex = rawIndex
         }
     }
 
@@ -12174,39 +12069,78 @@ private struct CarouselPhotoGroupPickerSheet: View {
     /// Cap preview width so map/photo slides don’t rasterize unnecessarily large layers while scrolling (memory pressure).
     private static let slidesManagementThumbMaxWidth: CGFloat = 320
 
+    /// Small horizontal strip of PIP thumbnail images shown at the bottom of a PIP-layout slide card.
+    @ViewBuilder
+    private func slidesManagementPIPStrip(pipImages: [UIImage]) -> some View {
+        let thumbSize: CGFloat = 30
+        HStack(spacing: 4) {
+            ForEach(Array(pipImages.prefix(3).enumerated()), id: \.offset) { _, img in
+                Image(uiImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: thumbSize, height: thumbSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .strokeBorder(.white.opacity(0.5), lineWidth: 1)
+                    )
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 8)
+    }
+
     @ViewBuilder
     private func slidesManagementDeckItemRow(ordinal1Based: Int, rawIndex: Int, slide: CarouselSlide) -> some View {
-        let canSplit = canExcludeSlide(at: rawIndex)
-        /// Matches `exportSelectedSlideCount`: PIP-collapsed siblings stay in the deck but don’t export.
         let countsTowardExportSelection = slides.indices.contains(rawIndex)
             && slides[rawIndex].isSelected
             && !isSlideHiddenBySiblingPIP(at: rawIndex, in: slides)
+        let isUserHidden = (slide.kind == .placeStop || isCarouselStudioMapKind(slide.kind)) && !countsTowardExportSelection
+        let canSplit = !isUserHidden && canExcludeSlide(at: rawIndex)
+        let hasPIP = slide.kind == .placeStop && slide.layout == .pip && !slide.pipImages.isEmpty
         VStack(alignment: .leading, spacing: 0) {
             GeometryReader { geo in
                 let w = min(max(80, geo.size.width), Self.slidesManagementThumbMaxWidth)
-                if canSplit {
-                    CarouselStudioDownloadStylePickCard(
-                        slide: slide,
-                        width: w,
-                        aspectRatio: aspectRatio,
-                        isInCarousel: countsTowardExportSelection,
-                        mode: .splitOpenInSlideRemoveFromCorner(
-                            onOpen: { onSelectSlide(rawIndex) },
-                            onRemoveFromDeck: { requestExclude(at: rawIndex) }
+                ZStack(alignment: .bottomLeading) {
+                    if isUserHidden {
+                        // Slide is hidden from the carousel; tapping anywhere restores it.
+                        CarouselStudioDownloadStylePickCard(
+                            slide: slide,
+                            width: w,
+                            aspectRatio: aspectRatio,
+                            isInCarousel: false,
+                            mode: .singleAction { performExclude(at: rawIndex) }
                         )
-                    )
-                } else {
-                    CarouselStudioDownloadStylePickCard(
-                        slide: slide,
-                        width: w,
-                        aspectRatio: aspectRatio,
-                        isInCarousel: countsTowardExportSelection,
-                        mode: .singleAction { onSelectSlide(rawIndex) }
-                    )
+                    } else if canSplit {
+                        CarouselStudioDownloadStylePickCard(
+                            slide: slide,
+                            width: w,
+                            aspectRatio: aspectRatio,
+                            isInCarousel: countsTowardExportSelection,
+                            mode: .splitOpenInSlideRemoveFromCorner(
+                                onOpen: { onSelectSlide(rawIndex) },
+                                onRemoveFromDeck: { performExclude(at: rawIndex) }
+                            )
+                        )
+                    } else {
+                        CarouselStudioDownloadStylePickCard(
+                            slide: slide,
+                            width: w,
+                            aspectRatio: aspectRatio,
+                            isInCarousel: countsTowardExportSelection,
+                            mode: .singleAction { onSelectSlide(rawIndex) }
+                        )
+                    }
+                    if hasPIP {
+                        slidesManagementPIPStrip(pipImages: slide.pipImages)
+                    }
                 }
             }
             .aspectRatio(aspectRatio, contentMode: .fit)
-            slidesManagementCaption(ordinal1Based: ordinal1Based, title: slideKindLabel(for: slide))
+            slidesManagementCaption(
+                ordinal1Based: ordinal1Based,
+                title: slideKindLabel(for: slide)
+            )
         }
     }
 
@@ -12351,22 +12285,6 @@ private struct CarouselPhotoGroupPickerSheet: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var slidesManagementSlideCountLine: some View {
-        let n = managementItems.count
-        let sel = exportSelectedSlideCount
-        let line: String
-        if removedPlaceCount > 0 {
-            line = "\(n) cards · \(sel) selected for export · \(removedPlaceCount) excluded (restore below)"
-        } else {
-            line = "\(n) cards · \(sel) selected for export"
-        }
-        return Text(line)
-            .font(.body.weight(.medium))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 4)
-    }
-
     @ViewBuilder
     private var slidesManagementGridOrEmpty: some View {
         if managementItems.isEmpty {
@@ -12390,19 +12308,19 @@ private struct CarouselPhotoGroupPickerSheet: View {
     private var slidesManagementScrollContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             slidesManagementTipBanner
-            if mapSlidesInDeckCount > 0 || removeMapsFromCarousel {
+            if hasAnyMapSlides {
                 Toggle("Remove maps from carousel", isOn: $removeMapsFromCarousel)
                     .font(.body)
                     .tint(CarouselStudioChrome.accent)
                 Text(
-                    "Turn off to put day maps and place maps back (restores the deck as it was when you turned this on). "
-                    + "You can still remove individual maps with the check in the corner."
+                    removeMapsFromCarousel
+                        ? "Turn off to put all day maps and place maps back (restores the deck to its state before you turned this on)."
+                        : "Turn on to hide all map slides at once. You can still hide or restore individual maps with the check in the corner."
                 )
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
             }
-            slidesManagementSlideCountLine
             slidesManagementGridOrEmpty
         }
         .padding(.horizontal, 16)
@@ -12411,8 +12329,14 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                slidesManagementScrollContent
+            VStack(spacing: 0) {
+                slidesManagementPinnedSelectionBar
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+                ScrollView {
+                    slidesManagementScrollContent
+                }
             }
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationBarTitleDisplayMode(.inline)
@@ -12423,31 +12347,6 @@ private struct CarouselPhotoGroupPickerSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .font(.body.weight(.semibold))
-                }
-            }
-            .alert("Remove this slide?", isPresented: Binding(
-                get: { pendingExcludeRawIndex != nil },
-                set: { if !$0 { pendingExcludeRawIndex = nil } }
-            )) {
-                Button("Cancel", role: .cancel) { pendingExcludeRawIndex = nil }
-                Button("Remove", role: .destructive) {
-                    if let i = pendingExcludeRawIndex {
-                        performExclude(at: i)
-                    }
-                    pendingExcludeRawIndex = nil
-                }
-            } message: {
-                if let i = pendingExcludeRawIndex, slides.indices.contains(i) {
-                    switch slides[i].kind {
-                    case .mapRoute:
-                        Text("The day map will be excluded from the carousel.")
-                    case .placeIntroMap:
-                        Text("This focused place map will be excluded from the carousel.")
-                    default:
-                        Text("This photo slide will be excluded from the carousel.")
-                    }
-                } else {
-                    Text("This photo slide will be excluded from the carousel.")
                 }
             }
         }
