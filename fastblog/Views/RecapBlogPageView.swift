@@ -202,6 +202,7 @@ struct RecapBlogPageView: View {
     @AppStorage("bloggo.hasSeenPhotoGroupingTip") private var hasSeenPhotoGroupingTip = false
     @AppStorage("hasUploadedFirstBlog") private var hasUploadedFirstBlog = false
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
+    @AppStorage(DistanceUnit.storageKey) private var distanceUnitRaw: String = DistanceUnit.miles.rawValue
     @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
     @State private var showCloudOnboardingModal = false
     @State private var newlyUploadedBlogKey: Int? = nil
@@ -5403,12 +5404,17 @@ Your blog remains private unless you choose to share it.
         let start = CLLocation(latitude: loc1.latitude, longitude: loc1.longitude)
         let end = CLLocation(latitude: loc2.latitude, longitude: loc2.longitude)
         let distanceInMeters = end.distance(from: start)
-        let distanceInMiles = distanceInMeters / 1609.34
-        
-        // If really close, maybe don't show? Or show 0.1 mi.
-        if distanceInMiles < 0.1 { return nil }
-        
-        return String(format: "%.1f mi", distanceInMiles)
+        let unit = DistanceUnit(rawValue: distanceUnitRaw) ?? .miles
+        switch unit {
+        case .miles:
+            let miles = distanceInMeters / 1609.34
+            if miles < 0.1 { return nil }
+            return String(format: "%.1f mi", miles)
+        case .kilometers:
+            let km = distanceInMeters / 1000.0
+            if km < 0.1 { return nil }
+            return String(format: "%.1f km", km)
+        }
     }
 
     private func checkFirstTimeTip() {

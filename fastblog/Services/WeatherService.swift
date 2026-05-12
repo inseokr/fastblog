@@ -84,6 +84,21 @@ enum WeatherTemperatureUnit: String, CaseIterable {
     }
 }
 
+/// User preference for how distances between places are shown. Stored in `UserDefaults` via `@AppStorage`.
+enum DistanceUnit: String, CaseIterable {
+    case miles
+    case kilometers
+
+    static let storageKey = "fastblog.distanceUnit"
+
+    var displayName: String {
+        switch self {
+        case .miles: return "Miles (mi)"
+        case .kilometers: return "Kilometers (km)"
+        }
+    }
+}
+
 // MARK: - WeatherService
 
 @MainActor

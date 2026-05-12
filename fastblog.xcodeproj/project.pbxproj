@@ -42,7 +42,6 @@
 		B1E500032F7E00010088C413 /* Echoes Through Midnight Streets.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500032F7E00010088C403 /* Echoes Through Midnight Streets.mp3 */; };
 		B1E500042F7E00010088C414 /* Mortals Funk Remix.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500042F7E00010088C404 /* Mortals Funk Remix.mp3 */; };
 		B1E500052F7E00010088C415 /* Royalty.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500052F7E00010088C405 /* Royalty.mp3 */; };
-		D1E500012F9E00010088C416 /* Momentum - Dy.lon.wav in Resources */ = {isa = PBXBuildFile; fileRef = C1E500012F9E00010088C406 /* Momentum - Dy.lon.wav */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
 		BB000106 /* MyBlogsProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000105 /* MyBlogsProfileViewModel.swift */; };
@@ -230,8 +229,8 @@
 		BB0003D3 /* BlogBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003D2 /* BlogBackupService.swift */; };
 		BB0003E1 /* GoogleSearchEmbeddedWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E0 /* GoogleSearchEmbeddedWebView.swift */; };
 		BB0003E3 /* UndoToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E2 /* UndoToastView.swift */; };
-		BB0003E7 /* TripNarrativeEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E6 /* TripNarrativeEditSheet.swift */; };
 		BB0003E5 /* TransportModePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E4 /* TransportModePickerSheet.swift */; };
+		BB0003E7 /* TripNarrativeEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E6 /* TripNarrativeEditSheet.swift */; };
 		BB000401 /* TripCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000400 /* TripCluster.swift */; };
 		BB000403 /* TripClusterAnnotationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000402 /* TripClusterAnnotationView.swift */; };
 		BB000405 /* BlogDropService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000404 /* BlogDropService.swift */; };
@@ -248,6 +247,7 @@
 		BB00F007 /* ForgotUsernameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F008 /* ForgotUsernameView.swift */; };
 		BB00M001 /* BackendDashboardAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00M002 /* BackendDashboardAnalytics.swift */; };
 		C7E087F6AACF99F475844343 /* StoryBookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ABC2F392F2EBDD1636DC399 /* StoryBookView.swift */; };
+		D1E500012F9E00010088C416 /* Momentum - Dy.lon.wav in Resources */ = {isa = PBXBuildFile; fileRef = C1E500012F9E00010088C406 /* Momentum - Dy.lon.wav */; };
 		D2F8D3AF63FAE7358C61872A /* PhotoCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30C7F49D9E66B6763CCCD7B9 /* PhotoCardView.swift */; };
 		DCB9D1AF4FAB8889D866BC40 /* PlaceBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D31200382275E7A7520CD4F /* PlaceBlockView.swift */; };
 		EA00EA02 /* EarlyAccessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA00EA01 /* EarlyAccessManager.swift */; };
@@ -300,7 +300,6 @@
 		A1E500032F7E00010088C403 /* Echoes Through Midnight Streets.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "Echoes Through Midnight Streets.mp3"; sourceTree = "<group>"; };
 		A1E500042F7E00010088C404 /* Mortals Funk Remix.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "Mortals Funk Remix.mp3"; sourceTree = "<group>"; };
 		A1E500052F7E00010088C405 /* Royalty.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = Royalty.mp3; sourceTree = "<group>"; };
-		C1E500012F9E00010088C406 /* Momentum - Dy.lon.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "Momentum - Dy.lon.wav"; sourceTree = "<group>"; };
 		A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MapSnapshotHelper.swift; sourceTree = "<group>"; };
 		A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookViewModel.swift; sourceTree = "<group>"; };
 		AA000003 /* Bloggo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bloggo.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -492,8 +491,8 @@
 		BB0003D2 /* BlogBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogBackupService.swift; sourceTree = "<group>"; };
 		BB0003E0 /* GoogleSearchEmbeddedWebView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleSearchEmbeddedWebView.swift; sourceTree = "<group>"; };
 		BB0003E2 /* UndoToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoToastView.swift; sourceTree = "<group>"; };
-		BB0003E6 /* TripNarrativeEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNarrativeEditSheet.swift; sourceTree = "<group>"; };
 		BB0003E4 /* TransportModePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportModePickerSheet.swift; sourceTree = "<group>"; };
+		BB0003E6 /* TripNarrativeEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNarrativeEditSheet.swift; sourceTree = "<group>"; };
 		BB000400 /* TripCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCluster.swift; sourceTree = "<group>"; };
 		BB000402 /* TripClusterAnnotationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripClusterAnnotationView.swift; sourceTree = "<group>"; };
 		BB000404 /* BlogDropService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogDropService.swift; sourceTree = "<group>"; };
@@ -510,6 +509,7 @@
 		BB00F008 /* ForgotUsernameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotUsernameView.swift; sourceTree = "<group>"; };
 		BB00M002 /* BackendDashboardAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendDashboardAnalytics.swift; sourceTree = "<group>"; };
 		BF27B8BE17452A92005EEECF /* PhotoContinuationBlockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PhotoContinuationBlockView.swift; path = StoryBook/PhotoContinuationBlockView.swift; sourceTree = "<group>"; };
+		C1E500012F9E00010088C406 /* Momentum - Dy.lon.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "Momentum - Dy.lon.wav"; sourceTree = "<group>"; };
 		D3CF1895D23A7F11A1F1B7B0 /* StoryBookBuilder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookBuilder.swift; sourceTree = "<group>"; };
 		D3FBC69125D4B22AEC596A03 /* PageFooterView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PageFooterView.swift; path = StoryBook/PageFooterView.swift; sourceTree = "<group>"; };
 		E27CCA2B392AD6D7D60A651A /* StoryPage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryPage.swift; sourceTree = "<group>"; };
@@ -1342,7 +1342,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Debug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
@@ -1378,7 +1378,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Release.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;

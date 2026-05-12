@@ -116,7 +116,7 @@ private struct PlaceCategoryChip: View {
                 .font(.caption2)
                 .fontWeight(.medium)
         }
-        .foregroundStyle(accentColor)
+        .foregroundStyle(colorScheme == .dark ? Color.white : accentColor)
         .padding(.horizontal, Self.horizontalPadding)
         .padding(.vertical, verticalPadding)
         .background(

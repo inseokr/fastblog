@@ -1745,12 +1745,12 @@ private struct PlaceDetailTopChrome: View {
         if let raw = placeCategoryRaw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
             if let onCategoryTap {
                 Button(action: onCategoryTap) {
-                    PlacePOICategoryBadge(rawCategory: raw)
+                    PlacePOICategoryBadge(rawCategory: raw, isOnPhoto: true)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Change place category")
             } else {
-                PlacePOICategoryBadge(rawCategory: raw)
+                PlacePOICategoryBadge(rawCategory: raw, isOnPhoto: true)
             }
         } else if let onCategoryTap {
             Button(action: onCategoryTap) {
@@ -2089,8 +2089,8 @@ struct BottomInfoOverlay: View {
                                 ZStack {
                                     Circle()
                                         .fill(Color.white.opacity(0.22))
-                                    Image(systemName: "link")
-                                        .font(.system(size: 14, weight: .semibold))
+                                    Image(systemName: "mappin.and.ellipse")
+                                        .font(.system(size: 13, weight: .semibold))
                                         .foregroundStyle(.white)
                                 }
                                 .frame(width: 28, height: 28)

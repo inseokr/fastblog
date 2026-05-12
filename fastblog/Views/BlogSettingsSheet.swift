@@ -70,6 +70,7 @@ struct BlogSettingsSheet: View {
     @AppStorage(StoryWritingStyle.storageKey) private var writingStyle: String = ""
     @AppStorage(StoryWritingStyle.presetStorageKey) private var writingStylePresetId: String = ""
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
+    @AppStorage(DistanceUnit.storageKey) private var distanceUnitRaw: String = DistanceUnit.miles.rawValue
     @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
 
     @State private var showTitleChange = false
@@ -400,6 +401,15 @@ struct BlogSettingsSheet: View {
                 }
             } label: {
                 Label("Day weather", systemImage: "sun.max")
+                    .foregroundStyle(.white)
+            }
+            .tint(Color(uiColor: .secondaryLabel))
+            Picker(selection: $distanceUnitRaw) {
+                ForEach(DistanceUnit.allCases, id: \.rawValue) { unit in
+                    Text(unit.displayName).tag(unit.rawValue)
+                }
+            } label: {
+                Label("Distance", systemImage: "ruler")
                     .foregroundStyle(.white)
             }
             .tint(Color(uiColor: .secondaryLabel))
