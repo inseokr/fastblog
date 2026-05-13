@@ -21,8 +21,22 @@ struct BlogVideoExportOptionsSheet: View {
     @State private var exportTask: Task<Void, Never>?
 
     private var selectedTrack: SlideshowBundledTrack? {
-        guard let fn = options.musicFilename else { return nil }
+        if options.musicDisabled { return nil }
+        let fn = options.musicFilename ?? SlideshowMusicPreference.defaultFilename
         return SlideshowBundledMusicLibrary.tracksInAppBundle().first { $0.filename == fn }
+    }
+
+    private var musicSectionPrimaryLabel: String {
+        if options.musicDisabled { return "No background music" }
+        if let t = selectedTrack { return t.displayTitle }
+        let stem = URL(fileURLWithPath: SlideshowMusicPreference.defaultFilename)
+            .deletingPathExtension().lastPathComponent
+        return stem.isEmpty ? "Default music" : stem.localizedCapitalized
+    }
+
+    private var musicPickerSelectedFilename: String? {
+        if options.musicDisabled { return nil }
+        return options.musicFilename ?? SlideshowMusicPreference.defaultFilename
     }
 
     var body: some View {
@@ -66,9 +80,15 @@ struct BlogVideoExportOptionsSheet: View {
                 .sheet(isPresented: $showMusicPicker) {
                     SlideshowBundledTrackPickerSheet(
                         tracks: SlideshowBundledMusicLibrary.tracksInAppBundle(),
-                        selectedFilename: options.musicFilename,
-                        onPickTrack: { options.musicFilename = $0.filename },
-                        onPickNone: { options.musicFilename = nil },
+                        selectedFilename: musicPickerSelectedFilename,
+                        onPickTrack: {
+                            options.musicDisabled = false
+                            options.musicFilename = $0.filename
+                        },
+                        onPickNone: {
+                            options.musicDisabled = true
+                            options.musicFilename = nil
+                        },
                         onCancel: {}
                     )
                 }
@@ -501,7 +521,7 @@ struct BlogVideoExportOptionsSheet: View {
             Button { showMusicPicker = true } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(selectedTrack?.displayTitle ?? "No background music")
+                        Text(musicSectionPrimaryLabel)
                             .font(.subheadline.weight(.medium))
                             .foregroundColor(.primary)
                         Text("Tap to change")

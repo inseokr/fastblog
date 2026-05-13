@@ -43,11 +43,10 @@ struct PhotoPermissionOnboardingView: View {
                             }
                             Spacer()
                         }
-                        // Invisible placeholder matches the height of "Set Home" title in
+                        // Invisible placeholder matches the height of "Set Home" header in
                         // NeighborhoodSelectionView so the chevron sits at the same vertical position.
                         Text(" ")
-                            .font(.title)
-                            .fontWeight(.bold)
+                            .font(.headline)
                             .opacity(0)
                             .frame(maxWidth: .infinity)
                     }

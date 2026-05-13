@@ -131,8 +131,7 @@ struct NeighborhoodSelectionView: View {
                 }
                 
                 Text("Set Home")
-                    .font(.title)
-                    .fontWeight(.bold)
+                    .font(.headline)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
             }

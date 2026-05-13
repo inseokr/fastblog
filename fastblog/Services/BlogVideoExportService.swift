@@ -6,9 +6,16 @@ import UIKit
 // MARK: - Options
 
 struct BlogVideoExportOptions: Codable, Equatable {
+    enum CodingKeys: String, CodingKey {
+        case secondsPerSlide, musicFilename, musicDisabled, showPhotoCaptions, maxPhotosPerPlace,
+             includedPlaceIDs, includedPlaceCategoryRaws
+    }
+
     var secondsPerSlide: Double = 3.0
-    /// Filename of the bundled music track to mix in, or nil for silence.
+    /// Bundled track filename, or `nil` meaning “use app default” (`SlideshowMusicPreference.defaultFilename`).
     var musicFilename: String? = nil
+    /// When true, export has no background music (user chose “None”). Ignores `musicFilename`.
+    var musicDisabled: Bool = false
     /// Whether photo captions are shown as text overlays on photo slides.
     var showPhotoCaptions: Bool = true
     /// Maximum number of photos shown per place stop. Capped at this count from includedPhotos.
@@ -17,6 +24,52 @@ struct BlogVideoExportOptions: Codable, Equatable {
     var includedPlaceIDs: Set<UUID>? = nil
     /// Place categories to include (raw MapKit POI strings, plus optional `"Others"`). nil means all categories are included.
     var includedPlaceCategoryRaws: Set<String>? = nil
+
+    init(
+        secondsPerSlide: Double = 3.0,
+        musicFilename: String? = nil,
+        musicDisabled: Bool = false,
+        showPhotoCaptions: Bool = true,
+        maxPhotosPerPlace: Int = 3,
+        includedPlaceIDs: Set<UUID>? = nil,
+        includedPlaceCategoryRaws: Set<String>? = nil
+    ) {
+        self.secondsPerSlide = secondsPerSlide
+        self.musicFilename = musicFilename
+        self.musicDisabled = musicDisabled
+        self.showPhotoCaptions = showPhotoCaptions
+        self.maxPhotosPerPlace = maxPhotosPerPlace
+        self.includedPlaceIDs = includedPlaceIDs
+        self.includedPlaceCategoryRaws = includedPlaceCategoryRaws
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        secondsPerSlide = try c.decodeIfPresent(Double.self, forKey: .secondsPerSlide) ?? 3.0
+        musicFilename = try c.decodeIfPresent(String.self, forKey: .musicFilename)
+        musicDisabled = try c.decodeIfPresent(Bool.self, forKey: .musicDisabled) ?? false
+        showPhotoCaptions = try c.decodeIfPresent(Bool.self, forKey: .showPhotoCaptions) ?? true
+        maxPhotosPerPlace = try c.decodeIfPresent(Int.self, forKey: .maxPhotosPerPlace) ?? 3
+        includedPlaceIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .includedPlaceIDs)
+        includedPlaceCategoryRaws = try c.decodeIfPresent(Set<String>.self, forKey: .includedPlaceCategoryRaws)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(secondsPerSlide, forKey: .secondsPerSlide)
+        try c.encodeIfPresent(musicFilename, forKey: .musicFilename)
+        try c.encode(musicDisabled, forKey: .musicDisabled)
+        try c.encode(showPhotoCaptions, forKey: .showPhotoCaptions)
+        try c.encode(maxPhotosPerPlace, forKey: .maxPhotosPerPlace)
+        try c.encodeIfPresent(includedPlaceIDs, forKey: .includedPlaceIDs)
+        try c.encodeIfPresent(includedPlaceCategoryRaws, forKey: .includedPlaceCategoryRaws)
+    }
+
+    /// Filename passed to `SlideshowBundledMusicLibrary`, or `nil` when music is off.
+    func resolvedMusicFilenameForMix() -> String? {
+        if musicDisabled { return nil }
+        return musicFilename ?? SlideshowMusicPreference.defaultFilename
+    }
 }
 
 // MARK: - Service
@@ -198,7 +251,7 @@ enum BlogVideoExportService {
             .appendingPathComponent("\(safeTitle) | Blog Video.mp4")
         try? FileManager.default.removeItem(at: finalURL)
 
-        if let filename = options.musicFilename,
+        if let filename = options.resolvedMusicFilenameForMix(),
            let track = SlideshowBundledMusicLibrary.tracksInAppBundle().first(where: { $0.filename == filename }) {
             try await compositeAudio(videoURL: tempVideoURL, musicURL: track.fileURL, outputURL: finalURL)
             try? FileManager.default.removeItem(at: tempVideoURL)

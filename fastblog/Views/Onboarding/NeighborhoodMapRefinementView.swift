@@ -61,12 +61,24 @@ struct NeighborhoodMapRefinementView: View {
                     .frame(width: 36, height: 5)
                     .padding(.top, 12)
 
-                // Header with title
-                Text("Set Home")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding(.top, 8)
-                    .padding(.bottom, 8)
+                // Header row: back button + centered title
+                ZStack {
+                    HStack {
+                        Button(action: { dismiss() }) {
+                            Image(systemName: "chevron.left")
+                                .font(.title3.weight(.bold))
+                                .foregroundColor(.white)
+                                .padding(.leading, 8)
+                        }
+                        Spacer()
+                    }
+                    Text("Set Home")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 8)
 
                 // Header overlay info
                 VStack(spacing: 8) {
