@@ -9,6 +9,8 @@ import MapKit
 import SwiftUI
 
 struct NeighborhoodMapRefinementView: View {
+    private static let navChromeSideSlot: CGFloat = 44
+
     var initialRegion: MKCoordinateRegion
     var onDismiss: () -> Void
     
@@ -61,21 +63,26 @@ struct NeighborhoodMapRefinementView: View {
                     .frame(width: 36, height: 5)
                     .padding(.top, 12)
 
-                // Header row: back button + centered title
-                ZStack {
-                    HStack {
-                        Button(action: { dismiss() }) {
-                            Image(systemName: "chevron.left")
-                                .font(.title3.weight(.bold))
-                                .foregroundColor(.white)
-                                .padding(.leading, 8)
-                        }
-                        Spacer()
+                // Header row: single HStack so title aligns with back (same as `NeighborhoodSelectionView`).
+                HStack(alignment: .center, spacing: 0) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "chevron.left")
+                            .font(.title3.weight(.bold))
+                            .foregroundColor(.white)
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Back")
+                    .frame(width: Self.navChromeSideSlot, height: Self.navChromeSideSlot, alignment: .center)
+
                     Text("Set Home")
                         .font(.headline)
                         .foregroundColor(.white)
+                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
+
+                    Color.clear
+                        .frame(width: Self.navChromeSideSlot, height: Self.navChromeSideSlot)
                 }
                 .padding(.top, 8)
                 .padding(.bottom, 8)

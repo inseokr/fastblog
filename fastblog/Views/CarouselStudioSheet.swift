@@ -1487,6 +1487,28 @@ private func carouselDrawableStopsForStudioDay(day: RecapBlogDay, excludedKeys: 
     }
 }
 
+/// Matches the `await` budget in `SocialPostStudioSheet.loadSlides` so preparation progress stays in sync with real work.
+private func socialPostStudioLoadSlidesPreparationUnitCount(blog: RecapBlogDetail, excludedKeys: Set<String>) -> Int {
+    var units = 1 // cover hero
+    for day in blog.days {
+        let drawableForMap = carouselDrawableStopsForStudioDay(day: day, excludedKeys: excludedKeys)
+        var isFirstDrawableStop = true
+        for stop in day.placeStops {
+            let included = stop.photos.filter { $0.isIncluded }
+                .filter { !excludedKeys.contains(studioExclusionKey(stop: stop.id, photo: $0.id)) }
+            guard !included.isEmpty else { continue }
+            units += included.count
+            if !isFirstDrawableStop,
+               drawableForMap.firstIndex(where: { $0.id == stop.id }) != nil {
+                units += 1
+            }
+            isFirstDrawableStop = false
+        }
+        units += 1 // day route map snapshot
+    }
+    return max(units, 1)
+}
+
 private func insertIndexForPlacePhotoInDay(
     day: RecapBlogDay,
     stopID: UUID,
@@ -9539,6 +9561,93 @@ struct SlideTextEditorView: View {
     }
 }
 
+// MARK: - Studio sheet — slide preparation loading
+
+private struct StudioSlidePreparationLoadingView: View {
+    var progress: Double
+
+    private static let backdropNavy = Color(red: 5/255, green: 10/255, blue: 48/255)
+
+    private var percentDisplay: Int {
+        min(100, max(0, Int((progress * 100).rounded(.towardZero))))
+    }
+
+    var body: some View {
+        VStack(spacing: 24) {
+            ZStack {
+                TimelineView(.animation(minimumInterval: 1.0 / 50.0, paused: false)) { ctx in
+                    let t = ctx.date.timeIntervalSinceReferenceDate
+                    let spin = (t.truncatingRemainder(dividingBy: 2.8)) / 2.8 * 360.0
+                    Circle()
+                        .strokeBorder(
+                            AngularGradient(
+                                colors: [
+                                    CarouselStudioChrome.accent.opacity(0.15),
+                                    CarouselStudioChrome.accent.opacity(0.9),
+                                    CarouselStudioChrome.accent.opacity(0.12)
+                                ],
+                                center: .center,
+                                angle: .degrees(-30 + spin)
+                            ),
+                            lineWidth: 3
+                        )
+                        .frame(width: 104, height: 104)
+                }
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.12), lineWidth: 5)
+                        .frame(width: 78, height: 78)
+                    Circle()
+                        .trim(from: 0, to: max(0.015, progress))
+                        .stroke(
+                            CarouselStudioChrome.accent,
+                            style: StrokeStyle(lineWidth: 5, lineCap: .round)
+                        )
+                        .frame(width: 78, height: 78)
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeOut(duration: 0.22), value: progress)
+                    Text("\(percentDisplay)%")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .animation(.easeOut(duration: 0.18), value: percentDisplay)
+                }
+            }
+            .frame(width: 104, height: 104)
+
+            VStack(spacing: 8) {
+                Text("Preparing slides")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text("Loading photos and maps for your carousel")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.62))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 28)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaPadding(.vertical, 8)
+        .background {
+            ZStack {
+                Self.backdropNavy
+                LinearGradient(
+                    colors: [
+                        Self.backdropNavy,
+                        Color(red: 14/255, green: 22/255, blue: 72/255),
+                        Color(red: 8/255, green: 14/255, blue: 52/255)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            .ignoresSafeArea()
+        }
+    }
+}
+
 // MARK: - Studio Sheet
 
 struct SocialPostStudioSheet: View {
@@ -9575,6 +9684,8 @@ struct SocialPostStudioSheet: View {
     /// switches aspect ratios so switching back restores the previous layout.
     @State private var savedFormatOffsets: [String: [(primary: CGSize, secondary: CGSize, pip: CGSize)]] = [:]
     @State private var isLoading = true
+    /// 0…1 while `loadSlides()` runs; drives the preparation ring and percentage label.
+    @State private var slidePreparationProgress: Double = 0
     /// Bumped at the start of each `loadSlides()` so an older async completion cannot overwrite `slides` after a newer reload (e.g. rapidly toggling skip-duplicate).
     @State private var loadSlidesGeneration: UInt64 = 0
     @State private var isRendering = false
@@ -9689,13 +9800,8 @@ struct SocialPostStudioSheet: View {
         Group {
             if opensInEditMode {
                 if isLoading {
-                    VStack(spacing: 16) {
-                        ProgressView()
-                        Text("Preparing slides…").foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(red: 5/255, green: 10/255, blue: 48/255))
-                    .preferredColorScheme(.dark)
+                    StudioSlidePreparationLoadingView(progress: slidePreparationProgress)
+                        .preferredColorScheme(.dark)
                 } else if slides.isEmpty {
                     Text("No places found in this blog.")
                         .foregroundColor(.secondary)
@@ -9734,7 +9840,7 @@ struct SocialPostStudioSheet: View {
                     ZStack {
                         Group {
                             if isLoading {
-                                VStack(spacing: 16) { ProgressView(); Text("Preparing slides…").foregroundColor(.secondary) }
+                                StudioSlidePreparationLoadingView(progress: slidePreparationProgress)
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                             } else if slides.isEmpty {
                                 Text("No places found in this blog.").foregroundColor(.secondary)
@@ -9759,7 +9865,9 @@ struct SocialPostStudioSheet: View {
                             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
                     }
-                    .background(Color(uiColor: .systemGroupedBackground))
+                    .background(isLoading
+                        ? Color(red: 5/255, green: 10/255, blue: 48/255)
+                        : Color(uiColor: .systemGroupedBackground))
                     .navigationTitle("Social Post Studio")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -10782,9 +10890,22 @@ struct SocialPostStudioSheet: View {
         }
     }
 
+    private func advanceSlidePreparationProgress(completed: inout Int, total: Int, generation: UInt64) async {
+        completed += 1
+        let p = min(1.0, Double(completed) / Double(max(total, 1)))
+        await MainActor.run {
+            guard generation == loadSlidesGeneration else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                slidePreparationProgress = p
+            }
+        }
+    }
+
     private func loadSlides() async {
         let generation = await MainActor.run {
             loadSlidesGeneration += 1
+            isLoading = true
+            slidePreparationProgress = 0
             return loadSlidesGeneration
         }
         let excludedSnapshot = await MainActor.run { excludedStudioPhotoKeys }
@@ -10792,9 +10913,12 @@ struct SocialPostStudioSheet: View {
         let (isReelSingleSlide, formatAspectRatio) = await MainActor.run {
             (exportFormat.isSingleSlide, exportFormat.aspectRatio)
         }
+        let prepTotal = socialPostStudioLoadSlidesPreparationUnitCount(blog: blog, excludedKeys: excludedSnapshot)
+        var prepCompleted = 0
         var result: [CarouselSlide] = []
 
         let coverImg = await loadCoverHeroImageForStudio()
+        await advanceSlidePreparationProgress(completed: &prepCompleted, total: prepTotal, generation: generation)
         result.append(CarouselSlide(id: "cover-\(blog.id.uuidString)", kind: .cover, isSelected: true,
                                     heroImage: coverImg, coverTitle: blog.title))
 
@@ -10827,6 +10951,7 @@ struct SocialPostStudioSheet: View {
                 var stopImages: [UIImage?] = []
                 for photo in included {
                     let img = await loadRecapPhotoUIImage(photo: photo, size: exportSize, pixelCap: exportPixelCap)
+                    await advanceSlidePreparationProgress(completed: &prepCompleted, total: prepTotal, generation: generation)
                     #if DEBUG
                     if img == nil {
                         let hasLocal = !(photo.localIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -10848,37 +10973,40 @@ struct SocialPostStudioSheet: View {
                 // Skip the placeIntroMap for the first stop — the day map already highlights it.
                 var appendedPlaceIntroMap = false
                 if !isFirstDrawableStop,
-                   let dIdx = drawableForMap.firstIndex(where: { $0.id == stop.id }),
-                   let introSnap = await MapSnapshotHelper.generateCarouselPlaceIntroSnapshot(
-                    drawableDayStops: drawableForMap,
-                    focusedDrawableIndex: dIdx,
-                    logicalSize: exportSize,
-                    dayPlaceStopsForRouteRegion: day.placeStops
-                   ) {
-                    let subtitle = stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let teaser = [stop.placeNarrative, stop.overallStory, stop.noteText]
-                        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                        .first { !$0.isEmpty }
-                    let introBottom = Array(stopImages.compactMap { $0 }.prefix(3))
-                    let bottomIdx = stopImages.firstIndex(where: { $0 != nil }) ?? 0
-                    let splitBottomUIImage = stopImages[bottomIdx] ?? introBottom.first
-                    let splitBottomID = included.indices.contains(bottomIdx) ? included[bottomIdx].id : included.first?.id
-                    placeSlides.append(CarouselSlide(
-                        id: "place-map-\(stop.id.uuidString)",
-                        kind: .placeIntroMap,
-                        isSelected: true,
-                        mapSnapshot: introSnap,
-                        mapShortDateLine: day.monthDayStringForStoryBookRange(),
-                        dayInfoLine1: stop.placeTitle,
-                        dayInfoLine2: (subtitle?.isEmpty == false) ? subtitle : nil,
-                        placeStop: stop,
-                        dayStory: teaser,
-                        layout: .split,
-                        splitBottomImage: splitBottomUIImage,
-                        splitBottomPhotoID: splitBottomID,
-                        placeIntroBottomPhotos: []
-                    ))
-                    appendedPlaceIntroMap = true
+                   let dIdx = drawableForMap.firstIndex(where: { $0.id == stop.id }) {
+                    let introCandidate = await MapSnapshotHelper.generateCarouselPlaceIntroSnapshot(
+                        drawableDayStops: drawableForMap,
+                        focusedDrawableIndex: dIdx,
+                        logicalSize: exportSize,
+                        dayPlaceStopsForRouteRegion: day.placeStops
+                    )
+                    await advanceSlidePreparationProgress(completed: &prepCompleted, total: prepTotal, generation: generation)
+                    if let introSnap = introCandidate {
+                        let subtitle = stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let teaser = [stop.placeNarrative, stop.overallStory, stop.noteText]
+                            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                            .first { !$0.isEmpty }
+                        let introBottom = Array(stopImages.compactMap { $0 }.prefix(3))
+                        let bottomIdx = stopImages.firstIndex(where: { $0 != nil }) ?? 0
+                        let splitBottomUIImage = stopImages[bottomIdx] ?? introBottom.first
+                        let splitBottomID = included.indices.contains(bottomIdx) ? included[bottomIdx].id : included.first?.id
+                        placeSlides.append(CarouselSlide(
+                            id: "place-map-\(stop.id.uuidString)",
+                            kind: .placeIntroMap,
+                            isSelected: true,
+                            mapSnapshot: introSnap,
+                            mapShortDateLine: day.monthDayStringForStoryBookRange(),
+                            dayInfoLine1: stop.placeTitle,
+                            dayInfoLine2: (subtitle?.isEmpty == false) ? subtitle : nil,
+                            placeStop: stop,
+                            dayStory: teaser,
+                            layout: .split,
+                            splitBottomImage: splitBottomUIImage,
+                            splitBottomPhotoID: splitBottomID,
+                            placeIntroBottomPhotos: []
+                        ))
+                        appendedPlaceIntroMap = true
+                    }
                 }
                 isFirstDrawableStop = false
 
@@ -10917,6 +11045,7 @@ struct SocialPostStudioSheet: View {
                 for: day.placeStops, markerImagesByStopId: markerImages,
                 size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.18,
                 carouselDayFirstStopFocus: false)
+            await advanceSlidePreparationProgress(completed: &prepCompleted, total: prepTotal, generation: generation)
 
             let bestStory = [day.dayNarrative, day.dayCaption]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -10939,6 +11068,7 @@ struct SocialPostStudioSheet: View {
             guard generation == loadSlidesGeneration else { return }
             slides = result
             exportRenderAspectRatio = formatAspectRatio
+            slidePreparationProgress = 1
             isLoading = false
             // Always defer: checkSocialCarouselOverflow calls withTransaction inside autoEnablePIPForAllGroups,
             // which can flush the current transaction before showSocialCarouselOverflowAlert is set,

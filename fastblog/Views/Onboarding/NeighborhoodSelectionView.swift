@@ -9,6 +9,9 @@ import MapKit
 import SwiftUI
 
 struct NeighborhoodSelectionView: View {
+    /// Matches common nav-bar control width so the title stays centered and baseline-aligned with the chevron.
+    private static let navChromeSideSlot: CGFloat = 44
+
     var onSelect: () -> Void
     var onBack: (() -> Void)?
     
@@ -41,6 +44,11 @@ struct NeighborhoodSelectionView: View {
     private var titleToSearchSpacing: CGFloat {
         // Pull Search + "Use Current Location" upward when we rely on the nav bar.
         onBack == nil ? 12 : OnboardingConstants.Layout.spacingBetweenTitleAndSearch
+    }
+
+    /// When embedded under `NavigationStack` with a system back button (`onBack == nil`), the title belongs in the bar.
+    private var navigationBarTitleOverride: String {
+        onBack == nil ? "Set Home" : ""
     }
 
     init(onSelect: @escaping () -> Void, onBack: (() -> Void)? = nil) {
@@ -77,6 +85,11 @@ struct NeighborhoodSelectionView: View {
         }
         .background(settingsBackground)
         .preferredColorScheme(.dark)
+        // Settings → NeighborhoodIntroView passes `onBack: nil` and relies on the **system** nav bar
+        // back control. Putting "Set Home" only in the bar row avoids a second title line below the back button.
+        .navigationTitle(navigationBarTitleOverride)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .onAppear {
             locationManager.requestLocation()
             searchHelper.onRegionSelected = { region, name in
@@ -117,25 +130,12 @@ struct NeighborhoodSelectionView: View {
 
     private var topSection: some View {
         VStack(spacing: titleToSearchSpacing) {
-            ZStack {
-                if let onBack = onBack {
-                    HStack {
-                        Button(action: onBack) {
-                            Image(systemName: "chevron.left")
-                                .font(.title3.weight(.bold))
-                                .foregroundColor(.white)
-                                .padding(.leading, 8)
-                        }
-                        Spacer()
-                    }
-                }
-                
-                Text("Set Home")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
+            // Onboarding uses an in-content back chevron (`onBack != nil`). Settings uses the system
+            // nav bar back + `.navigationTitle("Set Home")` — do not duplicate the title in-body.
+            if onBack != nil {
+                inlineSetHomeNavRow
+                    .padding(.top, titleTopPadding)
             }
-            .padding(.top, titleTopPadding)
 
             searchField
             if isResolvingPlace {
@@ -146,6 +146,36 @@ struct NeighborhoodSelectionView: View {
         }
         .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
         .padding(.bottom, onBack == nil ? 14 : 24)
+    }
+
+    /// Custom nav row for onboarding only (system bar handles title when `onBack == nil`).
+    private var inlineSetHomeNavRow: some View {
+        HStack(alignment: .center, spacing: 0) {
+            Group {
+                if let onBack = onBack {
+                    Button(action: onBack) {
+                        Image(systemName: "chevron.left")
+                            .font(.title3.weight(.bold))
+                            .foregroundColor(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Back")
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: Self.navChromeSideSlot, height: Self.navChromeSideSlot, alignment: .center)
+
+            Text("Set Home")
+                .font(.headline)
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+
+            Color.clear
+                .frame(width: Self.navChromeSideSlot, height: Self.navChromeSideSlot)
+        }
     }
 
     private var searchField: some View {

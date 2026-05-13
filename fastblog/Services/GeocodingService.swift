@@ -218,6 +218,23 @@ final class GeocodingService {
         }
     }
 
+    /// Resolves a display title from `areaName` that CLGeocoder produced.
+    /// When the LLM (or heuristic on older OS) identifies the name as a concrete POI/landmark,
+    /// returns the name directly and attempts to fetch the POI category via MapKit.
+    /// Otherwise returns "Near \(areaName)" to preserve the existing safe-default behaviour.
+    func resolvePlaceLabel(areaName: String, coordinate: CLLocationCoordinate2D?) async -> (title: String, category: String?) {
+        guard !areaName.isEmpty, areaName != "Unknown Place" else {
+            return ("Near \(areaName)", nil)
+        }
+        // MapKit category is the authoritative signal: if it finds a POI for this name,
+        // that confirms it's a real venue/landmark — no LLM pre-filter needed.
+        let category = await fetchPoiCategoryNear(coordinate, named: areaName)
+        guard let category else {
+            return ("Near \(areaName)", nil)
+        }
+        return (areaName, category)
+    }
+
     private func geocodedPlace(from pm: CLPlacemark) -> GeocodedPlace {
         let title = pm.name ?? pm.locality ?? pm.administrativeArea ?? "Unknown Place"
         var subtitleParts: [String] = []
@@ -237,6 +254,18 @@ final class GeocodingService {
         guard newEntryCount > 0 else { return }
         persistCache()
         newEntryCount = 0
+    }
+
+    private func fetchPoiCategoryNear(_ coordinate: CLLocationCoordinate2D?, named name: String) async -> String? {
+        guard let coordinate, !name.isEmpty else { return nil }
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = name
+        request.region = MKCoordinateRegion(center: coordinate, latitudinalMeters: 1000, longitudinalMeters: 1000)
+        request.resultTypes = [.pointOfInterest, .address]
+        let search = MKLocalSearch(request: request)
+        guard let response = try? await search.start(),
+              let mapItem = response.mapItems.first else { return nil }
+        return mapItem.pointOfInterestCategory?.rawValue
     }
 
     private func persistCache() {

@@ -3031,7 +3031,31 @@ struct RecapBlogPageView: View {
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
-                        if isEditMode {
+                        let sameNameDetected = !stop.placeTitle.isEmpty &&
+                            stop.placeTitle.trimmingCharacters(in: .whitespaces).lowercased() ==
+                            nextStop.placeTitle.trimmingCharacters(in: .whitespaces).lowercased()
+                        if sameNameDetected {
+                            Button {
+                                mergePlaceStops(dayId: day.id, firstStopId: stop.id, secondStopId: nextStop.id)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "arrow.triangle.merge")
+                                        .font(.subheadline.weight(.bold))
+                                    Text("Same place? Merge")
+                                        .font(.subheadline.weight(.semibold))
+                                }
+                                .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.15))
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.45), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        } else if isEditMode {
                             Button {
                                 mergePlaceStops(dayId: day.id, firstStopId: stop.id, secondStopId: nextStop.id)
                             } label: {

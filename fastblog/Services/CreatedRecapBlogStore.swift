@@ -906,8 +906,12 @@ final class CreatedRecapBlogStore: ObservableObject {
                         let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                         let place = await GeocodingService.shared.place(for: loc)
                             if !geocodedDetail.days[di].placeStops[si].placeTitleIsManual {
-                                geocodedDetail.days[di].placeStops[si].placeTitle = "Near \(place.areaName)"
+                                let (resolvedTitle, resolvedCategory) = await GeocodingService.shared.resolvePlaceLabel(areaName: place.areaName, coordinate: loc.coordinate)
+                                geocodedDetail.days[di].placeStops[si].placeTitle = resolvedTitle
                                 geocodedDetail.days[di].placeStops[si].placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                                if let cat = resolvedCategory, geocodedDetail.days[di].placeStops[si].placeCategory == nil {
+                                    geocodedDetail.days[di].placeStops[si].placeCategory = cat
+                                }
                             }
                     }
                     saveBlogDetail(geocodedDetail, asDraft: true)
@@ -2026,8 +2030,12 @@ final class CreatedRecapBlogStore: ObservableObject {
                     var updated = detail.days[dayIdx]
                     var stopCopy = updated.placeStops[stopIdx]
                     if !stopCopy.placeTitleIsManual {
-                        stopCopy.placeTitle = "Near \(place.areaName)"
+                        let (resolvedTitle, resolvedCategory) = await GeocodingService.shared.resolvePlaceLabel(areaName: place.areaName, coordinate: loc.coordinate)
+                        stopCopy.placeTitle = resolvedTitle
                         stopCopy.placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                        if let cat = resolvedCategory, stopCopy.placeCategory == nil {
+                            stopCopy.placeCategory = cat
+                        }
                     }
                     stopCopy.timeZoneIdentifier = tz?.identifier
                     updated.placeStops[stopIdx] = stopCopy
@@ -2209,8 +2217,12 @@ final class CreatedRecapBlogStore: ObservableObject {
                 var dayCopy = detail.days[firstDayIdx]
                 var stopCopy = dayCopy.placeStops[stopIdx]
                 if !stopCopy.placeTitleIsManual {
-                    stopCopy.placeTitle = "Near \(place.areaName)"
+                    let (resolvedTitle, resolvedCategory) = await GeocodingService.shared.resolvePlaceLabel(areaName: place.areaName, coordinate: loc.coordinate)
+                    stopCopy.placeTitle = resolvedTitle
                     stopCopy.placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                    if let cat = resolvedCategory, stopCopy.placeCategory == nil {
+                        stopCopy.placeCategory = cat
+                    }
                 }
                 dayCopy.placeStops[stopIdx] = stopCopy
                 detail.days[firstDayIdx] = dayCopy
@@ -2291,8 +2303,12 @@ final class CreatedRecapBlogStore: ObservableObject {
                 let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                 let place = await GeocodingService.shared.place(for: loc)
                 if !result.days[dayIndex].placeStops[stopIdx].placeTitleIsManual {
-                    result.days[dayIndex].placeStops[stopIdx].placeTitle = "Near \(place.areaName)"
+                    let (resolvedTitle, resolvedCategory) = await GeocodingService.shared.resolvePlaceLabel(areaName: place.areaName, coordinate: loc.coordinate)
+                    result.days[dayIndex].placeStops[stopIdx].placeTitle = resolvedTitle
                     result.days[dayIndex].placeStops[stopIdx].placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                    if let cat = resolvedCategory, result.days[dayIndex].placeStops[stopIdx].placeCategory == nil {
+                        result.days[dayIndex].placeStops[stopIdx].placeCategory = cat
+                    }
                 }
             }
         }
@@ -2711,8 +2727,12 @@ final class CreatedRecapBlogStore: ObservableObject {
                     let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                     let place = await GeocodingService.shared.place(for: loc)
                     if !geocodedDetail.days[di].placeStops[si].placeTitleIsManual {
-                        geocodedDetail.days[di].placeStops[si].placeTitle = "Near \(place.areaName)"
+                        let (resolvedTitle, resolvedCategory) = await GeocodingService.shared.resolvePlaceLabel(areaName: place.areaName, coordinate: loc.coordinate)
+                        geocodedDetail.days[di].placeStops[si].placeTitle = resolvedTitle
                         geocodedDetail.days[di].placeStops[si].placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                        if let cat = resolvedCategory, geocodedDetail.days[di].placeStops[si].placeCategory == nil {
+                            geocodedDetail.days[di].placeStops[si].placeCategory = cat
+                        }
                     }
                 }
                 saveBlogDetail(geocodedDetail, asDraft: true)

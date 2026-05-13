@@ -146,6 +146,53 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         return 2
     }
 
+    // MARK: - POI Name Classification
+
+    /// Returns true when `name` is a concrete, specific place (landmark, venue) rather than a
+    /// generic area such as a neighborhood, street, or city.
+    /// Uses the on-device LLM on iOS 26+; falls back to a rule-based heuristic on older OS.
+    func classifyConcretePoiName(_ name: String) async -> Bool {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if case .available = SystemLanguageModel.default.availability {
+                if let result = await classifyConcretePoiNameWithLLM(name) { return result }
+            }
+        }
+#endif
+        return Self.isConcretePoiHeuristic(name)
+    }
+
+    /// Heuristic fallback: returns true only when the name clearly looks like a specific venue,
+    /// not a street, administrative unit, or single generic toponym.
+    static func isConcretePoiHeuristic(_ name: String) -> Bool {
+        guard !name.isEmpty, name != "Unknown Place" else { return false }
+        let lower = name.lowercased()
+        // Addresses start with numbers
+        if name.first?.isNumber == true { return false }
+        // Street/road suffixes
+        let streetSuffixes = [" st", " ave", " rd", " blvd", " lane", " dr", " drive",
+                              " street", " avenue", " road", " boulevard", " highway",
+                              " hwy", " freeway", " parkway", " pkwy"]
+        if streetSuffixes.contains(where: { lower.hasSuffix($0) }) { return false }
+        // Korean transliterated road/admin suffixes
+        let koreanAreaTokens = ["-gu", "-dong", "-ro ", "-ro,", "-gil", "-daero", "-si ", "-si,"]
+        if koreanAreaTokens.contains(where: { lower.contains($0) }) { return false }
+        // Generic administrative area terms
+        let areaTerms = ["district", " county", " ward", " borough", "township"]
+        if areaTerms.contains(where: { lower.contains($0) }) { return false }
+        // Positive signal: known POI keyword present
+        let poiKeywords = ["tower", "palace", "castle", "museum", "cathedral", "basilica",
+                           "station", "airport", "park ", "garden", "temple", "shrine",
+                           "mall", "market", "plaza", "square", "center", "centre",
+                           "hotel", "resort", "stadium", "arena", "theater", "theatre",
+                           "university", "college", "hospital", "monument", "memorial",
+                           "pond", "lake", "reservoir", "river", "creek", "stream",
+                           "falls", "waterfall", "beach", "bay", "forest", "valley",
+                           "mountain", "peak", "cliff", "cave", "island", "nature"]
+        if poiKeywords.contains(where: { lower.contains($0) }) { return true }
+        return false
+    }
+
     // MARK: - Fun photo insight (grounded blurb; UI shown only when `isCapable` and Vision tags exist)
 
     /// Up to two blog-style sentences from on-device tags + place metadata. Returns empty when `tags` is empty.
@@ -879,6 +926,20 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             """
         guard let raw = await runSession(instructions: instructions, prompt: prompt) else { return nil }
         return Self.clampNarrativeLineCount(raw)
+    }
+
+    // MARK: - POI Name Classification (LLM)
+
+    @available(iOS 26.0, *)
+    private func classifyConcretePoiNameWithLLM(_ name: String) async -> Bool? {
+        let instructions = """
+            You classify geographic names. Answer with exactly one word: YES or NO. No punctuation, no explanation.
+            YES = a specific named venue, landmark, or point of interest (e.g. "Eiffel Tower", "Central Park", "McDonald's", "Gyeongbokgung Palace", "Tokyo Station", "Louvre Museum")
+            NO = a neighborhood, street, road, highway, district, city, or generic area (e.g. "Gangnam-gu", "5th Avenue", "Highway 101", "Manhattan", "Shibuya", "SoHo")
+            """
+        let prompt = "Is \"\(name)\" a specific named venue or landmark? Answer YES or NO."
+        guard let result = await runSession(instructions: instructions, prompt: prompt) else { return nil }
+        return result.uppercased().hasPrefix("YES")
     }
 
     // MARK: - Sentiment Analysis

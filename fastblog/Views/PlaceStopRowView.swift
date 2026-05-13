@@ -589,13 +589,13 @@ struct PlaceStopRowView: View {
         let blue = Color(uiColor: .systemBlue)
         return HStack(spacing: 6) {
             Image(systemName: "hand.tap.fill")
-                .font(.caption2.weight(.bold))
+                .font(.subheadline.weight(.bold))
             Text("Tap to rename")
-                .font(.caption2.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
         }
         .foregroundStyle(blue)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
         .background(
             Capsule(style: .continuous)
                 .fill(blue.opacity(colorScheme == .dark ? 0.25 : 0.12))
