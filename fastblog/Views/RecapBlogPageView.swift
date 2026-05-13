@@ -3474,14 +3474,13 @@ struct RecapBlogPageView: View {
     }
 
     private var shareItems: [Any] {
-        // Put the URL first so iOS "Copy" action copies the link, not the text.
         if blogIsInCloud,
            let blog = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }),
            let key = blog.blogKey {
             let user = AuthService.shared.currentUser
             let username = user?.username ?? user?.displayName ?? user?.email ?? "user"
             if let url = SecureShareToken.shareURL(username: username, blogKey: key) {
-                return [url, shareText]
+                return [LinkCaptionActivityItemSource(url: url, caption: shareText)]
             }
         }
         return [shareText]

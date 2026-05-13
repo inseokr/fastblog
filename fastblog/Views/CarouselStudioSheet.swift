@@ -4827,8 +4827,30 @@ struct SlideTextEditorView: View {
             && Set(studioDownloadCandidateIndices) == downloadSlidePickSelection
     }
 
+    /// True when the share pick set is exactly the full candidate list.
+    private var sharePickSelectionMatchesAll: Bool {
+        !studioDownloadCandidateIndices.isEmpty
+            && Set(studioDownloadCandidateIndices) == shareSlidePickSelection
+    }
+
     private func selectAllSlidesForDownloadPick() {
         downloadSlidePickSelection = Set(studioDownloadCandidateIndices)
+    }
+
+    private func toggleDownloadSlidePickSelectAll() {
+        if downloadPickSelectionMatchesAll {
+            downloadSlidePickSelection = []
+        } else {
+            selectAllSlidesForDownloadPick()
+        }
+    }
+
+    private func toggleShareSlidePickSelectAll() {
+        if sharePickSelectionMatchesAll {
+            shareSlidePickSelection = []
+        } else {
+            selectAllSlidesForSharePick()
+        }
     }
 
     private func toggleDownloadPick(for index: Int) {
@@ -6992,6 +7014,7 @@ struct SlideTextEditorView: View {
                                     if let onOpenPicker = onOpenPhotoGroupPicker {
                                         let count = visibleSelectedSlideCount
                                         let isOver = count > 34
+                                        let cautionTint = Color(red: 1.0, green: 0.72, blue: 0.06)
                                         Button {
                                             onOpenPicker()
                                         } label: {
@@ -6999,9 +7022,9 @@ struct SlideTextEditorView: View {
                                             // `square.grid.2x2` is widely available and still reads as “grid overview.”
                                             Image(systemName: isOver ? "exclamationmark.triangle.fill" : "square.grid.2x2")
                                                 .font(.system(size: 15, weight: .semibold))
-                                                .foregroundColor(.white)
+                                                .foregroundColor(isOver ? cautionTint : .white)
                                                 .frame(width: 36, height: 36)
-                                                .background(Color.white.opacity(0.12))
+                                                .background(isOver ? cautionTint.opacity(0.22) : Color.white.opacity(0.12))
                                                 .clipShape(Capsule())
                                         }
                                         .accessibilityLabel("Slide overview, \(count) slide\(count == 1 ? "" : "s") selected for export")
@@ -7251,6 +7274,28 @@ struct SlideTextEditorView: View {
             .padding(.top, 10)
             .padding(.bottom, 8)
 
+            HStack(spacing: 8) {
+                Button(action: toggleShareSlidePickSelectAll) {
+                    Label(
+                        sharePickSelectionMatchesAll ? "Deselect All" : "Select All",
+                        systemImage: sharePickSelectionMatchesAll ? "circle" : "checkmark.circle.fill"
+                    )
+                    .labelStyle(.titleAndIcon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(sharePickSelectionMatchesAll ? Color.primary : .white)
+                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .background {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(sharePickSelectionMatchesAll
+                                  ? Color(uiColor: .secondarySystemFill)
+                                  : CarouselStudioChrome.accent)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+
             ScrollView {
                 LazyVGrid(columns: exportHubGridColumns, spacing: 12) {
                     ForEach(studioDownloadCandidateIndices, id: \.self) { idx in
@@ -7325,17 +7370,21 @@ struct SlideTextEditorView: View {
     private var exportHubDownloadPickContent: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Button(action: selectAllSlidesForDownloadPick) {
-                    Text("Select All")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(downloadPickSelectionMatchesAll ? Color.primary : .white)
-                        .frame(maxWidth: .infinity, minHeight: 40)
-                        .background {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(downloadPickSelectionMatchesAll
-                                      ? Color(uiColor: .secondarySystemFill)
-                                      : CarouselStudioChrome.accent)
-                        }
+                Button(action: toggleDownloadSlidePickSelectAll) {
+                    Label(
+                        downloadPickSelectionMatchesAll ? "Deselect All" : "Select All",
+                        systemImage: downloadPickSelectionMatchesAll ? "circle" : "checkmark.circle.fill"
+                    )
+                    .labelStyle(.titleAndIcon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(downloadPickSelectionMatchesAll ? Color.primary : .white)
+                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .background {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(downloadPickSelectionMatchesAll
+                                  ? Color(uiColor: .secondarySystemFill)
+                                  : CarouselStudioChrome.accent)
+                    }
                 }
                 .buttonStyle(.plain)
             }
@@ -9752,8 +9801,7 @@ struct SocialPostStudioSheet: View {
                 showPDFExportNextContinuation = true
             }
         }, content: {
-            ShareSheet(items: shareItems,
-                       excludedActivityTypes: [UIActivity.ActivityType(rawValue: "com.burbn.instagram.shareextension")])
+            ShareSheet(items: shareItems)
         })
         .alert(savedAlertTitle, isPresented: $showSavedAlert) {
             Button("OK", role: .cancel) {}
@@ -9853,7 +9901,15 @@ struct SocialPostStudioSheet: View {
                     guard slides.indices.contains(idx), isCarouselStudioMapKind(slides[idx].kind) else { return }
                     if slides[idx].isSelected { excludeMapSlide(at: idx) } else { restoreMapSlide(at: idx) }
                 },
-                removeMapsFromCarousel: slideManagementRemoveMapsFromCarouselBinding
+                removeMapsFromCarousel: slideManagementRemoveMapsFromCarouselBinding,
+                onBulkSlidesExportSelectionChanged: {
+                    Task {
+                        let stopIDs = Set(slides.compactMap { $0.placeStop?.id })
+                        for sid in stopIDs {
+                            await rebuildPIPPayloadsForStop(stopID: sid)
+                        }
+                    }
+                }
             )
         }
         .onChange(of: showPhotoGroupPicker) { _, isPresented in
@@ -11930,6 +11986,18 @@ private struct SwipeUpToRemoveCard<Content: View>: View {
 /// Two-column grid in **loadSlides** order. Uses the same **Download** slide card (preview, dim, corner check)
 /// and grid metrics as `carouselStudioExportHubPhase == .pickDownloadSlides`.
 private struct CarouselPhotoGroupPickerSheet: View {
+    private enum SlidesManagementGridRow: Identifiable {
+        case dayBanner(Int)
+        case deck(SlidesManagementItem)
+
+        var id: String {
+            switch self {
+            case .dayBanner(let d): return "day-banner-\(d)"
+            case .deck(let item): return item.id
+            }
+        }
+    }
+
     @Binding var slides: [CarouselSlide]
     let blog: RecapBlogDetail
     let excludedKeys: Set<String>
@@ -11940,6 +12008,8 @@ private struct CarouselPhotoGroupPickerSheet: View {
     let onExcludeMapFromStudio: ((Int) -> Void)?
     /// Toggle on removes all map slides from the deck (with snapshot restore when turned off). Parent owns snapshot state.
     @Binding var removeMapsFromCarousel: Bool
+    /// After bulk include/exclude of place slides, parent should rebuild PIP payloads per affected stop.
+    let onBulkSlidesExportSelectionChanged: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
 
     @AppStorage("blogify.slidesManagementTip.dismissed") private var slidesManagementTipDismissed = false
@@ -11980,6 +12050,117 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
     private var slidesManagementNavigationSubtitle: String {
         "Tap a card to edit or remove from the carousel"
+    }
+
+    /// Day index (1-based) for grouping rows in Slides Management, when derivable from the slide or stop.
+    private func slidesManagementExportDayNumber(slide: CarouselSlide) -> Int? {
+        switch slide.kind {
+        case .cover:
+            return nil
+        case .mapRoute:
+            let line = slide.dayInfoLine1?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard line.hasPrefix("Day") else { return nil }
+            let afterKeyword = line.dropFirst(3).trimmingCharacters(in: .whitespacesAndNewlines)
+            let digits = afterKeyword.prefix(while: { $0.isNumber })
+            return Int(digits)
+        case .placeIntroMap, .placeStop:
+            guard let stop = slide.placeStop else { return nil }
+            for (dIdx, d) in blog.days.enumerated() where d.placeStops.contains(where: { $0.id == stop.id }) {
+                return dIdx + 1
+            }
+            return nil
+        }
+    }
+
+    private func slidesManagementExportDayNumber(item: SlidesManagementItem) -> Int? {
+        switch item.payload {
+        case .cover:
+            return nil
+        case .map(let i), .placeMap(let i), .placeInDeck(let i):
+            guard slides.indices.contains(i) else { return nil }
+            return slidesManagementExportDayNumber(slide: slides[i])
+        case .placeRemovedFromDeck(let stop, _):
+            for (dIdx, d) in blog.days.enumerated() where d.placeStops.contains(where: { $0.id == stop.id }) {
+                return dIdx + 1
+            }
+            return nil
+        }
+    }
+
+    private var slidesManagementGridRows: [SlidesManagementGridRow] {
+        var rows: [SlidesManagementGridRow] = []
+        var lastBannerDay: Int?
+        for item in managementItems {
+            if let day = slidesManagementExportDayNumber(item: item) {
+                if lastBannerDay != day {
+                    rows.append(.dayBanner(day))
+                    lastBannerDay = day
+                }
+            } else {
+                lastBannerDay = nil
+            }
+            rows.append(.deck(item))
+        }
+        return rows
+    }
+
+    private var slidesManagementHasPlaceSlidesForBulkBar: Bool {
+        slides.contains { $0.kind == .placeStop }
+    }
+
+    private var slidesManagementAllPlaceSlidesSelected: Bool {
+        let idxs = slides.indices.filter { slides[$0].kind == .placeStop }
+        guard !idxs.isEmpty else { return false }
+        return idxs.allSatisfy { slides[$0].isSelected }
+    }
+
+    private func toggleSlidesManagementSelectAllPlacePhotos() {
+        let turnOn = !slidesManagementAllPlaceSlidesSelected
+        for i in slides.indices where slides[i].kind == .placeStop {
+            slides[i].isSelected = turnOn
+        }
+        onBulkSlidesExportSelectionChanged?()
+    }
+
+    @ViewBuilder
+    private func slidesManagementDaySectionHeader(day: Int) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text("Day \(day)")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.primary)
+            Rectangle()
+                .fill(Color.primary.opacity(0.12))
+                .frame(height: 1)
+        }
+        .padding(.top, 4)
+        .padding(.bottom, 2)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    @ViewBuilder
+    private var slidesManagementBulkPhotoSelectionBar: some View {
+        if slidesManagementHasPlaceSlidesForBulkBar {
+            Button {
+                toggleSlidesManagementSelectAllPlacePhotos()
+            } label: {
+                Label(
+                    slidesManagementAllPlaceSlidesSelected ? "Deselect All" : "Select All",
+                    systemImage: slidesManagementAllPlaceSlidesSelected ? "circle" : "checkmark.circle.fill"
+                )
+                .labelStyle(.titleAndIcon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(slidesManagementAllPlaceSlidesSelected ? Color.primary : .white)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .background {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(slidesManagementAllPlaceSlidesSelected
+                              ? Color(uiColor: .secondarySystemFill)
+                              : CarouselStudioChrome.accent)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Turns every place photo slide on or off for this carousel.")
+        }
     }
 
     /// Always-visible summary above the scrolling grid (counts scroll away in the old layout).
@@ -12045,7 +12226,8 @@ private struct CarouselPhotoGroupPickerSheet: View {
         onRestoreExcludedPlacePhoto: ((UUID, UUID) -> Void)? = nil,
         onExcludePlaceFromStudio: ((Int) -> Void)? = nil,
         onExcludeMapFromStudio: ((Int) -> Void)? = nil,
-        removeMapsFromCarousel: Binding<Bool>
+        removeMapsFromCarousel: Binding<Bool>,
+        onBulkSlidesExportSelectionChanged: (() -> Void)? = nil
     ) {
         _slides = slides
         self.blog = blog
@@ -12056,6 +12238,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
         self.onExcludePlaceFromStudio = onExcludePlaceFromStudio
         self.onExcludeMapFromStudio = onExcludeMapFromStudio
         _removeMapsFromCarousel = removeMapsFromCarousel
+        self.onBulkSlidesExportSelectionChanged = onBulkSlidesExportSelectionChanged
     }
 
     /// Same column spec as **Export → Download → pick slides**.
@@ -12377,8 +12560,14 @@ private struct CarouselPhotoGroupPickerSheet: View {
                 .padding(.horizontal, 4)
         } else {
             LazyVGrid(columns: gridColumns, spacing: 12) {
-                ForEach(managementItems) { item in
-                    slidesManagementItemView(item)
+                ForEach(slidesManagementGridRows) { row in
+                    switch row {
+                    case .dayBanner(let day):
+                        slidesManagementDaySectionHeader(day: day)
+                            .gridCellColumns(2)
+                    case .deck(let item):
+                        slidesManagementItemView(item)
+                    }
                 }
             }
             // Cheap identity tied to deck length so a full reload doesn’t leave stale cells mid-scroll.
@@ -12416,6 +12605,9 @@ private struct CarouselPhotoGroupPickerSheet: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
                     .padding(.bottom, 4)
+                slidesManagementBulkPhotoSelectionBar
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
                 ScrollView {
                     slidesManagementScrollContent
                 }

@@ -7,6 +7,49 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+/// Presents as **one** share payload so third-party extensions (X, Threads, etc.) that only accept a
+/// single item still appear. Uses `String` for every activity type so the placeholder matches
+/// `itemForActivityType:` per UIKit guidance. Copy / Reading List get the link only.
+final class LinkCaptionActivityItemSource: NSObject, UIActivityItemSource {
+    private let url: URL
+    private let caption: String
+
+    init(url: URL, caption: String) {
+        self.url = url
+        self.caption = caption
+        super.init()
+    }
+
+    private var combinedText: String {
+        let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return url.absoluteString }
+        return "\(trimmed)\n\(url.absoluteString)"
+    }
+
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+        combinedText
+    }
+
+    func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
+        guard let activityType else { return combinedText }
+        switch activityType {
+        case .copyToPasteboard, .addToReadingList:
+            return url.absoluteString
+        default:
+            return combinedText
+        }
+    }
+
+    func activityViewController(_ activityViewController: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
+        let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(trimmed.prefix(200))
+    }
+
+    func activityViewController(_ activityViewController: UIActivityViewController, dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?) -> String {
+        UTType.plainText.identifier
+    }
+}
+
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
     var excludedActivityTypes: [UIActivity.ActivityType]? = nil
