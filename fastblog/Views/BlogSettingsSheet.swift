@@ -52,7 +52,6 @@ struct BlogSettingsSheet: View {
     var onSave: () -> Void
     /// Called after the photo selection flow updates photos for this blog.
     var onBlogPhotosUpdated: (() -> Void)? = nil
-    var onEditMode: (() -> Void)? = nil
     var onAddNewMoments: (() -> Void)? = nil
     var onRescanAllMoments: (() -> Void)? = nil
     var onDelete: () -> Void
@@ -198,15 +197,6 @@ struct BlogSettingsSheet: View {
 
     private var editAndRestoreSection: some View {
         Section {
-            if onEditMode != nil {
-                Button {
-                    onEditMode?()
-                    dismiss()
-                } label: {
-                    Label("Edit Blog", systemImage: "pencil")
-                        .foregroundStyle(.white)
-                }
-            }
             if !draft.removedPlaceStops.isEmpty {
                 Button {
                     showRestorePlaces = true

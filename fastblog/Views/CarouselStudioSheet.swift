@@ -18,21 +18,25 @@ extension Notification.Name {
 
 private let pipBackgroundRemovalCIContext = CIContext()
 
-/// Downscales in **pixel** space (`size × scale`). Used for PIP Vision work, studio export-sized loads, and cloud JPEGs (which otherwise decode at full camera resolution).
+/// Downscales in **pixel** space (`size × scale`). Used for PIP Vision work, studio export-sized loads,
+/// and any path that can decode larger than the export pixel budget (e.g. AppCapture originals).
 private func downscaleUIImageByPixelLongEdge(_ image: UIImage, maxLongEdge: CGFloat) -> UIImage {
     let w = image.size.width * image.scale
     let h = image.size.height * image.scale
     let long = max(w, h)
     guard long > 1 else { return image }
+    guard long > maxLongEdge else { return image }
     let scaleFactor = min(1.0, maxLongEdge / long)
     let nw = max(1, floor(w * scaleFactor))
     let nh = max(1, floor(h * scaleFactor))
-    let format = UIGraphicsImageRendererFormat()
-    format.scale = 1
-    format.opaque = false
-    let renderer = UIGraphicsImageRenderer(size: CGSize(width: nw, height: nh), format: format)
-    return renderer.image { _ in
-        image.draw(in: CGRect(origin: .zero, size: CGSize(width: nw, height: nh)))
+    return autoreleasepool {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: nw, height: nh), format: format)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: CGSize(width: nw, height: nh)))
+        }
     }
 }
 
@@ -151,12 +155,26 @@ private struct CarouselStudioNavigationBarHairlineDisabler: UIViewControllerRepr
 
 // MARK: - Asset loading
 
+/// Ensures `PHImageManager.requestImage` resumes the continuation at most once (cancel / XPC oddities).
+private final class CarouselPhotoLoadContinuationGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var consumed = false
+
+    func resumeOnce(_ continuation: CheckedContinuation<UIImage?, Never>, returning value: UIImage?) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !consumed else { return }
+        consumed = true
+        continuation.resume(returning: value)
+    }
+}
+
 /// Loads a `PHAsset` image by local identifier at the requested size. Shared
 /// between `SocialPostStudioSheet` (initial slide load) and `SlideTextEditorView`
 /// (loading a new photo into the PIP cluster via the "Add photo" picker). Kept
 /// at file scope so both callers use identical request options and there's no
 /// duplicated photo-framework boilerplate to drift out of sync.
-private func loadCarouselAssetImage(identifier: String, size: CGSize) async -> UIImage? {
+private func loadCarouselAssetImage(identifier: String, size: CGSize, pixelCap: CGFloat = 3072) async -> UIImage? {
     let trimmed = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else {
         #if DEBUG
@@ -169,16 +187,16 @@ private func loadCarouselAssetImage(identifier: String, size: CGSize) async -> U
     let scale = await MainActor.run { max(1.0, UIScreen.main.scale) }
     let rawW = max(1, size.width * scale)
     let rawH = max(1, size.height * scale)
-    let maxPixel: CGFloat = 3072
     let target: CGSize = {
-        guard rawW > maxPixel || rawH > maxPixel else {
+        guard rawW > pixelCap || rawH > pixelCap else {
             return CGSize(width: rawW, height: rawH)
         }
-        let r = maxPixel / max(rawW, rawH)
+        let r = pixelCap / max(rawW, rawH)
         return CGSize(width: floor(rawW * r), height: floor(rawH * r))
     }()
 
     return await withCheckedContinuation { cont in
+        let gate = CarouselPhotoLoadContinuationGate()
         let fetch = PHAsset.fetchAssets(withLocalIdentifiers: [trimmed], options: nil)
         guard let asset = fetch.firstObject else {
             #if DEBUG
@@ -194,22 +212,26 @@ private func loadCarouselAssetImage(identifier: String, size: CGSize) async -> U
         opts.resizeMode = .fast
         PHImageManager.default().requestImage(for: asset, targetSize: target,
                                               contentMode: .aspectFill, options: opts) { img, info in
+            let cancelled = (info?[PHImageCancelledKey] as? Bool) ?? false
+            if cancelled {
+                gate.resumeOnce(cont, returning: nil)
+                return
+            }
             #if DEBUG
             if img == nil {
                 let err = info?[PHImageErrorKey] as? Error
-                let cancelled = (info?[PHImageCancelledKey] as? Bool) ?? false
                 let degraded = info?[PHImageResultIsDegradedKey] as? Bool
                 print("[CarouselStudio] loadCarouselAssetImage: nil image cancelled=\(cancelled) degraded=\(String(describing: degraded)) err=\(String(describing: err)) target=\(target)")
             }
             #endif
-            cont.resume(returning: img)
+            gate.resumeOnce(cont, returning: img)
         }
     }
 }
 
 /// Full-resolution load for carousel / Social Post Studio. Supports Photos assets,
 /// on-disk app captures (`AppCapturePhotoService` ids), and signed cloud URLs.
-private func loadRecapPhotoUIImage(photo: RecapPhoto, size: CGSize) async -> UIImage? {
+private func loadRecapPhotoUIImage(photo: RecapPhoto, size: CGSize, pixelCap: CGFloat = 3072) async -> UIImage? {
     if let lid = photo.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !lid.isEmpty {
         if lid.hasPrefix(AppCapturePhotoService.prefix) {
             let img = await MainActor.run {
@@ -218,9 +240,10 @@ private func loadRecapPhotoUIImage(photo: RecapPhoto, size: CGSize) async -> UII
             #if DEBUG
             if img == nil { print("[CarouselStudio] loadRecapPhotoUIImage: AppCapture nil photo=\(photo.id)") }
             #endif
-            return img
+            guard let img else { return nil }
+            return downscaleUIImageByPixelLongEdge(img, maxLongEdge: pixelCap)
         }
-        let img = await loadCarouselAssetImage(identifier: lid, size: size)
+        let img = await loadCarouselAssetImage(identifier: lid, size: size, pixelCap: pixelCap)
         #if DEBUG
         if img == nil { print("[CarouselStudio] loadRecapPhotoUIImage: Photos nil photo=\(photo.id) localId.prefix=\(lid.prefix(12))…") }
         #endif
@@ -1080,6 +1103,7 @@ private enum CurvedSplitSeamGeometry {
     }
 }
 
+/// Horizontal curved seam used only for **map / photo** split outline (matches mask geometry).
 private struct CurvedSplitDividerShape: Shape {
     func path(in rect: CGRect) -> Path {
         let curveHeight = min(CurvedSplitSeamGeometry.amplitude(for: rect), rect.height * 0.45)
@@ -1672,15 +1696,18 @@ private func buildPlaceCarouselSlideForStudio(
     guard let photoIdx = included.firstIndex(where: { $0.id == photo.id }) else { return nil }
     guard let stopIdx = globalStopIndexInBlog(blog: blog, stopID: stop.id) else { return nil }
 
+    let heroCap = max(exportWidth, exportHeight)
     var stopImages: [UIImage?] = []
     for p in included {
         var img: UIImage?
         if let localId = p.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !localId.isEmpty {
             img = await loadCarouselAssetImage(identifier: localId,
-                                               size: CGSize(width: exportWidth, height: exportHeight))
+                                               size: CGSize(width: exportWidth, height: exportHeight),
+                                               pixelCap: heroCap)
         }
         if img == nil {
-            img = await loadRecapPhotoUIImage(photo: p, size: CGSize(width: exportWidth, height: exportHeight))
+            img = await loadRecapPhotoUIImage(photo: p, size: CGSize(width: exportWidth, height: exportHeight),
+                                              pixelCap: heroCap)
         }
         stopImages.append(img)
     }
@@ -2229,6 +2256,26 @@ struct CarouselSlideView: View {
     var pipBackgroundRemovalLoadingSlots: Set<Int> = []
 
     private var height: CGFloat { width / aspectRatio }
+
+    /// Place-intro / day-map split layout: top half is the cover photo; bottom half is the map snapshot.
+    private static let mapSplitPhotoHeightFraction: CGFloat = 0.5
+    /// Curved map/photo split only: extra height (pt) taken from the map half and given to the photo strip
+    /// so the scalloped seam sits slightly lower on the slide; negative `VStack` spacing still overlaps the halves.
+    private static let mapCurvedSplitPhotoExtraYMin: CGFloat = 8
+    private static let mapCurvedSplitPhotoExtraYMax: CGFloat = 22
+
+    private static func mapCurvedSplitPhotoExtraHeight(forSlideHeight H: CGFloat) -> CGFloat {
+        min(mapCurvedSplitPhotoExtraYMax, max(mapCurvedSplitPhotoExtraYMin, H * 0.024))
+    }
+
+    /// Photo-strip fraction for split map slides (must match `splitMapSplitBackground` straight vs curve).
+    private func mapSplitPhotoFractionForStudioMapSplit() -> CGFloat {
+        guard isCarouselStudioMapKind(slide.kind), slide.layout == .split else { return 0.5 }
+        guard slide.splitDividerStyle == .curve else { return Self.mapSplitPhotoHeightFraction }
+        let extra = Self.mapCurvedSplitPhotoExtraHeight(forSlideHeight: height)
+        return Self.mapSplitPhotoHeightFraction + extra / height
+    }
+
     private let heroImageScale: CGFloat = 1.12
     private var slideBounds: CGRect { CGRect(x: 0, y: 0, width: width, height: height) }
 
@@ -2311,16 +2358,19 @@ struct CarouselSlideView: View {
                         fullBleedMapBackground
                     }
                     if isEditingText, slide.layout == .split {
+                        let photoFrac = isCarouselStudioMapKind(slide.kind)
+                            ? mapSplitPhotoFractionForStudioMapSplit()
+                            : 0.5 as CGFloat
                         VStack(spacing: 0) {
                             Color.clear
                                 .contentShape(Rectangle())
-                                .frame(width: width, height: height * 0.5)
+                                .frame(width: width, height: height * photoFrac)
                                 .highPriorityGesture(
                                     TapGesture().onEnded { onTapSplitTopSlot?() }
                                 )
                             Color.clear
                                 .contentShape(Rectangle())
-                                .frame(width: width, height: height * 0.5)
+                                .frame(width: width, height: height * (1 - photoFrac))
                                 .highPriorityGesture(
                                     TapGesture().onEnded { onTapSplitBottomSlot?() }
                                 )
@@ -2328,20 +2378,23 @@ struct CarouselSlideView: View {
                         .frame(width: width, height: height)
                     }
                     if isEditingText, slide.layout == .split, let slot = selectedSplitSlot {
+                        let photoFrac = isCarouselStudioMapKind(slide.kind)
+                            ? mapSplitPhotoFractionForStudioMapSplit()
+                            : 0.5 as CGFloat
                         VStack(spacing: 0) {
                             RoundedRectangle(cornerRadius: 0)
                                 .strokeBorder(
                                     slot == .top ? Color.white.opacity(0.55) : Color.clear,
                                     lineWidth: 2
                                 )
-                                .frame(width: width, height: height * 0.5)
+                                .frame(width: width, height: height * photoFrac)
                                 .allowsHitTesting(false)
                             RoundedRectangle(cornerRadius: 0)
                                 .strokeBorder(
                                     slot == .bottom ? Color.white.opacity(0.55) : Color.clear,
                                     lineWidth: 2
                                 )
-                                .frame(width: width, height: height * 0.5)
+                                .frame(width: width, height: height * (1 - photoFrac))
                                 .allowsHitTesting(false)
                         }
                         .frame(width: width, height: height)
@@ -2915,50 +2968,23 @@ struct CarouselSlideView: View {
         .frame(width: width, height: height).clipped()
     }
 
-    /// Map in the top half + optional bottom photo — mirrors place `splitPlaceStopBackground`
-    /// but the upper slot renders `mapSnapshot` (with `splitTopFraming`) instead of `heroImage`.
+    /// Cover photo in the top half (slight transparency) + map in the bottom half.
     private var splitMapSplitBackground: some View {
         let slotW = width
-        let slotH = height * 0.5
         let useCurvedMasks = slide.splitDividerStyle == .curve
         let seamBleed = useCurvedMasks ? min(22, max(10, slotW * 0.038)) : 0
-        return ZStack {
+        let photoExtraY = useCurvedMasks ? Self.mapCurvedSplitPhotoExtraHeight(forSlideHeight: height) : 0
+        let photoH = height * Self.mapSplitPhotoHeightFraction + photoExtraY
+        let mapH = height * (1 - Self.mapSplitPhotoHeightFraction) - photoExtraY
+        // Curved masks: map top seam sits at `photoH`, photo bottom seam at `photoH + seamBleed`. A stroke
+        // centered only on `photoH` reads as sitting in the photo (thick glow is half above the path).
+        let seamOutlineY = useCurvedMasks
+            ? (photoH + seamBleed * 0.50 + 0.5)
+            : photoH
+        // Curved masks use negative spacing + `seamBleed`; optional stroked seam follows the same curve.
+        return ZStack(alignment: .top) {
             VStack(spacing: useCurvedMasks ? -seamBleed : 0) {
-                Group {
-                    if useCurvedMasks {
-                        Group {
-                            if let map = slide.mapSnapshot {
-                                SplitFramedPhotoInSlot(
-                                    image: map,
-                                    framing: slide.splitTopFraming,
-                                    slotWidth: slotW,
-                                    slotHeight: slotH
-                                )
-                            } else {
-                                Color(red: 12/255, green: 16/255, blue: 33/255)
-                                    .frame(width: slotW, height: slotH)
-                            }
-                        }
-                        .clipShape(CurvedSplitTopMaskShape())
-                        .frame(width: slotW, height: slotH + seamBleed)
-                    } else {
-                        Group {
-                            if let map = slide.mapSnapshot {
-                                SplitFramedPhotoInSlot(
-                                    image: map,
-                                    framing: slide.splitTopFraming,
-                                    slotWidth: slotW,
-                                    slotHeight: slotH
-                                )
-                            } else {
-                                Color(red: 12/255, green: 16/255, blue: 33/255)
-                                    .frame(width: slotW, height: slotH)
-                            }
-                        }
-                        .frame(width: slotW, height: slotH)
-                    }
-                }
-
+                // TOP: cover photo (half height) — slight transparency over the curved seam into the map.
                 Group {
                     if useCurvedMasks {
                         Group {
@@ -2967,7 +2993,7 @@ struct CarouselSlideView: View {
                                     image: bottom,
                                     framing: slide.splitBottomFraming,
                                     slotWidth: slotW,
-                                    slotHeight: slotH
+                                    slotHeight: photoH
                                 )
                             } else {
                                 ZStack {
@@ -2982,45 +3008,111 @@ struct CarouselSlideView: View {
                                         .foregroundColor(.white.opacity(0.72))
                                     }
                                 }
-                                .frame(width: slotW, height: slotH)
+                                .frame(width: slotW, height: photoH)
+                            }
+                        }
+                        .opacity(0.8)
+                        .clipShape(CurvedSplitTopMaskShape())
+                        .frame(width: slotW, height: photoH + seamBleed)
+                    } else {
+                        Group {
+                            if let bottom = slide.splitBottomImage {
+                                SplitFramedPhotoInSlot(
+                                    image: bottom,
+                                    framing: slide.splitBottomFraming,
+                                    slotWidth: slotW,
+                                    slotHeight: photoH
+                                )
+                            } else {
+                                ZStack {
+                                    Color(white: 0.13)
+                                    if isEditingText {
+                                        VStack(spacing: 6) {
+                                            Image(systemName: "plus.circle.fill")
+                                                .font(.system(size: width * 0.08, weight: .semibold))
+                                            Text("Tap to pick photo")
+                                                .font(.system(size: width * 0.04, weight: .semibold))
+                                        }
+                                        .foregroundColor(.white.opacity(0.72))
+                                    }
+                                }
+                                .frame(width: slotW, height: photoH)
+                            }
+                        }
+                        .opacity(0.8)
+                        .frame(width: slotW, height: photoH)
+                    }
+                }
+
+                // BOTTOM: map snapshot (lower half)
+                Group {
+                    if useCurvedMasks {
+                        Group {
+                            if let map = slide.mapSnapshot {
+                                SplitFramedPhotoInSlot(
+                                    image: map,
+                                    framing: slide.splitTopFraming,
+                                    slotWidth: slotW,
+                                    slotHeight: mapH
+                                )
+                            } else {
+                                Color(red: 12/255, green: 16/255, blue: 33/255)
+                                    .frame(width: slotW, height: mapH)
                             }
                         }
                         .clipShape(CurvedSplitBottomMaskShape())
-                        .frame(width: slotW, height: slotH + seamBleed)
+                        .frame(width: slotW, height: mapH + seamBleed)
                     } else {
                         Group {
-                            if let bottom = slide.splitBottomImage {
+                            if let map = slide.mapSnapshot {
                                 SplitFramedPhotoInSlot(
-                                    image: bottom,
-                                    framing: slide.splitBottomFraming,
+                                    image: map,
+                                    framing: slide.splitTopFraming,
                                     slotWidth: slotW,
-                                    slotHeight: slotH
+                                    slotHeight: mapH
                                 )
                             } else {
-                                ZStack {
-                                    Color(white: 0.13)
-                                    if isEditingText {
-                                        VStack(spacing: 6) {
-                                            Image(systemName: "plus.circle.fill")
-                                                .font(.system(size: width * 0.08, weight: .semibold))
-                                            Text("Tap to pick photo")
-                                                .font(.system(size: width * 0.04, weight: .semibold))
-                                        }
-                                        .foregroundColor(.white.opacity(0.72))
-                                    }
-                                }
-                                .frame(width: slotW, height: slotH)
+                                Color(red: 12/255, green: 16/255, blue: 33/255)
+                                    .frame(width: slotW, height: mapH)
                             }
                         }
-                        .frame(width: slotW, height: slotH)
+                        .frame(width: slotW, height: mapH)
                     }
                 }
             }
-
-            splitDividerOverlay
+            mapSplitSeamOutline(photoJoinY: seamOutlineY)
         }
         .frame(width: width, height: height)
         .clipped()
+    }
+
+    /// White seam on the photo/map boundary (straight bar or curved stroke aligned with split masks).
+    @ViewBuilder
+    private func mapSplitSeamOutline(photoJoinY: CGFloat) -> some View {
+        let curveBandH: CGFloat = 48
+        Group {
+            if slide.splitDividerStyle == .straight {
+                Rectangle()
+                    .fill(Color.white.opacity(0.9))
+                    .frame(width: width, height: 3.5)
+                    .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 0.5)
+            } else {
+                ZStack {
+                    CurvedSplitDividerShape()
+                        .stroke(Color.white.opacity(0.34), style: StrokeStyle(lineWidth: 11, lineCap: .round))
+                    CurvedSplitDividerShape()
+                        .stroke(Color.white.opacity(0.96), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                }
+                .frame(width: width, height: curveBandH)
+                .shadow(color: .black.opacity(0.28), radius: 2.5, x: 0, y: 1)
+            }
+        }
+        .transition(.identity)
+        .transaction { t in
+            t.animation = nil
+            t.disablesAnimations = true
+        }
+        .position(x: width * 0.5, y: photoJoinY)
     }
 
     @ViewBuilder
@@ -3039,8 +3131,7 @@ struct CarouselSlideView: View {
         // Curved seams need vertical bleed so the bezier can travel above/below the
         // nominal split line without flattening near the corners (especially bottom-left).
         let seamBleed = useCurvedMasks ? min(22, max(10, slotW * 0.038)) : 0
-        return ZStack {
-            VStack(spacing: useCurvedMasks ? -seamBleed : 0) {
+        return VStack(spacing: useCurvedMasks ? -seamBleed : 0) {
                 Group {
                     if useCurvedMasks {
                         Group {
@@ -3133,45 +3224,10 @@ struct CarouselSlideView: View {
                     }
                 }
             }
-
-            splitDividerOverlay
-        }
         .frame(width: width, height: height)
         .clipped()
     }
 
-    private var splitDividerOverlay: some View {
-        Group {
-            if slide.splitDividerStyle == .straight {
-                Rectangle()
-                    .fill(.white.opacity(0.92))
-                    .frame(width: width, height: 1.54)
-                    .shadow(color: .black.opacity(0.28), radius: 1.54, x: 0, y: 0.77)
-            } else {
-                ZStack {
-                    // Paper-edge feel: soft bright underpaint + warm paper core + tiny highlight.
-                    CurvedSplitDividerShape()
-                        .stroke(.white.opacity(0.42), style: StrokeStyle(lineWidth: 8.47, lineCap: .round))
-                    CurvedSplitDividerShape()
-                        .stroke(Color(red: 0.97, green: 0.95, blue: 0.90), style: StrokeStyle(lineWidth: 6.16, lineCap: .round))
-                    CurvedSplitDividerShape()
-                        .stroke(.white.opacity(0.70), style: StrokeStyle(lineWidth: 1.694, lineCap: .round))
-                        .offset(y: -0.462)
-                }
-                .frame(width: width, height: 40)
-                .shadow(color: .black.opacity(0.30), radius: 2.156, x: 0, y: 0.924)
-            }
-        }
-        // SwiftUI's default behavior for an `if/else` inside `Group` is to
-        // crossfade old → new with the inherited transaction animation. With
-        // any ancestor easeInOut/spring scoping, the divider visibly fades
-        // when toggling Straight/Curve — strip transitions and animations.
-        .transition(.identity)
-        .transaction { transaction in
-            transaction.animation = nil
-            transaction.disablesAnimations = true
-        }
-    }
 }
 
 private extension View {
@@ -5793,7 +5849,7 @@ struct SlideTextEditorView: View {
         Task {
             let targetSize = CGSize(width: 1080, height: 1080)
             guard let localId = photo.localIdentifier,
-                  let loaded = await loadCarouselAssetImage(identifier: localId, size: targetSize)
+                  let loaded = await loadCarouselAssetImage(identifier: localId, size: targetSize, pixelCap: 1080)
             else { return }
             await MainActor.run {
                 guard slides.indices.contains(slideIdx),
@@ -5946,10 +6002,10 @@ struct SlideTextEditorView: View {
             let trimmed = photo.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             var loaded: UIImage?
             if !trimmed.isEmpty {
-                loaded = await loadCarouselAssetImage(identifier: trimmed, size: targetSize)
+                loaded = await loadCarouselAssetImage(identifier: trimmed, size: targetSize, pixelCap: 1080)
             }
             if loaded == nil {
-                loaded = await loadRecapPhotoUIImage(photo: photo, size: targetSize)
+                loaded = await loadRecapPhotoUIImage(photo: photo, size: targetSize, pixelCap: 1080)
             }
             guard let loaded else { return }
             await MainActor.run {
@@ -6506,7 +6562,7 @@ struct SlideTextEditorView: View {
 
         Task {
             let target = CGSize(width: 1080, height: 1080)
-            guard let image = await loadRecapPhotoUIImage(photo: photo, size: target) else { return }
+            guard let image = await loadRecapPhotoUIImage(photo: photo, size: target, pixelCap: 1080) else { return }
             await MainActor.run {
                 guard slides.indices.contains(slideIndex),
                       slides[slideIndex].layout == .split,
@@ -6623,7 +6679,7 @@ struct SlideTextEditorView: View {
         Task {
             let targetSize = CGSize(width: 1080, height: 1080)
             guard let localId = photo.localIdentifier,
-                  let loaded = await loadCarouselAssetImage(identifier: localId, size: targetSize) else {
+                  let loaded = await loadCarouselAssetImage(identifier: localId, size: targetSize, pixelCap: 1080) else {
                 return
             }
             await MainActor.run {
@@ -10432,6 +10488,12 @@ struct SocialPostStudioSheet: View {
                     guard slides[j].kind == .placeStop,
                           slides[j].placeStop?.id == stopID else { continue }
                     slides[j].isSelected = false
+                    // Release pip payload from hidden siblings — the .pip slide owns the cluster.
+                    // Sibling heroImages stay (needed for Slides Management thumbnails).
+                    slides[j].pipImages = []
+                    slides[j].pipPhotoIDs = []
+                    slides[j].pipThumbnailFramings = []
+                    slides[j].pipProcessedImages = []
                 }
             }
         }
@@ -10583,16 +10645,19 @@ struct SocialPostStudioSheet: View {
             }
         }
 
+        // PIP thumbnails are shown small in the cluster (~150–300 px); 540 px gives retina
+        // quality while using ~9× less memory than a full export-size decode.
+        let pipThumbSize = CGSize(width: exportWidth, height: exportHeight)
+        let pipPixelCap: CGFloat = 540
         var cache: [UUID: UIImage] = [:]
         for pid in Set(orderedPresentIDs) {
             guard let p = included.first(where: { $0.id == pid }) else { continue }
             var img: UIImage?
             if let localId = p.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !localId.isEmpty {
-                img = await loadCarouselAssetImage(identifier: localId,
-                                                   size: CGSize(width: exportWidth, height: exportHeight))
+                img = await loadCarouselAssetImage(identifier: localId, size: pipThumbSize, pixelCap: pipPixelCap)
             }
             if img == nil {
-                img = await loadRecapPhotoUIImage(photo: p, size: CGSize(width: exportWidth, height: exportHeight))
+                img = await loadRecapPhotoUIImage(photo: p, size: pipThumbSize, pixelCap: pipPixelCap)
             }
             if let img { cache[pid] = img }
         }
@@ -10632,26 +10697,27 @@ struct SocialPostStudioSheet: View {
 
     private func loadCoverHeroImageForStudio() async -> UIImage? {
         let exportSize = CGSize(width: exportWidth, height: exportHeight)
+        let cap = max(exportWidth, exportHeight)
         if let pid = studioCoverPhotoID,
            let photo = blog.allIncludedPhotos.first(where: { $0.id == pid }) {
-            return await loadRecapPhotoUIImage(photo: photo, size: exportSize)
+            return await loadRecapPhotoUIImage(photo: photo, size: exportSize, pixelCap: cap)
         }
         let trimmed = blog.selectedCoverPhotoIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !trimmed.isEmpty,
            let match = blog.allIncludedPhotos.first(where: {
                ($0.localIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines) == trimmed
            }) {
-            return await loadRecapPhotoUIImage(photo: match, size: exportSize)
+            return await loadRecapPhotoUIImage(photo: match, size: exportSize, pixelCap: cap)
         }
         if !trimmed.isEmpty {
-            return await loadAssetImage(identifier: trimmed, size: exportSize)
+            return await loadCarouselAssetImage(identifier: trimmed, size: exportSize, pixelCap: cap)
         }
         return nil
     }
 
     private func applyStudioCoverFromPick(_ photo: RecapPhoto) async {
         let exportSize = CGSize(width: exportWidth, height: exportHeight)
-        let img = await loadRecapPhotoUIImage(photo: photo, size: exportSize)
+        let img = await loadRecapPhotoUIImage(photo: photo, size: exportSize, pixelCap: max(exportWidth, exportHeight))
         await MainActor.run {
             studioCoverPhotoID = photo.id
             if let i = slides.firstIndex(where: { $0.kind == .cover }) {
@@ -10698,9 +10764,13 @@ struct SocialPostStudioSheet: View {
                 // Use `loadRecapPhotoUIImage` (same as cover) so cloud URLs + AppCapture ids work
                 // when `localIdentifier` is missing — `loadSlides` previously only called Photos for
                 // local assets, which blanked place slides and map markers on some devices/sync states.
+                // Cap at the actual export pixel dimensions so PHImageManager doesn't decode
+                // images at 3× screen scale (e.g. 3240×4050 instead of 1080×1350), which
+                // was the primary cause of out-of-memory crashes on large trips.
+                let exportPixelCap = max(exportWidth, exportHeight)
                 var stopImages: [UIImage?] = []
                 for photo in included {
-                    let img = await loadRecapPhotoUIImage(photo: photo, size: exportSize)
+                    let img = await loadRecapPhotoUIImage(photo: photo, size: exportSize, pixelCap: exportPixelCap)
                     #if DEBUG
                     if img == nil {
                         let hasLocal = !(photo.localIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -10726,7 +10796,8 @@ struct SocialPostStudioSheet: View {
                    let introSnap = await MapSnapshotHelper.generateCarouselPlaceIntroSnapshot(
                     drawableDayStops: drawableForMap,
                     focusedDrawableIndex: dIdx,
-                    logicalSize: exportSize
+                    logicalSize: exportSize,
+                    dayPlaceStopsForRouteRegion: day.placeStops
                    ) {
                     let subtitle = stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines)
                     let teaser = [stop.placeNarrative, stop.overallStory, stop.noteText]
@@ -10788,8 +10859,8 @@ struct SocialPostStudioSheet: View {
 
             let mapSnap = await MapSnapshotHelper.generatePhotoRouteSnapshot(
                 for: day.placeStops, markerImagesByStopId: markerImages,
-                size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.015,
-                carouselDayFirstStopFocus: true)
+                size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.18,
+                carouselDayFirstStopFocus: false)
 
             let bestStory = [day.dayNarrative, day.dayCaption]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }

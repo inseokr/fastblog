@@ -88,20 +88,13 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
 
     // MARK: - Provider selection
 
-    /// Call this once the place's country is known. Switches to Kakao for KR when the API key is configured.
+    /// Call this once the place's country is known. Always uses MapKit (Apple Maps) for autocomplete and resolution.
     func setProvider(isoCountryCode: String) {
-        if isoCountryCode == "KR", KakaoLocalService.shared.isAvailable {
-            activeProvider = .kakao
-            completer.queryFragment = ""
-            suggestions = []
-            debugPrint("[PlaceSearch] provider → Kakao (KR)")
-        } else {
-            activeProvider = .mapKit
-            kakaoSearchTask?.cancel()
-            kakaoSearchTask = nil
-            suggestions = []
-            debugPrint("[PlaceSearch] provider → MapKit (\(isoCountryCode))")
-        }
+        activeProvider = .mapKit
+        kakaoSearchTask?.cancel()
+        kakaoSearchTask = nil
+        suggestions = []
+        debugPrint("[PlaceSearch] provider → MapKit (always; country=\(isoCountryCode))")
     }
 
     // MARK: - Bias location
@@ -179,7 +172,7 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
     // MARK: - Coordinate → place name
 
     /// Returns the best human-readable place name for a coordinate.
-    /// Uses Kakao reverse geocode in KR mode; falls back to CLGeocoder otherwise.
+    /// Uses Kakao reverse geocode when the active provider is Kakao; otherwise `GeocodingService` (Apple geocoder).
     func resolveCoordinateName(at coordinate: CLLocationCoordinate2D) async -> String {
         if activeProvider == .kakao {
             if let doc = await KakaoLocalService.shared.reverseGeocode(coordinate: coordinate) {

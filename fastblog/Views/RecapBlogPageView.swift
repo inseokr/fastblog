@@ -1022,10 +1022,6 @@ struct RecapBlogPageView: View {
                             draftSnapshot = updated
                         }
                     },
-                    onEditMode: {
-                        showBlogSettings = false
-                        isEditMode = true
-                    },
                     onAddNewMoments: newMomentsPlaceCount == 0 ? nil : {
                         showBlogSettings = false
                         withAnimation(.easeInOut(duration: 0.3)) {
@@ -5548,6 +5544,16 @@ Your blog remains private unless you choose to share it.
                 .buttonStyle(.plain)
                 .accessibilityLabel("Undo")
                 .disabled(lastUndoAction == nil)
+            } else if !isExportingPDF && !showStoryMode && fullScreenMapDay == nil {
+                Button {
+                    isEditMode = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(recapChromeForeground)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Edit Blog")
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
