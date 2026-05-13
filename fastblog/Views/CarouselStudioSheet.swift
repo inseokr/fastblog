@@ -1326,7 +1326,8 @@ private func isSlideHiddenBySiblingPIP(at index: Int, in slides: [CarouselSlide]
     return slides.contains { other in
         guard other.id != slide.id,
               other.kind == .placeStop,
-              other.placeStop?.id == stopID else { return false }
+              other.placeStop?.id == stopID,
+              other.isSelected else { return false }
         if other.layout == .pip {
             return true
         }
@@ -10597,7 +10598,17 @@ struct SocialPostStudioSheet: View {
         }
 
         for i in indices {
-            guard let hid = slides[i].heroPhotoID else { continue }
+            // Only the primary PIP slide carries the pip cluster payload.
+            // Single-layout siblings (PIP-hidden or user-hidden) must have pip data cleared;
+            // otherwise the same photo appears as a thumbnail on multiple Slides Management cards.
+            guard slides[i].layout == .pip, let hid = slides[i].heroPhotoID else {
+                slides[i].pipPhotoIDs = []
+                slides[i].pipImages = []
+                slides[i].pipThumbnailFramings = []
+                slides[i].pipBackgroundRemoved = false
+                slides[i].pipProcessedImages = []
+                continue
+            }
             let pipIDs = Array(orderedPresentIDs.filter { $0 != hid }.prefix(3))
             // Keep `pipPhotoIDs` and `pipImages` index-aligned: `compactMap` on images
             // alone shifts thumbnails when any neighbor fails to load, so the cluster
@@ -10611,7 +10622,7 @@ struct SocialPostStudioSheet: View {
             slides[i].pipThumbnailFramings = []
             slides[i].pipBackgroundRemoved = false
             slides[i].pipProcessedImages = []
-            if slides[i].layout == .pip, slides[i].pipImages.isEmpty {
+            if slides[i].pipImages.isEmpty {
                 slides[i].layout = .single
             }
         }
