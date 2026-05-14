@@ -1115,6 +1115,7 @@ struct RecapBlogPageView: View {
     private func applySecondarySheetModifiers<Content: View>(to content: Content) -> some View {
         content
             .sheet(item: $overflowStop) { item in
+                let mergeCandidatesForStop = mergeCandidates(dayId: item.dayId, sourceStopId: item.stop.id)
                 let displayablePhotoCount = item.stop.photos.filter(\.hasDisplayableLocalBacking).count
                 PlaceStopActionSheet(
                     placeTitle: item.stop.placeTitle,
@@ -1130,9 +1131,9 @@ struct RecapBlogPageView: View {
                     onEditCaption: {
                         placeCaptionEditItem = PlaceCaptionEditItem(dayId: item.dayId, stopId: item.stop.id)
                     },
-                    onMergePlaces: mergeCandidates(dayId: item.dayId, sourceStopId: item.stop.id).isEmpty ? nil : {
+                    onMergePlaces: isEditMode && !mergeCandidatesForStop.isEmpty ? {
                         mergeSelectionItem = MergeSelectionItem(dayId: item.dayId, sourceStopId: item.stop.id)
-                    },
+                    } : nil,
                     onSplit: displayablePhotoCount > 1 ? {
                         presentSplitPlaceStopSheet(dayId: item.dayId, stop: item.stop)
                     } : nil,
@@ -3034,7 +3035,7 @@ struct RecapBlogPageView: View {
                         let sameNameDetected = !stop.placeTitle.isEmpty &&
                             stop.placeTitle.trimmingCharacters(in: .whitespaces).lowercased() ==
                             nextStop.placeTitle.trimmingCharacters(in: .whitespaces).lowercased()
-                        if sameNameDetected {
+                        if isEditMode && sameNameDetected {
                             Button {
                                 mergePlaceStops(dayId: day.id, firstStopId: stop.id, secondStopId: nextStop.id)
                             } label: {

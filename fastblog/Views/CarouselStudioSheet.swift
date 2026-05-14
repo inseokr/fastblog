@@ -9866,6 +9866,8 @@ struct SocialPostStudioSheet: View {
     @State private var largeStudioExportMemoryGate: LargeStudioExportMemoryGate? = nil
     /// One-time dismissible tip for removing place photos from the preview strip (`UserDefaults`).
     @AppStorage("carouselStudio.removePlacePhotoTip.dismissed") private var removePlacePhotoTipDismissed = false
+    /// When true, a stop with only one photo still gets a full `.placeStop` slide after `.placeIntroMap` (map + separate photo slide). Default is on so single-photo stops get a dedicated photo slide too.
+    @AppStorage("carouselStudio.singlePhotoPlaceSlideAfterIntroMap") private var singlePhotoPlaceSlideAfterIntroMap = true
     @Environment(\.dismiss) private var dismiss
     /// JPEG share >34 steps: confirm truncating to cap before opening the share sheet.
     @State private var pendingShareJPEGHardCapSteps: [ShareJPEGExportStep]?
@@ -10039,6 +10041,7 @@ struct SocialPostStudioSheet: View {
         }
         .task { await loadSlides() }
         .onChange(of: exportFormat) { _, _ in Task { await loadSlides() } }
+        .onChange(of: singlePhotoPlaceSlideAfterIntroMap) { _, _ in Task { await loadSlides() } }
         .sheet(isPresented: $showShareSheet, onDismiss: {
             cleanupTempFiles()
             if !pdfExportQueuedIndexChunks.isEmpty {
@@ -10419,6 +10422,12 @@ struct SocialPostStudioSheet: View {
                         .padding(.horizontal, 20)
                 } else {
                     HStack(spacing: 8) {
+                        if hasMapSlidesInDeck {
+                            mapToggleControl
+                        }
+
+                        Spacer(minLength: 0)
+
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 let shouldDeselectAll = selectedSlides.count > 0
@@ -10432,10 +10441,6 @@ struct SocialPostStudioSheet: View {
                                 .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
-
-                        Spacer(minLength: 0)
-
-                        studioSlideCountBadge
                     }
                     .padding(.horizontal, 20)
                 }
@@ -10487,6 +10492,35 @@ struct SocialPostStudioSheet: View {
 
     private var hasPlaceStopInPreviewStrip: Bool {
         slides.contains { $0.kind == .placeStop }
+    }
+
+    private var hasMapSlidesInDeck: Bool {
+        slides.contains { isCarouselStudioMapKind($0.kind) } || slideManagementDeckSnapshotBeforeRemovingMaps != nil
+    }
+
+    private var mapToggleControl: some View {
+        let mapsRemoved = slideManagementRemoveMapsFromCarouselBinding.wrappedValue
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                slideManagementRemoveMapsFromCarouselBinding.wrappedValue.toggle()
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "map")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Maps")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .foregroundColor(mapsRemoved ? .secondary : CarouselStudioChrome.accent)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background((mapsRemoved ? Color.white : CarouselStudioChrome.accent).opacity(0.1))
+            .clipShape(Capsule())
+            .overlay(Capsule().strokeBorder(
+                (mapsRemoved ? Color.white : CarouselStudioChrome.accent).opacity(mapsRemoved ? 0.15 : 0.25),
+                lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.2), value: mapsRemoved)
     }
 
     /// Pill showing the selected slide count; tapping it opens the slide grid navigator.
@@ -11046,8 +11080,8 @@ struct SocialPostStudioSheet: View {
         }
         let excludedSnapshot = await MainActor.run { excludedStudioPhotoKeys }
         // Read format + preference on the main actor; the rest of this function may run off-main during awaits.
-        let (isReelSingleSlide, formatAspectRatio) = await MainActor.run {
-            (exportFormat.isSingleSlide, exportFormat.aspectRatio)
+        let (isReelSingleSlide, formatAspectRatio, singlePhotoSlideAfterIntro) = await MainActor.run {
+            (exportFormat.isSingleSlide, exportFormat.aspectRatio, singlePhotoPlaceSlideAfterIntroMap)
         }
         let prepTotal = socialPostStudioLoadSlidesPreparationUnitCount(blog: blog, excludedKeys: excludedSnapshot)
         var prepCompleted = 0
@@ -11147,9 +11181,11 @@ struct SocialPostStudioSheet: View {
                 isFirstDrawableStop = false
 
                 for (photoIdx, photo) in included.enumerated() {
-                    // Omit the separate `.placeStop` slide when the place intro map already shows the only photo (no user toggle).
+                    // Omit the separate `.placeStop` slide when the place intro map already shows the only photo,
+                    // unless the user prefers a dedicated full-bleed photo slide as well (`singlePhotoPlaceSlideAfterIntroMap`).
                     if included.count == 1,
-                       appendedPlaceIntroMap {
+                       appendedPlaceIntroMap,
+                       !singlePhotoSlideAfterIntro {
                         continue
                     }
                     let hero = stopImages[photoIdx]
@@ -12279,6 +12315,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @AppStorage("blogify.slidesManagementTip.dismissed") private var slidesManagementTipDismissed = false
+    @AppStorage("carouselStudio.singlePhotoPlaceSlideAfterIntroMap") private var singlePhotoPlaceSlideAfterIntroMap = true
 
     private var managementItems: [SlidesManagementItem] {
         makeSlidesManagementItems(blog: blog, slides: slides, excludedKeys: excludedKeys)
@@ -12374,14 +12411,19 @@ private struct CarouselPhotoGroupPickerSheet: View {
         slides.contains { $0.kind == .placeStop }
     }
 
+    /// Place slides that appear as their own card in the deck (PIP / split siblings are omitted).
+    private var slidesManagementVisiblePlaceSlideIndices: [Int] {
+        slides.indices.filter { slides[$0].kind == .placeStop && !isSlideHiddenBySiblingPIP(at: $0, in: slides) }
+    }
+
     private var slidesManagementAllPlaceSlidesSelected: Bool {
-        let idxs = slides.indices.filter { slides[$0].kind == .placeStop }
+        let idxs = slidesManagementVisiblePlaceSlideIndices
         guard !idxs.isEmpty else { return false }
         return idxs.allSatisfy { slides[$0].isSelected }
     }
 
     private var slidesManagementNoPlaceSlidesSelected: Bool {
-        let idxs = slides.indices.filter { slides[$0].kind == .placeStop }
+        let idxs = slidesManagementVisiblePlaceSlideIndices
         guard !idxs.isEmpty else { return true }
         return idxs.allSatisfy { !slides[$0].isSelected }
     }
@@ -12864,6 +12906,17 @@ private struct CarouselPhotoGroupPickerSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             slidesManagementTipBanner
             slidesManagementPlacePhotoBulkSection
+            Toggle("Photo slide after place map (single photo)", isOn: $singlePhotoPlaceSlideAfterIntroMap)
+                .font(.body)
+                .tint(CarouselStudioChrome.accent)
+            Text(
+                singlePhotoPlaceSlideAfterIntroMap
+                    ? "Each place with one photo gets the map card and a separate full photo slide. The deck reloads when you change this."
+                    : "When a place has only one photo, it may appear only on the place map card. Turn on to add a dedicated photo slide too."
+            )
+            .font(.footnote)
+            .foregroundStyle(.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
             if hasAnyMapSlides {
                 Toggle("Remove maps from carousel", isOn: $removeMapsFromCarousel)
                     .font(.body)
