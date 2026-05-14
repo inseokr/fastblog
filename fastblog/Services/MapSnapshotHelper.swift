@@ -3,6 +3,16 @@ import MapKit
 import UIKit
 import SwiftUI
 
+// MARK: - Map snapshotter options (shared Studio / export tweaks)
+
+extension MKMapSnapshotter.Options {
+    /// Standard map tiles plus **all** Apple POI categories so neighbourhood context
+    /// (district names, parks, transit, etc.) stays visible at carousel export sizes.
+    func applyFastblogCarouselMapDisplayTweaks() {
+        pointOfInterestFilter = .includingAll
+    }
+}
+
 /// Generates static map images for PDF Export using MKMapSnapshotter and CGContext.
 class MapSnapshotHelper {
     
@@ -50,6 +60,7 @@ class MapSnapshotHelper {
         options.scale = snapshotScale
         options.mapType = .standard
         options.traitCollection = UITraitCollection(userInterfaceStyle: .light)
+        options.applyFastblogCarouselMapDisplayTweaks()
 
         let snapshotter = MKMapSnapshotter(options: options)
 
@@ -239,6 +250,7 @@ class MapSnapshotHelper {
         options.scale = await MainActor.run { UIScreen.main.scale }
         options.mapType = .standard
         options.traitCollection = UITraitCollection(userInterfaceStyle: .light)
+        options.applyFastblogCarouselMapDisplayTweaks()
 
         let snapshotter = MKMapSnapshotter(options: options)
 
@@ -340,7 +352,43 @@ class MapSnapshotHelper {
         }
     }
 
-    // MARK: - Carousel Studio — place intro (map region matches Studio **day map** zoom)
+    // MARK: - Carousel Studio — place intro (neighbourhood map around the focused stop)
+
+    /// Tight neighbourhood map highlighting one drawable stop (`UIScreen` scale). Other stops render as muted dots;
+    /// the focused marker is oversized with a strong halo. Place title is **not** drawn on the bitmap — Carousel Studio
+    /// paints the name on the photo strip for split slides.
+    static func generateCarouselPlaceIntroSnapshot(
+        drawableDayStops: [PlaceStop],
+        focusedDrawableIndex: Int,
+        logicalSize: CGSize,
+        displayScale: CGFloat? = nil
+    ) async -> UIImage? {
+        guard drawableDayStops.indices.contains(focusedDrawableIndex) else { return nil }
+        guard let fc = coordinateForCarouselIncludedStop(stop: drawableDayStops[focusedDrawableIndex]) else {
+            return nil
+        }
+        let entries = buildCarouselStudioMarkerEntries(
+            drawableStops: drawableDayStops,
+            focusedIndex: focusedDrawableIndex
+        )
+        guard !entries.isEmpty else { return nil }
+        // ~1 km span keeps street context, nearby POI labels, and district names readable on portrait cards.
+        let neighborhood = MKCoordinateRegion(center: fc, latitudinalMeters: 1_050, longitudinalMeters: 1_050)
+        let region = validatedSnapshotRegion(neighborhood, fallbackCenter: fc, minSpanFloor: nil)
+        let shortest = min(logicalSize.width, logicalSize.height)
+        let markerRadius = min(max(shortest * 0.072, 26), 40)
+        return await renderMarkedSnapshot(
+            region: region,
+            entries: entries,
+            logicalSize: logicalSize,
+            displayScale: displayScale,
+            showPlaceNamePillForFocused: false,
+            showDistancePills: false,
+            focusedMarkerTripRoleColors: false,
+            focusedPlaceNameMarkerRadius: nil,
+            focusedMarkerRadius: markerRadius
+        )
+    }
 
     /// Included-photo coordinate for Carousel Studio snapshots when `representativeLocation` is missing.
     private static func coordinateForCarouselIncludedStop(stop: PlaceStop) -> CLLocationCoordinate2D? {
@@ -365,56 +413,6 @@ class MapSnapshotHelper {
             entries.append((displayNumber: seq, coord: coord, placeTitle: stop.placeTitle, isFocused: focused))
         }
         return entries
-    }
-
-    /// Tight neighbourhood map highlighting one drawable stop (`UIScreen` scale). Other stops render as muted dots;
-    /// the focused marker gets the cinematic halo plus an under-pin place-title pill — same decoration path as video export.
-    /// - Parameter dayPlaceStopsForRouteRegion: When set (pass the day’s full `placeStops`), the **map camera** uses the same
-    ///   bounds / padding / inflate / bias as `generatePhotoRouteSnapshot` with `regionPadding: 0.18` (Carousel Studio day map).
-    ///   Markers still come from `drawableDayStops` only.
-    static func generateCarouselPlaceIntroSnapshot(
-        drawableDayStops: [PlaceStop],
-        focusedDrawableIndex: Int,
-        logicalSize: CGSize,
-        displayScale: CGFloat? = nil,
-        dayPlaceStopsForRouteRegion: [PlaceStop]? = nil
-    ) async -> UIImage? {
-        guard drawableDayStops.indices.contains(focusedDrawableIndex) else { return nil }
-        guard let fc = coordinateForCarouselIncludedStop(stop: drawableDayStops[focusedDrawableIndex]) else {
-            return nil
-        }
-        let entries = buildCarouselStudioMarkerEntries(
-            drawableStops: drawableDayStops,
-            focusedIndex: focusedDrawableIndex
-        )
-        guard !entries.isEmpty else { return nil }
-        let coordsForRegion = photoRouteMarkerCoordinates(for: dayPlaceStopsForRouteRegion ?? drawableDayStops)
-        let regionCoords = coordsForRegion.isEmpty ? entries.map(\.coord) : coordsForRegion
-        // Match Carousel Studio **day map** zoom: same `regionPadding`, marker/pill inflate, and first-stop bias
-        // as `generatePhotoRouteSnapshot` when `loadSlides` passes `regionPadding: 0.18`.
-        let studioDayMapPadding = 0.18
-        let rawDisplayRegion = carouselPhotoRouteDisplayRegion(
-            coords: regionCoords,
-            size: logicalSize,
-            regionPadding: studioDayMapPadding,
-            carouselDayFirstStopFocus: false
-        ) ?? MKCoordinateRegion(center: fc, latitudinalMeters: 420, longitudinalMeters: 420)
-        let region = validatedSnapshotRegion(rawDisplayRegion, fallbackCenter: fc, minSpanFloor: nil)
-        let shortest = min(logicalSize.width, logicalSize.height)
-        // `drawPlaceNamePillUnderMarker` scales type from markerRadius; anchored well above legacy 14 so names read on export cards.
-        let placeNameAnchorRadius = min(max(shortest * 0.086, 44), 78)
-        let markerRadius = min(max(shortest * 0.056, 20), 30)
-        return await renderMarkedSnapshot(
-            region: region,
-            entries: entries,
-            logicalSize: logicalSize,
-            displayScale: displayScale,
-            showPlaceNamePillForFocused: true,
-            showDistancePills: false,
-            focusedMarkerTripRoleColors: false,
-            focusedPlaceNameMarkerRadius: placeNameAnchorRadius,
-            focusedMarkerRadius: markerRadius
-        )
     }
 
     /// Degenerate / corrupt EXIF coords (NaN, non-finite lat/lon) or antimeridian spans will make
@@ -511,8 +509,32 @@ class MapSnapshotHelper {
         context.setShadow(offset: CGSize(width: 0, height: max(2, radius * 0.14)), blur: shadowBlur,
                           color: UIColor.black.withAlphaComponent(0.52).cgColor)
 
-        context.setFillColor(color.cgColor)
-        context.fillEllipse(in: rect)
+        if radius >= 18,
+           let gradient = CGGradient(
+               colorsSpace: CGColorSpaceCreateDeviceRGB(),
+               colors: [
+                   color.withAlphaComponent(0.92).cgColor,
+                   color.cgColor,
+                   color.withAlphaComponent(0.88).cgColor,
+               ] as CFArray,
+               locations: [0, 0.55, 1]
+           ) {
+            context.saveGState()
+            context.addEllipse(in: rect)
+            context.clip()
+            context.drawRadialGradient(
+                gradient,
+                startCenter: CGPoint(x: point.x - radius * 0.22, y: point.y - radius * 0.28),
+                startRadius: 0,
+                endCenter: point,
+                endRadius: radius * 1.02,
+                options: [.drawsAfterEndLocation]
+            )
+            context.restoreGState()
+        } else {
+            context.setFillColor(color.cgColor)
+            context.fillEllipse(in: rect)
+        }
 
         context.setShadow(offset: .zero, blur: 0, color: nil)
         context.setStrokeColor(UIColor.white.withAlphaComponent(0.98).cgColor)
@@ -1038,6 +1060,7 @@ class MapSnapshotHelper {
         opts.scale = displayScale
         opts.mapType = .standard
         opts.traitCollection = UITraitCollection(userInterfaceStyle: .light)
+        opts.applyFastblogCarouselMapDisplayTweaks()
         do {
             let snapshot = try await MKMapSnapshotter(options: opts).start()
             UIGraphicsBeginImageContextWithOptions(snapshot.image.size, true, snapshot.image.scale)
@@ -1160,6 +1183,7 @@ class MapSnapshotHelper {
         opts.scale = resolvedScale
         opts.mapType = .standard
         opts.traitCollection = UITraitCollection(userInterfaceStyle: .light)
+        opts.applyFastblogCarouselMapDisplayTweaks()
 
         do {
             let snapshot = try await MKMapSnapshotter(options: opts).start()
@@ -1218,12 +1242,18 @@ class MapSnapshotHelper {
                     return entry.displayNumber == 1 ? .systemGreen : .systemBlue
                 }()
                 let markerR = focusedMarkerRadius ?? 14
-                let haloR = markerR * 1.64
+                // Soft ground glow only — keeps the pin legible on busy tiles without loud rings.
                 context.saveGState()
-                context.setStrokeColor(color.withAlphaComponent(0.44).cgColor)
-                context.setLineWidth(max(2.5, markerR * 0.2))
-                context.strokeEllipse(in: CGRect(x: pt.x - haloR, y: pt.y - haloR, width: haloR * 2, height: haloR * 2))
+                context.setShadow(
+                    offset: CGSize(width: 0, height: markerR * 0.22),
+                    blur: markerR * 0.58,
+                    color: UIColor.black.withAlphaComponent(0.5).cgColor
+                )
+                let glowR = markerR * 1.48
+                context.setFillColor(UIColor(white: 0.12, alpha: 0.28).cgColor)
+                context.fillEllipse(in: CGRect(x: pt.x - glowR, y: pt.y - glowR, width: glowR * 2, height: glowR * 2))
                 context.restoreGState()
+
                 drawMarker(at: pt, number: entry.displayNumber, color: color, context: context, radius: markerR)
                 if showPlaceNamePillForFocused {
                     let pillRadius = focusedPlaceNameMarkerRadius ?? 14

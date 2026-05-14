@@ -88,13 +88,20 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
 
     // MARK: - Provider selection
 
-    /// Call this once the place's country is known. Always uses MapKit (Apple Maps) for autocomplete and resolution.
+    /// Call this once the place's country is known. Switches to Kakao for KR when the API key is configured.
     func setProvider(isoCountryCode: String) {
-        activeProvider = .mapKit
-        kakaoSearchTask?.cancel()
-        kakaoSearchTask = nil
-        suggestions = []
-        debugPrint("[PlaceSearch] provider → MapKit (always; country=\(isoCountryCode))")
+        if isoCountryCode == "KR", KakaoLocalService.shared.isAvailable {
+            activeProvider = .kakao
+            completer.queryFragment = ""
+            suggestions = []
+            debugPrint("[PlaceSearch] provider → Kakao (KR)")
+        } else {
+            activeProvider = .mapKit
+            kakaoSearchTask?.cancel()
+            kakaoSearchTask = nil
+            suggestions = []
+            debugPrint("[PlaceSearch] provider → MapKit (\(isoCountryCode))")
+        }
     }
 
     // MARK: - Bias location
@@ -210,6 +217,31 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
     /// coordinate is often offset 30–80 m (sometimes more, e.g. hotel entrance vs. building footprint),
     /// so a strict-only search misses POIs the user clearly tapped on. Picked to match the upper Kakao tier.
     private static let widePOIFallbackRadiusMeters: Double = 250
+
+    /// Routes a map tap to Kakao (when activeProvider == .kakao) or MapKit, from a single call site.
+    /// `EditPlaceStopNameSheet` always calls this so Korean map taps go through Kakao automatically.
+    func resolveMapTapForCurrentProvider(
+        near coordinate: CLLocationCoordinate2D,
+        mapRegion: MKCoordinateRegion? = nil
+    ) async -> MapTapPOIResult {
+        if activeProvider == .kakao, KakaoLocalService.shared.isAvailable {
+            let zoom = Self.kakaoZoomLevelFromRegion(mapRegion)
+            return await resolveKakaoMapTapPOI(near: coordinate, kakaoZoomLevel: zoom)
+        }
+        return await resolveMapTapPOI(near: coordinate, mapRegion: mapRegion)
+    }
+
+    /// Converts an MKCoordinateRegion latitude delta to an approximate Kakao zoom level (13–20).
+    private static func kakaoZoomLevelFromRegion(_ region: MKCoordinateRegion?) -> Int {
+        guard let latDelta = region?.span.latitudeDelta else { return 16 }
+        switch latDelta {
+        case ..<0.002: return 20
+        case ..<0.004: return 18
+        case ..<0.008: return 16
+        case ..<0.02:  return 14
+        default:       return 13
+        }
+    }
 
     /// Resolves a bare map tap to a POI using MKLocalPointsOfInterestRequest.
     /// Strategy: strict zoom-scaled radius first (best when the tap landed on a label), then a generous

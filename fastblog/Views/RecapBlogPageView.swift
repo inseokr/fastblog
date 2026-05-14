@@ -7537,9 +7537,9 @@ private struct FirstSaveBlogSettingsSpotlightOverlay: View {
                     .foregroundStyle(.white.opacity(0.92))
                     .fixedSize(horizontal: false, vertical: true)
 
-                (Text("Places, photos, and captions: open Blog Settings, then tap ") +
-                    Text("Edit Blog").fontWeight(.semibold) +
-                    Text("."))
+                (Text("Places, photos, and captions: tap the ") +
+                    Text("pencil").fontWeight(.semibold) +
+                    Text(" in the toolbar."))
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.88))
                     .fixedSize(horizontal: false, vertical: true)

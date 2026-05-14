@@ -2146,6 +2146,22 @@ private struct DraggableTextBlock<Content: View>: View {
     }
 }
 
+/// Bold line for `.placeStop` or `.placeIntroMap` split primary blocks (shared `dayInfoLine1` backing for intro).
+private func studioSplitOrPlacePrimaryTitle(slide: CarouselSlide, placeStop: PlaceStop) -> String {
+    if slide.kind == .placeStop { return placeStop.placeTitle }
+    let s = (slide.dayTitle ?? slide.dayInfoLine1 ?? placeStop.placeTitle)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return s.isEmpty ? placeStop.placeTitle : s
+}
+
+/// City / area line under the place name — matches seeded `dayInfoLine2`, then `placeSubtitle`.
+private func studioPlaceIntroSplitCityLine(slide: CarouselSlide, placeStop: PlaceStop) -> String? {
+    let fromSlide = (slide.dayInfoLine2 ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    if !fromSlide.isEmpty { return fromSlide }
+    let sub = (placeStop.placeSubtitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    return sub.isEmpty ? nil : sub
+}
+
 private func mapRouteStoryVisible(_ slide: CarouselSlide) -> Bool {
     guard isCarouselStudioMapKind(slide.kind) else { return false }
     return !(slide.dayStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -2154,9 +2170,12 @@ private func mapRouteStoryVisible(_ slide: CarouselSlide) -> Bool {
 /// Whether the place-stop slide has any top-leading secondary text to show.
 /// The secondary block renders the place subtitle (city, country) at the top —
 /// so the top gradient is gated on that, not on the primary block.
+/// Same subtitle on `.placeIntroMap` split slides (photo strip + map).
 private func placeSubtitleVisible(_ slide: CarouselSlide) -> Bool {
     guard let sub = slide.placeStop?.placeSubtitle else { return false }
-    return !sub.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let t = sub.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !t.isEmpty else { return false }
+    return slide.kind == .placeStop
 }
 
 /// PIP cluster default placement and clamping rules.
@@ -2403,17 +2422,20 @@ struct CarouselSlideView: View {
                         let photoFrac = isCarouselStudioMapKind(slide.kind)
                             ? mapSplitPhotoFractionForStudioMapSplit()
                             : 0.5 as CGFloat
+                        let mapSplitHighlightsInvert = isCarouselStudioMapKind(slide.kind)
+                        let ringTop = mapSplitHighlightsInvert ? (slot == .bottom) : (slot == .top)
+                        let ringBottom = mapSplitHighlightsInvert ? (slot == .top) : (slot == .bottom)
                         VStack(spacing: 0) {
                             RoundedRectangle(cornerRadius: 0)
                                 .strokeBorder(
-                                    slot == .top ? Color.white.opacity(0.55) : Color.clear,
+                                    ringTop ? Color.white.opacity(0.55) : Color.clear,
                                     lineWidth: 2
                                 )
                                 .frame(width: width, height: height * photoFrac)
                                 .allowsHitTesting(false)
                             RoundedRectangle(cornerRadius: 0)
                                 .strokeBorder(
-                                    slot == .bottom ? Color.white.opacity(0.55) : Color.clear,
+                                    ringBottom ? Color.white.opacity(0.55) : Color.clear,
                                     lineWidth: 2
                                 )
                                 .frame(width: width, height: height * (1 - photoFrac))
@@ -2424,7 +2446,10 @@ struct CarouselSlideView: View {
                     }
                 }
                 if !showsBackgroundOnly {
-                    if !slide.isPrimaryHidden {
+                    let mapSplitTopFade = slide.layout == .split
+                        && placeSubtitleVisible(slide)
+                        && !slide.isSecondaryHidden
+                    if !slide.isPrimaryHidden || mapSplitTopFade {
                         LinearGradient(colors: [.black.opacity(0.6), .clear],
                                        startPoint: .top, endPoint: .init(x: 0.5, y: 0.45))
                             .frame(width: width, height: height)
@@ -2563,9 +2588,13 @@ struct CarouselSlideView: View {
                 )
             }
         }
-        // Map heading — top-leading
+        // Map heading — top-leading (hidden on split map slides: photo half carries the title /
+        // place-intro split paints the same headline via the place-style block below).
         .overlay(alignment: .topLeading) {
-            if !showsBackgroundOnly, isCarouselStudioMapKind(slide.kind), !slide.isPrimaryHidden {
+            if !showsBackgroundOnly,
+               isCarouselStudioMapKind(slide.kind),
+               slide.layout != .split,
+               !slide.isPrimaryHidden {
                 DraggableTextBlock(
                     id: .primary,
                     isEditingText: isEditingText,
@@ -2720,10 +2749,16 @@ struct CarouselSlideView: View {
                 .padding(.bottom, width * 0.17)
             }
         }
-        // Place name + caption — anchor driven by `placeZoneLayout`
+        // Place name + caption — anchor driven by `placeZoneLayout` (full slide for `.placeStop`).
         .overlay(alignment: slide.placeZoneLayout.primaryOverlayAlignment) {
-            if !showsBackgroundOnly, slide.kind == .placeStop, !slide.isPrimaryHidden {
-                if let placeStop = slide.placeStop {
+            let isPlaceIntroSplitPrimary = slide.kind == .placeIntroMap
+                && slide.layout == .split
+                && slide.placeStop != nil
+            if !showsBackgroundOnly,
+               slide.kind == .placeStop,
+               !isPlaceIntroSplitPrimary,
+               !slide.isPrimaryHidden,
+               let placeStop = slide.placeStop {
                     DraggableTextBlock(
                         id: .primary,
                         isEditingText: isEditingText,
@@ -2746,7 +2781,7 @@ struct CarouselSlideView: View {
                                         .foregroundStyle(studioEffectiveForegroundColor(slide.textStyle.primary))
                                         .symbolRenderingMode(.monochrome)
                                 }
-                                Text(placeStop.placeTitle)
+                                Text(studioSplitOrPlacePrimaryTitle(slide: slide, placeStop: placeStop))
                                     .font(.system(size: width * 0.065 * slide.textStyle.primary.sizeScale,
                                                   weight: studioFontWeight(base: .bold,
                                                                            isBold: slide.textStyle.primary.isBold),
@@ -2784,20 +2819,83 @@ struct CarouselSlideView: View {
                         onTextPinchBegan: onTextPinchBegan
                     )
                     .padding(studioTextBlockEdgeInset)
-                } else {
-                    Text("Missing place data")
-                        .font(.system(size: width * 0.05, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.9))
-                        .padding(width * 0.038)
-                        .padding(studioTextBlockEdgeInset)
-                }
+            } else if slide.kind == .placeStop {
+                Text("Missing place data")
+                    .font(.system(size: width * 0.05, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.9))
+                    .padding(width * 0.038)
+                    .padding(studioTextBlockEdgeInset)
             }
         }
-        // Place subtitle (city, country) — top anchor from `placeZoneLayout`
+        // `.placeIntroMap` + split: primary must sit inside the **top photo strip** only (not over the map).
+        .overlay(alignment: .topLeading) {
+            let isPlaceIntroSplitPrimary = slide.kind == .placeIntroMap
+                && slide.layout == .split
+                && slide.placeStop != nil
+            if !showsBackgroundOnly, isPlaceIntroSplitPrimary, !slide.isPrimaryHidden, let placeStop = slide.placeStop {
+                let photoH = height * mapSplitPhotoFractionForStudioMapSplit()
+                let photoStripBounds = CGRect(x: 0, y: 0, width: width, height: photoH)
+                DraggableTextBlock(
+                    id: .primary,
+                    isEditingText: isEditingText,
+                    showsEditingOutline: showsDraggableBlockOutlines,
+                    isSelected: selectedBlockID == .primary,
+                    savedOffset: offsetBinding(for: .primary),
+                    slideBounds: photoStripBounds,
+                    onSelect: { onSelectBlock?(.primary) },
+                    onDragStart: { onBlockDragStart?() },
+                    onDragEnd: { onBlockDragEnd?() },
+                    onTap: { onBlockTap?(.primary) },
+                    content: {
+                    VStack(alignment: slide.placeZoneLayout.primaryHorizontalFallback(for: slide.textStyle.primary),
+                           spacing: 4) {
+                        Text(studioSplitOrPlacePrimaryTitle(slide: slide, placeStop: placeStop))
+                            .font(.system(size: width * 0.065 * slide.textStyle.primary.sizeScale,
+                                          weight: studioFontWeight(base: .heavy,
+                                                                   isBold: slide.textStyle.primary.isBold),
+                                          design: slide.textStyle.primary.fontDesign.design))
+                            .foregroundColor(studioEffectiveForegroundColor(slide.textStyle.primary))
+                            .lineLimit(2)
+                            .multilineTextAlignment(
+                                slide.placeZoneLayout.primaryTextAlignmentFallback(for: slide.textStyle.primary))
+                            .studioTextFormat(slide.textStyle.primary)
+                        if let city = studioPlaceIntroSplitCityLine(slide: slide, placeStop: placeStop) {
+                            Text(city)
+                                .font(.system(size: width * 0.038 * slide.textStyle.primary.sizeScale,
+                                              weight: studioFontWeight(base: .semibold,
+                                                                       isBold: slide.textStyle.primary.isBold),
+                                              design: slide.textStyle.primary.fontDesign.design))
+                                .foregroundColor(studioEffectiveForegroundColor(slide.textStyle.primary,
+                                                                                naturalOpacity: 0.88))
+                                .lineLimit(1)
+                                .multilineTextAlignment(
+                                    slide.placeZoneLayout.primaryTextAlignmentFallback(for: slide.textStyle.primary))
+                                .studioTextFormat(slide.textStyle.primary)
+                        }
+                    }
+                    .studioTextPill(slide.textStyle.primary,
+                                    cornerRadius: width * 0.045,
+                                    hPadding: width * 0.032,
+                                    vPadding: width * 0.02)
+                    .padding(width * 0.038)
+                    },
+                    textSizeScaleForPinch: slide.textStyle.primary.sizeScale,
+                    onUpdateTextSizeScale: onUpdateTextSizeScale,
+                    onTextPinchBegan: onTextPinchBegan
+                )
+                .padding(studioTextBlockEdgeInset)
+                .frame(width: width, height: photoH, alignment: .topLeading)
+            }
+        }
+        // Place subtitle (city, country) — top anchor from `placeZoneLayout` (`.placeStop` only;
+        // `.placeIntroMap` + split keeps city on the photo with the place name, like the original map heading).
         .overlay(alignment: slide.placeZoneLayout.secondaryOverlayAlignment) {
             let subtitleText = (slide.placeStop?.placeSubtitle ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !showsBackgroundOnly, slide.kind == .placeStop, !slide.isSecondaryHidden, !subtitleText.isEmpty {
+            if !showsBackgroundOnly,
+               slide.kind == .placeStop,
+               !slide.isSecondaryHidden,
+               !subtitleText.isEmpty {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
@@ -4243,8 +4341,14 @@ private struct SplitPhotoRepositionCover: View {
 
                         // Keep slot selector directly below the photo area.
                         Picker("Photo", selection: $activeSlot) {
-                            Text("Top").tag(SplitRepositionSlot.top)
-                            Text("Bottom").tag(SplitRepositionSlot.bottom)
+                            if slides.indices.contains(slideIndex),
+                               isCarouselStudioMapKind(slides[slideIndex].kind) {
+                                Text("Photo").tag(SplitRepositionSlot.bottom)
+                                Text("Map").tag(SplitRepositionSlot.top)
+                            } else {
+                                Text("Top").tag(SplitRepositionSlot.top)
+                                Text("Bottom").tag(SplitRepositionSlot.bottom)
+                            }
                         }
                         .pickerStyle(.segmented)
                         .frame(width: slotW)
@@ -4849,10 +4953,17 @@ struct SlideTextEditorView: View {
             && Set(studioDownloadCandidateIndices) == downloadSlidePickSelection
     }
 
-    /// True when the share pick set is exactly the full candidate list.
+    /// Share candidates excluding map slides — used so "Select All / Deselect All"
+    /// never touches maps (maps are controlled exclusively by the "Remove maps" toggle).
+    private var sharePickPhotoOnlyCandidateIndices: [Int] {
+        studioDownloadCandidateIndices.filter { !isCarouselStudioMapKind(slides[$0].kind) }
+    }
+
+    /// True when all non-map share candidates are selected.
     private var sharePickSelectionMatchesAll: Bool {
-        !studioDownloadCandidateIndices.isEmpty
-            && Set(studioDownloadCandidateIndices) == shareSlidePickSelection
+        let photoCandidates = sharePickPhotoOnlyCandidateIndices
+        return !photoCandidates.isEmpty
+            && Set(photoCandidates).isSubset(of: shareSlidePickSelection)
     }
 
     private func selectAllSlidesForDownloadPick() {
@@ -4868,10 +4979,12 @@ struct SlideTextEditorView: View {
     }
 
     private func toggleShareSlidePickSelectAll() {
+        let photoCandidates = Set(sharePickPhotoOnlyCandidateIndices)
         if sharePickSelectionMatchesAll {
-            shareSlidePickSelection = []
+            // Deselect only photo slides — leave map selection state untouched.
+            shareSlidePickSelection.subtract(photoCandidates)
         } else {
-            selectAllSlidesForSharePick()
+            shareSlidePickSelection.formUnion(photoCandidates)
         }
     }
 
@@ -4895,7 +5008,8 @@ struct SlideTextEditorView: View {
     }
 
     private func selectAllSlidesForSharePick() {
-        shareSlidePickSelection = Set(studioDownloadCandidateIndices)
+        // Add all photo slides; maps are controlled by their own toggle.
+        shareSlidePickSelection.formUnion(sharePickPhotoOnlyCandidateIndices)
     }
 
     private func toggleSharePick(for index: Int) {
@@ -5709,7 +5823,7 @@ struct SlideTextEditorView: View {
         case (.mapRoute, .secondary):
             return "Optional. Shown along the bottom of the map when this block has text."
         case (.placeIntroMap, .primary):
-            return "The headline on this focused-place map slide."
+            return "Place name and city on the photo strip of this split map slide (same order as the classic map heading)."
         case (.placeIntroMap, .secondary):
             return "Optional. Shown along the bottom of the map when this block has text."
         case (.placeStop, .primary):
@@ -6890,15 +7004,25 @@ struct SlideTextEditorView: View {
                                                 onRequestSplitBottomPick: { idx in
                                                     selectedBlock = nil
                                                     selectedPIPPhotoIndex = nil
-                                                    selectedSplitSlot = .bottom
-                                                    // Split UX: tapping the bottom photo/placeholder
-                                                    // should directly open replace flow.
-                                                    presentSplitBottomPicker(for: idx)
+                                                    guard slides.indices.contains(idx) else { return }
+                                                    if isCarouselStudioMapKind(slides[idx].kind) {
+                                                        // Visual lower half = map (`splitTopFraming`); do not open photo picker.
+                                                        selectedSplitSlot = .top
+                                                    } else {
+                                                        selectedSplitSlot = .bottom
+                                                        presentSplitBottomPicker(for: idx)
+                                                    }
                                                 },
-                                                onRequestSplitTopSelect: { _ in
+                                                onRequestSplitTopSelect: { idx in
                                                     selectedBlock = nil
                                                     selectedPIPPhotoIndex = nil
-                                                    selectedSplitSlot = .top
+                                                    guard slides.indices.contains(idx) else { return }
+                                                    if isCarouselStudioMapKind(slides[idx].kind) {
+                                                        // Visual upper half = photo (`splitBottomFraming`).
+                                                        selectedSplitSlot = .bottom
+                                                    } else {
+                                                        selectedSplitSlot = .top
+                                                    }
                                                 },
                                                 selectedSplitSlot: selectedSplitSlot,
                                                 onRequestStudioCoverPhotoPick: onRequestStudioCoverPhotoPick,
@@ -7280,23 +7404,34 @@ struct SlideTextEditorView: View {
     @ViewBuilder
     private var exportHubSharePickContent: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Remove maps from share", isOn: sharePickOmitMapsToggleBinding)
-                    .font(.subheadline)
-                    .tint(CarouselStudioChrome.accent)
-                    .disabled(sharePickMapSlideIndices.isEmpty)
-                if sharePickMapSlideIndices.isEmpty {
-                    Text("No map slides in this share list.")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
-
             HStack(spacing: 8) {
+                let mapsOmitted = sharePickEffectivelyOmitsMapsFromShare
+                if !sharePickMapSlideIndices.isEmpty {
+                    Button {
+                        let maps = Set(sharePickMapSlideIndices)
+                        if mapsOmitted {
+                            shareSlidePickSelection.formUnion(maps)
+                        } else {
+                            shareSlidePickSelection.subtract(maps)
+                        }
+                    } label: {
+                        Label(
+                            mapsOmitted ? "Include Maps" : "Remove Maps",
+                            systemImage: mapsOmitted ? "map.fill" : "map"
+                        )
+                        .labelStyle(.titleAndIcon)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(mapsOmitted ? Color.primary : .white)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .background {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(mapsOmitted
+                                      ? Color(uiColor: .secondarySystemFill)
+                                      : CarouselStudioChrome.accent)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
                 Button(action: toggleShareSlidePickSelectAll) {
                     Label(
                         sharePickSelectionMatchesAll ? "Deselect All" : "Select All",
@@ -7316,6 +7451,7 @@ struct SlideTextEditorView: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
+            .padding(.top, 10)
             .padding(.bottom, 8)
 
             ScrollView {
@@ -10977,8 +11113,7 @@ struct SocialPostStudioSheet: View {
                     let introCandidate = await MapSnapshotHelper.generateCarouselPlaceIntroSnapshot(
                         drawableDayStops: drawableForMap,
                         focusedDrawableIndex: dIdx,
-                        logicalSize: exportSize,
-                        dayPlaceStopsForRouteRegion: day.placeStops
+                        logicalSize: exportSize
                     )
                     await advanceSlidePreparationProgress(completed: &prepCompleted, total: prepTotal, generation: generation)
                     if let introSnap = introCandidate {
@@ -11000,6 +11135,7 @@ struct SocialPostStudioSheet: View {
                             dayInfoLine2: (subtitle?.isEmpty == false) ? subtitle : nil,
                             placeStop: stop,
                             dayStory: teaser,
+                            textStyle: .placeStopDefault,
                             layout: .split,
                             splitBottomImage: splitBottomUIImage,
                             splitBottomPhotoID: splitBottomID,
@@ -11043,7 +11179,7 @@ struct SocialPostStudioSheet: View {
 
             let mapSnap = await MapSnapshotHelper.generatePhotoRouteSnapshot(
                 for: day.placeStops, markerImagesByStopId: markerImages,
-                size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.18,
+                size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.13,
                 carouselDayFirstStopFocus: false)
             await advanceSlidePreparationProgress(completed: &prepCompleted, total: prepTotal, generation: generation)
 
@@ -12244,10 +12380,15 @@ private struct CarouselPhotoGroupPickerSheet: View {
         return idxs.allSatisfy { slides[$0].isSelected }
     }
 
-    private func toggleSlidesManagementSelectAllPlacePhotos() {
-        let turnOn = !slidesManagementAllPlaceSlidesSelected
+    private var slidesManagementNoPlaceSlidesSelected: Bool {
+        let idxs = slides.indices.filter { slides[$0].kind == .placeStop }
+        guard !idxs.isEmpty else { return true }
+        return idxs.allSatisfy { !slides[$0].isSelected }
+    }
+
+    private func slidesManagementSetAllPlacePhotoSlidesSelected(_ selected: Bool) {
         for i in slides.indices where slides[i].kind == .placeStop {
-            slides[i].isSelected = turnOn
+            slides[i].isSelected = selected
         }
         onBulkSlidesExportSelectionChanged?()
     }
@@ -12267,29 +12408,42 @@ private struct CarouselPhotoGroupPickerSheet: View {
         .accessibilityAddTraits(.isHeader)
     }
 
+    /// Scrolls with the sheet: bulk include/exclude for **place photo** slides only (not sticky with the export summary).
     @ViewBuilder
-    private var slidesManagementBulkPhotoSelectionBar: some View {
+    private var slidesManagementPlacePhotoBulkSection: some View {
         if slidesManagementHasPlaceSlidesForBulkBar {
-            Button {
-                toggleSlidesManagementSelectAllPlacePhotos()
-            } label: {
-                Label(
-                    slidesManagementAllPlaceSlidesSelected ? "Deselect All" : "Select All",
-                    systemImage: slidesManagementAllPlaceSlidesSelected ? "circle" : "checkmark.circle.fill"
-                )
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Place photo slides")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text("Map and cover slides stay as they are. Use the toggle below for maps, or each card’s corner check.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Button {
+                        slidesManagementSetAllPlacePhotoSlidesSelected(true)
+                    } label: {
+                        Label("Select all", systemImage: "checkmark.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(CarouselStudioChrome.accent)
+                    .disabled(slidesManagementAllPlaceSlidesSelected)
+
+                    Button {
+                        slidesManagementSetAllPlacePhotoSlidesSelected(false)
+                    } label: {
+                        Label("Deselect all", systemImage: "circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(slidesManagementNoPlaceSlidesSelected)
+                }
                 .labelStyle(.titleAndIcon)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(slidesManagementAllPlaceSlidesSelected ? Color.primary : .white)
-                .frame(maxWidth: .infinity, minHeight: 40)
-                .background {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(slidesManagementAllPlaceSlidesSelected
-                              ? Color(uiColor: .secondarySystemFill)
-                              : CarouselStudioChrome.accent)
-                }
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Turns every place photo slide on or off for this carousel.")
+            .accessibilityElement(children: .contain)
         }
     }
 
@@ -12709,6 +12863,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
     private var slidesManagementScrollContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             slidesManagementTipBanner
+            slidesManagementPlacePhotoBulkSection
             if hasAnyMapSlides {
                 Toggle("Remove maps from carousel", isOn: $removeMapsFromCarousel)
                     .font(.body)
@@ -12734,10 +12889,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
                 slidesManagementPinnedSelectionBar
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 4)
-                slidesManagementBulkPhotoSelectionBar
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
+                    .padding(.bottom, 8)
                 ScrollView {
                     slidesManagementScrollContent
                 }
