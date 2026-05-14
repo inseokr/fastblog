@@ -2849,7 +2849,7 @@ struct CarouselSlideView: View {
                         onTextPinchBegan: onTextPinchBegan
                     )
                     .padding(studioTextBlockEdgeInset)
-            } else if slide.kind == .placeStop {
+            } else if !showsBackgroundOnly, slide.kind == .placeStop {
                 Text("Missing place data")
                     .font(.system(size: width * 0.05, weight: .semibold))
                     .foregroundColor(.white.opacity(0.9))
@@ -10132,14 +10132,17 @@ struct SocialPostStudioSheet: View {
         } message: {
             Text(shareJPEGHardCapConfirmationMessage)
         }
-        .alert("Many slides in this carousel", isPresented: $showSocialCarouselOverflowAlert) {
+        .alert("Your carousel is pretty large", isPresented: $showSocialCarouselOverflowAlert) {
             Button("View Slides") { showPhotoGroupPicker = true }
             Button("Continue Anyway", role: .cancel) {}
         } message: {
             Text(
-                "Many social platforms limit how many photos you can post at once (often around 34 per carousel). "
-                + "You have \(socialCarouselOverflowSlideCount) slides selected. Large decks also use more memory on your device. "
-                + "Open the slide grid to trim your deck, use grouped layout (Multi) for busy stops, or Export → Share to pick a subset (up to \(CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage) slides)."
+                "Some platforms limit how many slides can be uploaded at once.\n\n"
+                + "You currently have \(socialCarouselOverflowSlideCount) slides selected. Instagram may only post the first 34 slides.\n\n"
+                + "You can:\n"
+                + "• Trim slides\n"
+                + "• Combine busy moments with Multi layout\n"
+                + "• Continue anyway"
             )
         }
         .sheet(isPresented: $showPhotoGroupPicker) {
@@ -12439,7 +12442,11 @@ private struct CarouselPhotoGroupPickerSheet: View {
         for item in managementItems {
             if let day = slidesManagementExportDayNumber(item: item) {
                 if lastBannerDay != day {
-                    rows.append(.dayBanner(day))
+                    if case .map = item.payload {
+                        // Day header is rendered inside the map slide card itself.
+                    } else {
+                        rows.append(.dayBanner(day))
+                    }
                     lastBannerDay = day
                 }
             } else {
@@ -12498,13 +12505,6 @@ private struct CarouselPhotoGroupPickerSheet: View {
     private var slidesManagementPlacePhotoBulkSection: some View {
         if slidesManagementHasPlaceSlidesForBulkBar {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Place photo slides")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text("Map and cover slides stay as they are. Use the toggle below for maps, or each card’s corner check.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     Button {
                         slidesManagementSetAllPlacePhotoSlidesSelected(true)
@@ -12995,9 +12995,6 @@ private struct CarouselPhotoGroupPickerSheet: View {
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    slidesManagementNavBarTitle
-                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .font(.body.weight(.semibold))
