@@ -1509,6 +1509,36 @@ private func socialPostStudioLoadSlidesPreparationUnitCount(blog: RecapBlogDetai
     return max(units, 1)
 }
 
+/// Row count `loadSlides()` will produce (cover + per-day map + place intro / place stops), **without** awaiting snapshots.
+/// Assumes a place intro map is added whenever drawable geometry exists (matches the common success case). Used so Slides
+/// Management summary updates immediately while `loadSlides()` runs (e.g. format change).
+private func expectedSocialPostStudioDeckSlideCountAfterReload(
+    blog: RecapBlogDetail,
+    excludedKeys: Set<String>
+) -> Int {
+    var count = 1 // cover
+    for day in blog.days {
+        let drawableForMap = carouselDrawableStopsForStudioDay(day: day, excludedKeys: excludedKeys)
+        var isFirstDrawableStop = true
+        var dayPlaceSlides = 0
+        for stop in day.placeStops {
+            let included = stop.photos.filter { $0.isIncluded }
+                .filter { !excludedKeys.contains(studioExclusionKey(stop: stop.id, photo: $0.id)) }
+            guard !included.isEmpty else { continue }
+
+            if !isFirstDrawableStop,
+               drawableForMap.firstIndex(where: { $0.id == stop.id }) != nil {
+                dayPlaceSlides += 1
+            }
+            isFirstDrawableStop = false
+
+            dayPlaceSlides += included.count
+        }
+        count += 1 + dayPlaceSlides // day map + that day’s place stack (same order as `loadSlides`)
+    }
+    return max(count, 1)
+}
+
 private func insertIndexForPlacePhotoInDay(
     day: RecapBlogDay,
     stopID: UUID,
@@ -9866,8 +9896,6 @@ struct SocialPostStudioSheet: View {
     @State private var largeStudioExportMemoryGate: LargeStudioExportMemoryGate? = nil
     /// One-time dismissible tip for removing place photos from the preview strip (`UserDefaults`).
     @AppStorage("carouselStudio.removePlacePhotoTip.dismissed") private var removePlacePhotoTipDismissed = false
-    /// When true, a stop with only one photo still gets a full `.placeStop` slide after `.placeIntroMap` (map + separate photo slide). Default is on so single-photo stops get a dedicated photo slide too.
-    @AppStorage("carouselStudio.singlePhotoPlaceSlideAfterIntroMap") private var singlePhotoPlaceSlideAfterIntroMap = true
     @Environment(\.dismiss) private var dismiss
     /// JPEG share >34 steps: confirm truncating to cap before opening the share sheet.
     @State private var pendingShareJPEGHardCapSteps: [ShareJPEGExportStep]?
@@ -10041,7 +10069,6 @@ struct SocialPostStudioSheet: View {
         }
         .task { await loadSlides() }
         .onChange(of: exportFormat) { _, _ in Task { await loadSlides() } }
-        .onChange(of: singlePhotoPlaceSlideAfterIntroMap) { _, _ in Task { await loadSlides() } }
         .sheet(isPresented: $showShareSheet, onDismiss: {
             cleanupTempFiles()
             if !pdfExportQueuedIndexChunks.isEmpty {
@@ -10121,6 +10148,8 @@ struct SocialPostStudioSheet: View {
                 blog: blog,
                 excludedKeys: excludedStudioPhotoKeys,
                 aspectRatio: exportFormat.aspectRatio,
+                isDeckReloading: isLoading,
+                isReelExport: exportFormat.isSingleSlide,
                 onSelectSlide: { index in
                     showPhotoGroupPicker = false
                     // Defer so the sheet can start dismissing; the editor then handles
@@ -11079,9 +11108,9 @@ struct SocialPostStudioSheet: View {
             return loadSlidesGeneration
         }
         let excludedSnapshot = await MainActor.run { excludedStudioPhotoKeys }
-        // Read format + preference on the main actor; the rest of this function may run off-main during awaits.
-        let (isReelSingleSlide, formatAspectRatio, singlePhotoSlideAfterIntro) = await MainActor.run {
-            (exportFormat.isSingleSlide, exportFormat.aspectRatio, singlePhotoPlaceSlideAfterIntroMap)
+        // Read format on the main actor; the rest of this function may run off-main during awaits.
+        let (isReelSingleSlide, formatAspectRatio) = await MainActor.run {
+            (exportFormat.isSingleSlide, exportFormat.aspectRatio)
         }
         let prepTotal = socialPostStudioLoadSlidesPreparationUnitCount(blog: blog, excludedKeys: excludedSnapshot)
         var prepCompleted = 0
@@ -11141,7 +11170,6 @@ struct SocialPostStudioSheet: View {
                 }
 
                 // Skip the placeIntroMap for the first stop — the day map already highlights it.
-                var appendedPlaceIntroMap = false
                 if !isFirstDrawableStop,
                    let dIdx = drawableForMap.firstIndex(where: { $0.id == stop.id }) {
                     let introCandidate = await MapSnapshotHelper.generateCarouselPlaceIntroSnapshot(
@@ -11175,19 +11203,12 @@ struct SocialPostStudioSheet: View {
                             splitBottomPhotoID: splitBottomID,
                             placeIntroBottomPhotos: []
                         ))
-                        appendedPlaceIntroMap = true
                     }
                 }
                 isFirstDrawableStop = false
 
                 for (photoIdx, photo) in included.enumerated() {
-                    // Omit the separate `.placeStop` slide when the place intro map already shows the only photo,
-                    // unless the user prefers a dedicated full-bleed photo slide as well (`singlePhotoPlaceSlideAfterIntroMap`).
-                    if included.count == 1,
-                       appendedPlaceIntroMap,
-                       !singlePhotoSlideAfterIntro {
-                        continue
-                    }
+                    // Always emit a `.placeStop` for each included photo (including when the place intro map already shows a single photo).
                     let hero = stopImages[photoIdx]
                     // PIP images = all other loaded images from this stop (up to 3).
                     // We zip image + photo ID so the editor can compute the
@@ -12304,6 +12325,10 @@ private struct CarouselPhotoGroupPickerSheet: View {
     let blog: RecapBlogDetail
     let excludedKeys: Set<String>
     let aspectRatio: CGFloat
+    /// While `SocialPostStudioSheet.loadSlides()` runs (e.g. after toggling single-photo deck rules), summary counts use a synchronous estimate.
+    let isDeckReloading: Bool
+    /// Reel format exports a single selected slide; mirrors `loadSlides` reel branch for the summary badge.
+    let isReelExport: Bool
     let onSelectSlide: (Int) -> Void
     let onRestoreExcludedPlacePhoto: ((UUID, UUID) -> Void)?
     let onExcludePlaceFromStudio: ((Int) -> Void)?
@@ -12315,7 +12340,6 @@ private struct CarouselPhotoGroupPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @AppStorage("blogify.slidesManagementTip.dismissed") private var slidesManagementTipDismissed = false
-    @AppStorage("carouselStudio.singlePhotoPlaceSlideAfterIntroMap") private var singlePhotoPlaceSlideAfterIntroMap = true
 
     private var managementItems: [SlidesManagementItem] {
         makeSlidesManagementItems(blog: blog, slides: slides, excludedKeys: excludedKeys)
@@ -12336,6 +12360,25 @@ private struct CarouselPhotoGroupPickerSheet: View {
             if isSlideHiddenBySiblingPIP(at: idx, in: slides) { return partial }
             return partial + 1
         }
+    }
+
+    private var slidesManagementExpectedDeckSlideCount: Int {
+        expectedSocialPostStudioDeckSlideCountAfterReload(blog: blog, excludedKeys: excludedKeys)
+    }
+
+    private var slidesManagementDisplayedExportSelectedCount: Int {
+        if isDeckReloading {
+            let full = slidesManagementExpectedDeckSlideCount
+            return isReelExport ? min(1, full) : full
+        }
+        return exportSelectedSlideCount
+    }
+
+    private var slidesManagementDisplayedVisibleDeckCount: Int {
+        if isDeckReloading {
+            return slidesManagementDisplayedExportSelectedCount
+        }
+        return slidesManagementVisibleDeckSlideCount
     }
 
     /// Deck indices that export / the pager show — excludes hidden and PIP-collapsed slides.
@@ -12491,8 +12534,8 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
     /// Always-visible summary above the scrolling grid (counts scroll away in the old layout).
     private var slidesManagementPinnedSelectionBar: some View {
-        let sel = exportSelectedSlideCount
-        let visibleDeck = slidesManagementVisibleDeckSlideCount
+        let sel = slidesManagementDisplayedExportSelectedCount
+        let visibleDeck = slidesManagementDisplayedVisibleDeckCount
         let cap = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
         let overShare = sel > cap
         return VStack(alignment: .leading, spacing: 10) {
@@ -12503,6 +12546,8 @@ private struct CarouselPhotoGroupPickerSheet: View {
                     .foregroundStyle(overShare ? Color.orange : CarouselStudioChrome.accent)
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.2), value: sel)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("slides selected for export")
                         .font(.subheadline.weight(.semibold))
@@ -12511,8 +12556,15 @@ private struct CarouselPhotoGroupPickerSheet: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.numericText())
+                        .animation(.easeOut(duration: 0.2), value: visibleDeck)
                 }
                 Spacer(minLength: 0)
+            }
+            if isDeckReloading {
+                Text("Refreshing deck…")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.tertiary)
             }
             if removedPlaceCount > 0 {
                 Text("\(removedPlaceCount) photo\(removedPlaceCount == 1 ? "" : "s") removed from the carousel — restore from dimmed cards below.")
@@ -12548,6 +12600,8 @@ private struct CarouselPhotoGroupPickerSheet: View {
         blog: RecapBlogDetail,
         excludedKeys: Set<String>,
         aspectRatio: CGFloat,
+        isDeckReloading: Bool,
+        isReelExport: Bool,
         onSelectSlide: @escaping (Int) -> Void,
         onRestoreExcludedPlacePhoto: ((UUID, UUID) -> Void)? = nil,
         onExcludePlaceFromStudio: ((Int) -> Void)? = nil,
@@ -12559,6 +12613,8 @@ private struct CarouselPhotoGroupPickerSheet: View {
         self.blog = blog
         self.excludedKeys = excludedKeys
         self.aspectRatio = aspectRatio
+        self.isDeckReloading = isDeckReloading
+        self.isReelExport = isReelExport
         self.onSelectSlide = onSelectSlide
         self.onRestoreExcludedPlacePhoto = onRestoreExcludedPlacePhoto
         self.onExcludePlaceFromStudio = onExcludePlaceFromStudio
@@ -12567,10 +12623,10 @@ private struct CarouselPhotoGroupPickerSheet: View {
         self.onBulkSlidesExportSelectionChanged = onBulkSlidesExportSelectionChanged
     }
 
-    /// Same column spec as **Export → Download → pick slides**.
+    /// Two columns; `GeometryReader` per cell uses the grid’s **proposed** width so cards never exceed the slot (avoids overlap).
     private let gridColumns = [
-        GridItem(.flexible(minimum: 120), spacing: 10),
-        GridItem(.flexible(minimum: 120), spacing: 10),
+        GridItem(.flexible(minimum: 100), spacing: 12),
+        GridItem(.flexible(minimum: 100), spacing: 12),
     ]
 
     private var hasSlideRemovalActions: Bool {
@@ -12657,8 +12713,8 @@ private struct CarouselPhotoGroupPickerSheet: View {
         .padding(.top, 8)
     }
 
-    /// Cap preview width so map/photo slides don’t rasterize unnecessarily large layers while scrolling (memory pressure).
-    private static let slidesManagementThumbMaxWidth: CGFloat = 320
+    /// Cap raster width inside each grid cell (cell is usually narrower than the old 320 cap — keeps slides smaller + faster).
+    private static let slidesManagementThumbMaxWidth: CGFloat = 200
 
     /// Small horizontal strip of PIP thumbnail images shown at the bottom of a PIP-layout slide card.
     @ViewBuilder
@@ -12691,7 +12747,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
         let hasPIP = slide.kind == .placeStop && slide.layout == .pip && !slide.pipImages.isEmpty
         VStack(alignment: .leading, spacing: 0) {
             GeometryReader { geo in
-                let w = min(max(80, geo.size.width), Self.slidesManagementThumbMaxWidth)
+                let w = max(60, min(geo.size.width, Self.slidesManagementThumbMaxWidth))
                 ZStack(alignment: .bottomLeading) {
                     if isUserHidden {
                         // Slide is hidden from the carousel; tapping anywhere restores it.
@@ -12726,6 +12782,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
                         slidesManagementPIPStrip(pipImages: slide.pipImages)
                     }
                 }
+                .frame(width: w)
             }
             .aspectRatio(aspectRatio, contentMode: .fit)
             slidesManagementCaption(
@@ -12756,7 +12813,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
         var body: some View {
             GeometryReader { geo in
-                let w = min(max(80, geo.size.width), CarouselPhotoGroupPickerSheet.slidesManagementThumbMaxWidth)
+                let w = max(60, min(geo.size.width, CarouselPhotoGroupPickerSheet.slidesManagementThumbMaxWidth))
                 CarouselStudioDownloadStylePickCard(
                     slide: previewSlide,
                     width: w,
@@ -12764,6 +12821,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
                     isInCarousel: false,
                     mode: .singleAction(onRestore)
                 )
+                .frame(width: w)
             }
             .aspectRatio(aspectRatio, contentMode: .fit)
             .task {
@@ -12896,8 +12954,6 @@ private struct CarouselPhotoGroupPickerSheet: View {
                     }
                 }
             }
-            // Cheap identity tied to deck length so a full reload doesn’t leave stale cells mid-scroll.
-            .id("\(slides.count)-\(excludedKeys.count)-\(managementItems.count)")
             .padding(.horizontal, 0)
         }
     }
@@ -12906,17 +12962,6 @@ private struct CarouselPhotoGroupPickerSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             slidesManagementTipBanner
             slidesManagementPlacePhotoBulkSection
-            Toggle("Photo slide after place map (single photo)", isOn: $singlePhotoPlaceSlideAfterIntroMap)
-                .font(.body)
-                .tint(CarouselStudioChrome.accent)
-            Text(
-                singlePhotoPlaceSlideAfterIntroMap
-                    ? "Each place with one photo gets the map card and a separate full photo slide. The deck reloads when you change this."
-                    : "When a place has only one photo, it may appear only on the place map card. Turn on to add a dedicated photo slide too."
-            )
-            .font(.footnote)
-            .foregroundStyle(.tertiary)
-            .fixedSize(horizontal: false, vertical: true)
             if hasAnyMapSlides {
                 Toggle("Remove maps from carousel", isOn: $removeMapsFromCarousel)
                     .font(.body)
