@@ -1180,6 +1180,9 @@ struct CarouselSlide: Identifiable {
     var placeStop: PlaceStop?
     var dayTitle: String?
     var photoCaption: String?
+    /// `true` when this slide represents the first included photo of its place stop.
+    /// Only the first slide falls back to the place story caption when the photo has no caption.
+    var isFirstPhotoOfStop: Bool = false
     var dayStory: String?
     var textStyle: TextOverlayStyle = TextOverlayStyle()
     /// When true, the primary text block (title / heading / place name) is hidden on this slide.
@@ -1330,7 +1333,11 @@ struct CarouselSlide: Identifiable {
 
     var caption: String? {
         guard kind == .placeStop, let placeStop else { return nil }
-        return [photoCaption, placeStop.placeNarrative, placeStop.overallStory, placeStop.noteText]
+        if let photo = photoCaption?.trimmingCharacters(in: .whitespacesAndNewlines), !photo.isEmpty {
+            return photo
+        }
+        guard isFirstPhotoOfStop else { return nil }
+        return [placeStop.placeNarrative, placeStop.overallStory, placeStop.noteText]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
     }
@@ -1780,6 +1787,7 @@ private func buildPlaceCarouselSlideForStudio(
         heroImage: hero,
         placeStop: stop,
         photoCaption: heroPhoto.caption,
+        isFirstPhotoOfStop: photoIdx == 0,
         textStyle: .placeStopDefault,
         pipImages: pipPairs.map(\.0),
         pipPhotoIDs: pipPairs.map(\.1),
@@ -11272,6 +11280,7 @@ struct SocialPostStudioSheet: View {
                         id: "\(stop.id.uuidString)-\(photo.id.uuidString)", kind: .placeStop,
                         isSelected: true, heroImage: hero, placeStop: stop,
                         photoCaption: photo.caption,
+                        isFirstPhotoOfStop: photoIdx == 0,
                         textStyle: .placeStopDefault,
                         pipImages: pipImages,
                         pipPhotoIDs: pipPhotoIDs, heroPhotoID: photo.id,
@@ -12846,9 +12855,11 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
         private var previewSlide: CarouselSlide {
             let stopIdx = globalStopIndexInBlog(blog: blog, stopID: stop.id) ?? 1
+            let firstIncludedID = stop.photos.first(where: { $0.isIncluded })?.id
             return CarouselSlide(
                 id: "slides-mgmt-removed-\(stop.id)-\(photo.id)", kind: .placeStop,
                 isSelected: true, heroImage: hero, placeStop: stop, photoCaption: photo.caption,
+                isFirstPhotoOfStop: photo.id == firstIncludedID,
                 textStyle: .placeStopDefault, pipImages: [], pipPhotoIDs: [],
                 heroPhotoID: photo.id, stopIndex: stopIdx
             )
