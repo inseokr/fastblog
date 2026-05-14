@@ -2723,8 +2723,8 @@ struct CarouselSlideView: View {
                 .padding(studioTextBlockEdgeInset)
             }
         }
-        // Bloggo watermark — bottom-trailing on map slides (first Studio map only when `showPoweredByBloggoMapWatermark`).
-        .overlay(alignment: .bottomTrailing) {
+        // Bloggo watermark — bottom-leading on map slides (first Studio map only when `showPoweredByBloggoMapWatermark`).
+        .overlay(alignment: .bottomLeading) {
             if !showsBackgroundOnly, isCarouselStudioMapKind(slide.kind), showPoweredByBloggoMapWatermark {
                 HStack(spacing: width * 0.025) {
                     Image("AppIconMark")
@@ -2822,7 +2822,7 @@ struct CarouselSlideView: View {
                                         slide.placeZoneLayout.primaryTextAlignmentFallback(for: slide.textStyle.primary))
                                     .studioTextFormat(slide.textStyle.primary)
                             }
-                            let primaryCaption = (slide.caption ?? "")
+                            let primaryCaption = (slide.photoCaption ?? "")
                                 .trimmingCharacters(in: .whitespacesAndNewlines)
                             if !primaryCaption.isEmpty {
                                 Text(primaryCaption)
@@ -7431,6 +7431,34 @@ struct SlideTextEditorView: View {
         GridItem(.flexible(minimum: 120), spacing: 10)
     ]
 
+    private func slidePickLabel(for slide: CarouselSlide) -> String {
+        func firstLine(_ raw: String) -> String {
+            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !t.isEmpty else { return "" }
+            for lineSub in t.split(whereSeparator: \.isNewline) {
+                let line = String(lineSub).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !line.isEmpty { return line }
+            }
+            return ""
+        }
+        switch slide.kind {
+        case .cover: return "Cover"
+        case .mapRoute:
+            let day = slide.dayInfoLine1?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let d = slide.mapShortDateLine?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if day.isEmpty { return d.isEmpty ? "Map" : d }
+            return d.isEmpty ? day : "\(day) - \(d)"
+        case .placeIntroMap:
+            let raw = slide.placeStop?.placeTitle ?? slide.dayInfoLine1 ?? ""
+            let t = firstLine(raw)
+            return t.isEmpty ? "Place map" : t
+        case .placeStop:
+            let raw = slide.placeStop?.placeTitle ?? ""
+            let t = firstLine(raw)
+            return t.isEmpty ? "Place" : t
+        }
+    }
+
     @ViewBuilder
     private var exportHubSharePickContent: some View {
         VStack(spacing: 0) {
@@ -7488,17 +7516,24 @@ struct SlideTextEditorView: View {
                 LazyVGrid(columns: exportHubGridColumns, spacing: 12) {
                     ForEach(studioDownloadCandidateIndices, id: \.self) { idx in
                         let selected = shareSlidePickSelection.contains(idx)
-                        GeometryReader { geo in
-                            let w = max(80, geo.size.width)
-                            CarouselStudioDownloadStylePickCard(
-                                slide: slides[idx],
-                                width: w,
-                                aspectRatio: aspectRatio,
-                                isInCarousel: selected,
-                                mode: .singleAction { toggleSharePick(for: idx) }
-                            )
+                        VStack(alignment: .leading, spacing: 4) {
+                            GeometryReader { geo in
+                                let w = max(80, geo.size.width)
+                                CarouselStudioDownloadStylePickCard(
+                                    slide: slides[idx],
+                                    width: w,
+                                    aspectRatio: aspectRatio,
+                                    isInCarousel: selected,
+                                    mode: .singleAction { toggleSharePick(for: idx) }
+                                )
+                            }
+                            .aspectRatio(aspectRatio, contentMode: .fit)
+                            Text(slidePickLabel(for: slides[idx]))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         }
-                        .aspectRatio(aspectRatio, contentMode: .fit)
                         .id(idx)
                     }
                 }
@@ -7584,17 +7619,24 @@ struct SlideTextEditorView: View {
                 LazyVGrid(columns: exportHubGridColumns, spacing: 12) {
                     ForEach(studioDownloadCandidateIndices, id: \.self) { idx in
                         let selected = downloadSlidePickSelection.contains(idx)
-                        GeometryReader { geo in
-                            let w = max(80, geo.size.width)
-                            CarouselStudioDownloadStylePickCard(
-                                slide: slides[idx],
-                                width: w,
-                                aspectRatio: aspectRatio,
-                                isInCarousel: selected,
-                                mode: .singleAction { toggleDownloadPick(for: idx) }
-                            )
+                        VStack(alignment: .leading, spacing: 4) {
+                            GeometryReader { geo in
+                                let w = max(80, geo.size.width)
+                                CarouselStudioDownloadStylePickCard(
+                                    slide: slides[idx],
+                                    width: w,
+                                    aspectRatio: aspectRatio,
+                                    isInCarousel: selected,
+                                    mode: .singleAction { toggleDownloadPick(for: idx) }
+                                )
+                            }
+                            .aspectRatio(aspectRatio, contentMode: .fit)
+                            Text(slidePickLabel(for: slides[idx]))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         }
-                        .aspectRatio(aspectRatio, contentMode: .fit)
                         .id(idx)
                     }
                 }
@@ -12668,9 +12710,10 @@ private struct CarouselPhotoGroupPickerSheet: View {
         switch slide.kind {
         case .cover: return "Cover"
         case .mapRoute:
+            let day = slide.dayInfoLine1?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let d = slide.mapShortDateLine?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if d.isEmpty { return "Map" }
-            return "Map - \(d)"
+            if day.isEmpty { return d.isEmpty ? "Map" : d }
+            return d.isEmpty ? day : "\(day) - \(d)"
         case .placeIntroMap:
             let d = slide.mapShortDateLine?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let raw = slide.placeStop?.placeTitle ?? slide.dayInfoLine1 ?? ""
