@@ -103,21 +103,31 @@ struct CountryManageBlogsSheet: View {
                         Button {
                             showSplitView = true
                         } label: {
-                            Image(systemName: "scissors")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(canSplit ? .orange : .primary)
-                                .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            VStack(spacing: 3) {
+                                Image(systemName: "scissors")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
+                                Text("Split")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
+                            }
+                            .frame(width: 64, height: 64)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         }
                         Spacer()
                         Button {
                             showMergeView = true
                         } label: {
-                            Image(systemName: "arrow.triangle.merge")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(canMerge ? .blue : .primary)
-                                .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            VStack(spacing: 3) {
+                                Image(systemName: "arrow.triangle.merge")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundStyle(Color.blue.opacity(canMerge ? 1.0 : 0.38))
+                                Text("Merge")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Color.blue.opacity(canMerge ? 1.0 : 0.38))
+                            }
+                            .frame(width: 64, height: 64)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         }
                     }
                     .padding(.horizontal, 24)

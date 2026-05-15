@@ -146,9 +146,145 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         return 2
     }
 
+    // MARK: - POI Name Classification
+
+    /// Returns true when `name` is a concrete, specific place (landmark, venue) rather than a
+    /// generic area such as a neighborhood, street, or city.
+    /// Uses the on-device LLM on iOS 26+; falls back to a rule-based heuristic on older OS.
+    func classifyConcretePoiName(_ name: String) async -> Bool {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if case .available = SystemLanguageModel.default.availability {
+                if let result = await classifyConcretePoiNameWithLLM(name) { return result }
+            }
+        }
+#endif
+        return Self.isConcretePoiHeuristic(name)
+    }
+
+    /// Heuristic fallback: returns true only when the name clearly looks like a specific venue,
+    /// not a street, administrative unit, or single generic toponym.
+    static func isConcretePoiHeuristic(_ name: String) -> Bool {
+        guard !name.isEmpty, name != "Unknown Place" else { return false }
+        let lower = name.lowercased()
+        // Addresses start with numbers
+        if name.first?.isNumber == true { return false }
+        // Street/road suffixes
+        let streetSuffixes = [" st", " ave", " rd", " blvd", " lane", " dr", " drive",
+                              " street", " avenue", " road", " boulevard", " highway",
+                              " hwy", " freeway", " parkway", " pkwy"]
+        if streetSuffixes.contains(where: { lower.hasSuffix($0) }) { return false }
+        // Korean transliterated road/admin suffixes
+        let koreanAreaTokens = ["-gu", "-dong", "-ro ", "-ro,", "-gil", "-daero", "-si ", "-si,"]
+        if koreanAreaTokens.contains(where: { lower.contains($0) }) { return false }
+        // Generic administrative area terms
+        let areaTerms = ["district", " county", " ward", " borough", "township"]
+        if areaTerms.contains(where: { lower.contains($0) }) { return false }
+        // Positive signal: known POI keyword present
+        let poiKeywords = ["tower", "palace", "castle", "museum", "cathedral", "basilica",
+                           "station", "airport", "park ", "garden", "temple", "shrine",
+                           "mall", "market", "plaza", "square", "center", "centre",
+                           "hotel", "resort", "stadium", "arena", "theater", "theatre",
+                           "university", "college", "hospital", "monument", "memorial",
+                           "pond", "lake", "reservoir", "river", "creek", "stream",
+                           "falls", "waterfall", "beach", "bay", "forest", "valley",
+                           "mountain", "peak", "cliff", "cave", "island", "nature"]
+        if poiKeywords.contains(where: { lower.contains($0) }) { return true }
+        return false
+    }
+
+    // MARK: - Fun photo insight (grounded blurb; UI shown only when `isCapable` and Vision tags exist)
+
+    /// Up to two blog-style sentences from on-device tags + place metadata. Returns empty when `tags` is empty.
+    func generateFunPhotoInsight(
+        tags: [String],
+        placeName: String,
+        placeSubtitle: String?,
+        visitDaypart: String,
+        userCaptionHint: String?,
+        categoryID: PlaceCategoryID
+    ) async -> String {
+        guard !tags.isEmpty else { return "" }
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if let result = await generateFunPhotoInsightWithLLM(
+                tags: tags,
+                placeName: placeName,
+                placeSubtitle: placeSubtitle,
+                visitDaypart: visitDaypart,
+                userCaptionHint: userCaptionHint,
+                categoryID: categoryID
+            ) {
+                return result
+            }
+        }
+#endif
+        return Self.funPhotoInsightTagFallback(tags: tags, placeName: placeName, visitDaypart: visitDaypart)
+    }
+
+    private static func funPhotoInsightTagFallback(tags: [String], placeName: String, visitDaypart: String) -> String {
+        let tagPart = tags.prefix(6).joined(separator: ", ")
+        let place = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tagPart.isEmpty {
+            let suffix = place.isEmpty ? "" : " — \(place)"
+            let timeSuffix = visitDaypart.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : " (\(visitDaypart))"
+            return "The frame picks up \(tagPart)\(suffix)\(timeSuffix)."
+        }
+        return ""
+    }
+
+    /// Place-level “AI story”: aggregated tags + photo captions + place metadata; max two sentences.
+    func generatePlaceLevelAIShortStory(
+        tags: [String],
+        photoCaptions: [String],
+        placeName: String,
+        placeSubtitle: String?,
+        categoryID: PlaceCategoryID,
+        visitDaypart: String,
+        photoCount: Int
+    ) async -> String {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if let result = await generatePlaceLevelAIShortStoryWithLLM(
+                tags: tags,
+                photoCaptions: photoCaptions,
+                placeName: placeName,
+                placeSubtitle: placeSubtitle,
+                categoryID: categoryID,
+                visitDaypart: visitDaypart,
+                photoCount: photoCount
+            ) {
+                return result
+            }
+        }
+#endif
+        return Self.placeLevelAIShortStoryFallback(
+            tags: tags,
+            photoCaptions: photoCaptions,
+            placeName: placeName,
+            visitDaypart: visitDaypart
+        )
+    }
+
+    private static func placeLevelAIShortStoryFallback(
+        tags: [String],
+        photoCaptions: [String],
+        placeName: String,
+        visitDaypart: String
+    ) -> String {
+        let place = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tagLine = tags.prefix(4).joined(separator: ", ")
+        let time = visitDaypart.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !place.isEmpty, !tagLine.isEmpty {
+            return time.isEmpty ? "\(place): \(tagLine)." : "\(place) on a \(time) — \(tagLine)."
+        }
+        if !place.isEmpty { return time.isEmpty ? "\(place) — a stop worth saving." : "\(place), \(time)." }
+        return ""
+    }
+
     // MARK: - Narrative Generation (LLM-only, no template fallback)
 
-    /// Generates a 4–6 line narrative for a place visit. Returns nil when LLM is unavailable.
+    /// Generates a short place narrative (at most 3 sentences, one per line). Returns nil when LLM is unavailable.
     func generatePlaceNarrative(context: PlaceNarrativeContext) async -> String? {
 #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
@@ -158,7 +294,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         return nil
     }
 
-    /// Generates a 4–6 line narrative for a travel day. Returns nil when LLM is unavailable.
+    /// Generates a short day narrative (at most 3 sentences, one per line). Returns nil when LLM is unavailable.
     func generateDayNarrative(context: DayNarrativeContext) async -> String? {
 #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
@@ -168,7 +304,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         return nil
     }
 
-    /// Generates a 5–6 line trip opening narrative. Returns nil when LLM is unavailable.
+    /// Generates a short trip opening narrative (at most 3 sentences, one per line). Returns nil when LLM is unavailable.
     func generateTripNarrative(context: TripNarrativeContext) async -> String? {
 #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
@@ -179,6 +315,36 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
     }
 
 #if canImport(FoundationModels)
+
+    /// Shared rules to keep on-device copy tied to trip data and reduce invented travel drama.
+    private static let groundedTravelBlogRules = """
+        Grounding — follow strictly:
+        • Use only what this prompt supplies: place names, subtitles, tags, photo captions, user notes, weather, dates, day summaries, and listed place stories. Do not invent events, people, dialogue, schedules, prices, or historical claims.
+        • Never invent travel logistics or mishaps — for example flight delays, cancellations, gate changes, long security lines, missed connections, lost luggage, overbooking, train breakdowns, or traffic disasters — unless that exact situation appears in the user’s text or in a place/day story given here.
+        • At airports, train stations, bus terminals, ferry terminals, or similar hubs: the user may only have visited the building or grounds. Describe the stop in neutral, scene-level terms from the hints. Do not assume flying, boarding, departing, arriving, or any delay; those are inventions unless explicitly stated in the provided notes or stories.
+        • Prefer plain, observational travel-blog prose over a dramatic plot, cliffhangers, or made-up beats to sound literary. If the hints are thin, keep the output simple and short-feeling in substance — do not fabricate a rich backstory to fill every line.
+        """
+
+    /// Brevity and anti–laundry-list rules for place/day/trip “Tell Story” narratives.
+    private static let compactNarrativeFormatRules = """
+        Length and shape:
+        • At most 3 sentences total. Use 1, 2, or 3 only if the evidence supports it — never more than 3.
+        • Output exactly one sentence per line. No blank lines between sentences. Do not prefix lines with “Sentence 1” or any meta labels.
+        • Each sentence must introduce something new. Do not restate the same setting in different words (e.g. multiple sentences about sky color, air temperature, water clarity, grass, trees, or leaves).
+        • Avoid a run of short “The X was Y” template lines. At most one simple weather or setting clause for the whole output unless the provided note explicitly describes a real change over time.
+        • Do not contradict yourself (e.g. gray sky then blue sky, warm then cold) in one passage unless the user’s text explicitly describes that change.
+        """
+
+    /// Keeps newline-separated narratives from exceeding `maxLines` when the model over-generates.
+    private static func clampNarrativeLineCount(_ text: String, maxLines: Int = 3) -> String {
+        let lines = text.split(whereSeparator: { $0.isNewline })
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard lines.count > maxLines else {
+            return lines.joined(separator: "\n")
+        }
+        return lines.prefix(maxLines).joined(separator: "\n")
+    }
 
     // MARK: - Prompt Modifiers
 
@@ -290,9 +456,9 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
                 """
         case .street:
             return """
-                This place is categorized as a street or general city area.
-                Focus on atmosphere, movement, culture, small observations.
-                Do not fabricate specific facts about the location.
+                This place is categorized as a street, transit hub, airport, station, or general city area.
+                Focus on atmosphere, light, space, and small observations supported by the tags or captions.
+                Do not fabricate specific facts. Do not assume flights, trains taken, delays, or arrivals/departures unless the user’s text or captions say so.
                 """
         case .unknown:
             return """
@@ -361,21 +527,19 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
         let baseSystem = """
             You are a travel storytelling assistant inside a mobile app called Bloggo.
-            Your job is to generate a short, engaging, emotionally inviting caption for a place visited during a trip.
+            Your job is to generate a short, natural caption for a place visited during a trip.
             The caption should:
-            • Feel natural and human
-            • Be warm and vivid
-            • Avoid sounding robotic or generic
+            • Feel human and readable — warm but not melodramatic
             • Stay under 3 sentences
-            • Focus on experience, atmosphere, and memory
+            • Focus on atmosphere and memory only when supported by the tags and context below
             Do not invent false historical facts. Do not exaggerate unrealistically.
-            Keep it grounded and authentic.
             No hashtags or emoji. No first person (no "I", "we", "my").
             Output only the caption text. No preamble like "Here is a caption" — just the caption.
             """
 
         let instructions = [
             baseSystem,
+            Self.groundedTravelBlogRules,
             categoryModifier(for: context.categoryID),
             nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
         ].joined(separator: "\n\n")
@@ -417,13 +581,14 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         let baseSystem = """
             You are a travel storytelling assistant inside a mobile app called Bloggo.
             Your job is to write one very short sentence that summarizes a place visit for a travel blog.
-            The sentence should feel natural, warm, and vivid.
+            The sentence should feel natural and clear — only merge ideas that appear in the captions or tags.
             No hashtags or emoji. No first person (no "I", "we", "my"). No exact timestamp.
             Output only the sentence. No preamble, no labels — just the sentence.
             """
 
         let instructions = [
             baseSystem,
+            Self.groundedTravelBlogRules,
             categoryModifier(for: context.categoryID),
             nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
         ].joined(separator: "\n\n")
@@ -452,13 +617,14 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         let datePart = context.dayDateText.isEmpty ? "" : " Date: \(context.dayDateText)."
 
         let instructions = """
-            You write one short, vivid sentence that summarises a travel day for a blog. \
-            You are given place stories from that day. Blend them into a single evocative sentence. \
+            You write one short sentence that summarises a travel day for a blog. \
+            You are given place stories from that day. Combine only what they actually say — no new events or mishaps. \
+            \(Self.groundedTravelBlogRules)
             No hashtags or emoji. No first person (no "I", "we", "my"). No date mention. \
             Output only the sentence. No preamble, no labels — just the sentence.
             """
         let prompt = """
-            Summarise this travel day into one vivid sentence.\(datePart)
+            Summarise this travel day into one sentence.\(datePart)
 
             Place stories:
             \(storiesBlock)
@@ -500,7 +666,6 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
     @available(iOS 26.0, *)
     private func enhanceCaptionWithLLM(context: EnhancePhotoCaptionContext) async -> String? {
-        let tagsLine = context.tags.isEmpty ? "" : "\nPhoto tags: \(context.tags.prefix(8).joined(separator: ", "))."
         let langLine = languageInstruction(for: context.userText)
         let langInstruction = langLine.isEmpty ? "" : "\n\(langLine)"
 
@@ -524,9 +689,6 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
     @available(iOS 26.0, *)
     private func enhancePlaceStoryWithLLM(context: EnhancePlaceStoryContext) async -> String? {
-        let tagsLine = context.tags.isEmpty ? "" : "\nPhoto tags: \(context.tags.prefix(8).joined(separator: ", "))."
-        let timePart = context.dateTimeText.isEmpty ? "" : "\nVisited: \(context.dateTimeText)."
-        let countPart = context.photoCount > 1 ? "\n\(context.photoCount) photos from this stop." : ""
         let langLine = languageInstruction(for: context.userText)
         let langInstruction = langLine.isEmpty ? "" : "\n\(langLine)"
 
@@ -539,6 +701,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             You help people write their travel blog. \
             A user has written a rough note about a place they visited. \
             Complete and enrich it — keep their voice and key details, complete any unfinished thought. \
+            Never introduce events, logistics, or mishaps (delays, cancellations, etc.) the user did not write or clearly imply. \
             1-2 short sentences max. Simple, warm, casual — like telling a friend. \
             No hashtags or emoji. No first person (no "I", "we", "my"). \
             Output only the story. No preamble — just the text.
@@ -546,6 +709,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
         let instructions = [
             baseSystem,
+            Self.groundedTravelBlogRules,
             categoryModifier(for: context.categoryID),
             nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
         ].joined(separator: "\n\n")
@@ -567,7 +731,6 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             ? ""
             : "\nPhoto captions:\n" + captions.prefix(6).enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
         let langLine = languageInstruction(for: context.userText)
-        let langInstruction = langLine.isEmpty ? "" : "\n\(langLine)"
 
         // Only surface the place name when it is a reliable proper noun.
         let placePart: String
@@ -620,7 +783,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             The user has started a one-sentence summary of their travel day. Your job is to complete and enrich it. \
             Rules (follow all strictly):
             • Preserve every specific detail the user already wrote.
-            • Never introduce places, activities, or details that the user did NOT mention.
+            • Never introduce places, activities, travel mishaps, or details that the user did NOT mention.
             • No sentence repetition — the output must be a single, non-repetitive sentence.
             • No date in the output. Casual, warm, like telling a friend.
             • No hashtags. No emoji. No first person (no "I", "we", "my").
@@ -664,25 +827,26 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         let instructions = [
             """
             You are a travel storytelling assistant in a mobile app called Bloggo.
-            Write a vivid, personal travel story about a place visit in 4 to 6 lines of flowing prose.
+            Write a very short travel-blog blurb about this place visit — plain language, no poetry padding.
+            Stay close to the place line, tags, context, and any existing note. Do not invent plot or extra scenes.
             Rules:
-            • 4 to 6 lines only — no bullet points, no headers.
-            • Each sentence on its own line, separated by a single newline.
-            • Rich sensory and emotional detail. Capture atmosphere and memory.
+            \(Self.compactNarrativeFormatRules)
             • No hashtags, no emoji, no first person (no "I", "we", "my").
             • No labels, quotes, captions, or meta-text of any kind.
             • \(userWritingStyleInstruction)
-            Output only the story text. No preamble — just the story.
+            Output only the story text. No preamble — just the lines.
             """,
+            Self.groundedTravelBlogRules,
             categoryModifier(for: context.categoryID),
             nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
         ].joined(separator: "\n\n")
         let prompt = """
-            Write a 4-6 line travel story for this place.\(placePart)\(contextBlock)\(seedPart)
+            Write at most 3 sentences (one sentence per line) for this place.\(placePart)\(contextBlock)\(seedPart)
             Tags: \(tagsLine).
-            Output only the story. No introduction, no first person.
+            Output only those lines. No introduction, no first person.
             """
-        return await runSession(instructions: instructions, prompt: prompt)
+        guard let raw = await runSession(instructions: instructions, prompt: prompt) else { return nil }
+        return Self.clampNarrativeLineCount(raw)
     }
 
     @available(iOS 26.0, *)
@@ -703,27 +867,28 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         }()
         let instructions = """
             You are a travel storytelling assistant in a mobile app called Bloggo.
-            Write a vivid, personal day story in 4 to 6 lines of flowing prose.
-            Weave together the places and moments of the day into one coherent story arc.
+            Write a very short travel-blog summary of this day — plain language, no filler.
+            Connect the listed places using only their names and the place stories provided — do not invent a plot, setbacks, or travel logistics not present there.
             Rules:
-            • 4 to 6 lines only — no bullet points, no headers.
-            • Each sentence on its own line, separated by a single newline.
-            • Show the rhythm of the day — where it started, how it flowed, how it felt.
+            \(Self.compactNarrativeFormatRules)
+            • Order may follow the list when it helps readability.
             • No hashtags, no emoji, no first person (no "I", "we", "my").
             • No labels, quotes, captions, or meta-text of any kind.
             • \(userWritingStyleInstruction)
-            Output only the story. No preamble — just the text.
+            \(Self.groundedTravelBlogRules)
+            Output only the lines. No preamble — just the text.
             """
         let prompt = """
-            Write a 4-6 line story for this travel day.
+            Write at most 3 sentences (one sentence per line) for this travel day from the evidence below only.
             \(datePart)\(weatherPart)
 
             Places visited:
             \(placesBlock)
 
-            Output only the story. No first person (I/we/my).
+            Output only those lines. No first person (I/we/my).
             """
-        return await runSession(instructions: instructions, prompt: prompt)
+        guard let raw = await runSession(instructions: instructions, prompt: prompt) else { return nil }
+        return Self.clampNarrativeLineCount(raw)
     }
 
     @available(iOS 26.0, *)
@@ -736,20 +901,20 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             : "Locations: " + context.locationChain.joined(separator: " → ") + "."
         let instructions = """
             You are a travel storytelling assistant in a mobile app called Bloggo.
-            Write a vivid trip opening story in 5 to 6 lines of flowing prose.
-            This will appear at the top of the travel blog as the introduction.
+            Write a very short trip introduction for the top of a travel blog — plain language, no filler.
+            Derive every beat from the trip title, date span, location line, and day summaries — no invented itinerary twists or travel mishaps.
             Rules:
-            • 5 to 6 lines only — no bullet points, no headers.
-            • Each sentence on its own line, separated by a single newline.
-            • Capture the spirit and mood of the whole trip in an evocative opening.
-            • Reference the places visited naturally — not as a list.
+            \(Self.compactNarrativeFormatRules)
+            • Tone is reflective and plain, not theatrical — mood only when supported by the day summaries.
+            • Reference the places visited naturally — not as a bare comma-separated list.
             • No hashtags, no emoji, no first person (no "I", "we", "my").
             • No labels, quotes, captions, or meta-text of any kind.
             • \(userWritingStyleInstruction)
-            Output only the story. No preamble — just the text.
+            \(Self.groundedTravelBlogRules)
+            Output only the lines. No preamble — just the text.
             """
         let prompt = """
-            Write a 5-6 line opening story for this trip blog.
+            Write at most 3 sentences (one sentence per line) as the trip opening from this data only.
             Trip: \(context.tripTitle).
             Dates: \(context.dateRangeText) (\(context.dayCount) days).
             \(locationLine)
@@ -757,22 +922,51 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             Day summaries:
             \(daySummariesBlock)
 
-            Output only the story. No first person (I/we/my).
+            Output only those lines. No first person (I/we/my).
             """
-        return await runSession(instructions: instructions, prompt: prompt)
+        guard let raw = await runSession(instructions: instructions, prompt: prompt) else { return nil }
+        return Self.clampNarrativeLineCount(raw)
+    }
+
+    // MARK: - POI Name Classification (LLM)
+
+    @available(iOS 26.0, *)
+    private func classifyConcretePoiNameWithLLM(_ name: String) async -> Bool? {
+        let instructions = """
+            You classify geographic names. Answer with exactly one word: YES or NO. No punctuation, no explanation.
+            YES = a specific named venue, landmark, or point of interest (e.g. "Eiffel Tower", "Central Park", "McDonald's", "Gyeongbokgung Palace", "Tokyo Station", "Louvre Museum")
+            NO = a neighborhood, street, road, highway, district, city, or generic area (e.g. "Gangnam-gu", "5th Avenue", "Highway 101", "Manhattan", "Shibuya", "SoHo")
+            """
+        let prompt = "Is \"\(name)\" a specific named venue or landmark? Answer YES or NO."
+        guard let result = await runSession(instructions: instructions, prompt: prompt) else { return nil }
+        return result.uppercased().hasPrefix("YES")
     }
 
     // MARK: - Sentiment Analysis
 
     @available(iOS 26.0, *)
     private func analyzeSentimentWithLLM(text: String) async -> Int? {
+        // Non-English captions cause the model to respond with non-digit output (e.g. Korean
+        // punctuation or words), breaking the strict single-digit parse. Translate first so the
+        // classifier always sees English text.
+        let analyzeText: String
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        let dominant = recognizer.dominantLanguage
+        let isNonEnglish = dominant != nil && dominant != .english && dominant != .undetermined
+        if isNonEnglish, let translated = await translateTextWithLLM(userText: text) {
+            analyzeText = translated
+        } else {
+            analyzeText = text
+        }
+
         let instructions = """
             You are a sentiment classifier for travel captions. \
             Read the text and decide if the overall sentiment is positive, neutral, or negative. \
             Respond with exactly one digit: 3 for positive, 2 for neutral, 1 for negative. \
             No explanation, no punctuation — just the single digit.
             """
-        let prompt = "Classify the sentiment of this travel caption:\n\"\(text)\""
+        let prompt = "Classify the sentiment of this travel caption:\n\"\(analyzeText)\""
         guard let result = await runSession(instructions: instructions, prompt: prompt) else { return nil }
         let digit = result.trimmingCharacters(in: .whitespacesAndNewlines)
         if digit == "1" { return 1 }
@@ -825,6 +1019,125 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             print("[LLM] runSession — error: \(error)")
             return nil
         }
+    }
+
+    @available(iOS 26.0, *)
+    private func generateFunPhotoInsightWithLLM(
+        tags: [String],
+        placeName: String,
+        placeSubtitle: String?,
+        visitDaypart: String,
+        userCaptionHint: String?,
+        categoryID: PlaceCategoryID
+    ) async -> String? {
+        let importantTags = Array(tags.prefix(12))
+        let tagsLine = "Photo tags (on-device Vision / image analysis): \(importantTags.joined(separator: ", "))."
+        let trimmedPlace = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let placeLine: String
+        if trimmedPlace.isEmpty {
+            placeLine = ""
+        } else if let sub = placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines), !sub.isEmpty {
+            placeLine = "\nPlace name and area from the trip: \(trimmedPlace), \(sub)."
+        } else {
+            placeLine = "\nPlace name from the trip: \(trimmedPlace)."
+        }
+        let trimmedDaypart = visitDaypart.trimmingCharacters(in: .whitespacesAndNewlines)
+        let timeLine = trimmedDaypart.isEmpty ? "" : "\nApproximate time of day at capture (local): \(trimmedDaypart). Do not mention clock times or exact dates."
+        let hintLine: String
+        if let h = userCaptionHint?.trimmingCharacters(in: .whitespacesAndNewlines), !h.isEmpty {
+            hintLine = "\nTraveler draft (optional tone only; must not contradict the tags): \"\(h)\""
+        } else {
+            hintLine = ""
+        }
+        let categoryBlock: String
+        if categoryID == .unknown {
+            categoryBlock = ""
+        } else {
+            categoryBlock = "\n\nPlace category hint for tone (do not invent specifics beyond tags + place name):\n" + categoryModifier(for: categoryID)
+        }
+
+        let instructions = """
+            You write travel-blog microcopy: warm, readable, a little vivid — but never speculative. \
+            Use ONLY facts supported by the photo tags, place name/area, optional place category hint, and approximate daypart (never clock times or exact dates). \
+            Tags come from on-device Vision analysis — they are the ground truth for what appears in the image. \
+            Do not invent people, relationships, events, business names, dish names, or landmarks not clearly supported. \
+            At airports or transit hubs, do not assume flights, delays, or boarding unless tags or place text clearly support it. \
+            At most two sentences total. Short clauses, blog cadence — not stiff, not marketing fluff. \
+            No hashtags or emoji. No first person (no "I", "we", "my"). \
+            Output only the two sentences (or one if that fits the evidence). No preamble or quotation marks.
+            """ + categoryBlock
+
+        let prompt = """
+            Turn the hints below into a tiny travel-blog moment — only what the evidence supports.\(hintLine)
+
+            \(tagsLine)\(placeLine)\(timeLine)
+
+            Maximum two sentences. Every phrase must be traceable to the tags, place lines, category hint, or daypart.
+            """
+
+        return await runSession(instructions: instructions, prompt: prompt)
+    }
+
+    @available(iOS 26.0, *)
+    private func generatePlaceLevelAIShortStoryWithLLM(
+        tags: [String],
+        photoCaptions: [String],
+        placeName: String,
+        placeSubtitle: String?,
+        categoryID: PlaceCategoryID,
+        visitDaypart: String,
+        photoCount: Int
+    ) async -> String? {
+        let tagsLine = tags.isEmpty
+            ? "Aggregated on-device photo tags: none."
+            : "Aggregated on-device photo tags: \(tags.prefix(16).joined(separator: ", "))."
+        let caps = photoCaptions.prefix(6)
+        let captionsBlock = caps.isEmpty
+            ? "Existing photo captions from this stop: none."
+            : "Existing photo captions from this stop (may be empty or AI — treat only as optional hints, never override clear tag facts):\n"
+                + caps.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        let trimmedPlace = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let placeLine: String
+        if trimmedPlace.isEmpty {
+            placeLine = ""
+        } else if let sub = placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines), !sub.isEmpty {
+            placeLine = "\nPlace: \(trimmedPlace), \(sub)."
+        } else {
+            placeLine = "\nPlace: \(trimmedPlace)."
+        }
+        let countLine = photoCount > 1 ? "\nThis stop has \(photoCount) photos in the trip." : "\nThis stop has one photo in the trip."
+        let trimmedDaypart = visitDaypart.trimmingCharacters(in: .whitespacesAndNewlines)
+        let daypartLine = trimmedDaypart.isEmpty ? "" : "\nApproximate time of day for the visit (from capture times): \(trimmedDaypart). Do not mention clock times or exact dates."
+        let categoryBlock: String
+        if categoryID == .unknown {
+            categoryBlock = ""
+        } else {
+            categoryBlock = "\n\nPlace category hint (tone only; do not invent specifics):\n" + categoryModifier(for: categoryID)
+        }
+
+        let instructions = """
+            You write very short travel-blog blurbs for a single stop on a trip. \
+            Use the aggregated photo tags, optional existing photo captions, place name/area, photo count, and approximate daypart. \
+            Tags are from on-device Vision — they outrank vague caption text if there is ever a conflict. \
+            Do not invent people, events, business names, or details not supported by the hints. \
+            Never invent flight delays, cancellations, or other travel mishaps unless a caption explicitly says so. \
+            At most two sentences. Warm, readable blog voice — not marketing, not a list of tags. \
+            No hashtags or emoji. No first person (no "I", "we", "my"). \
+            Never output clock times or full calendar dates — daypart words only when timing matters. \
+            Output only the two sentences (or one). No preamble or quotation marks.
+            """ + categoryBlock
+
+        let prompt = """
+            Summarise this stop in a tiny travel-blog moment using only the evidence below.
+
+            \(tagsLine)
+            \(captionsBlock)
+            \(placeLine)\(countLine)\(daypartLine)
+
+            Maximum two sentences. Stay grounded in the hints.
+            """
+
+        return await runSession(instructions: instructions, prompt: prompt)
     }
 
 #endif

@@ -161,7 +161,9 @@ enum StoryModePDFExportService {
             .background(bgColor)
 
         let imageRenderer = ImageRenderer(content: root)
-        imageRenderer.scale = 2.0  // Cap at 2× — 3× (device scale) triples pixel count with negligible visual gain in PDF
+        // Prefer higher scale for storybook PDF: users zoom/print and 2× can look soft.
+        // This is intentionally higher than Story Mode UI rendering.
+        imageRenderer.scale = 3.0
         imageRenderer.proposedSize = ProposedViewSize(width: size.width, height: size.height)
 
         guard let image = imageRenderer.uiImage else {

@@ -57,9 +57,18 @@ struct CreateBlogFlowView: View {
                         // Determine the trip to build from
                         let tripForBuild: TripDraft
                         if startDirectlyCreating {
-                            let selectedTrip = await TripPhotoSelectionService.shared.selectTopPhotosPerCluster(trip: trip)
-                            createdRecapStore.addCreatedBlog(trip: selectedTrip)
-                            tripForBuild = selectedTrip
+                            // Ensure all photos are selected so buildBlogDetail doesn't drop any
+                            // place stops. applyPhotoQualitySelection will score and smart-select
+                            // the best photos per stop — TripPhotoSelectionService is not needed.
+                            // (VisitedCitiesSheet already does this; TripsView does not.)
+                            var tripAllSelected = trip
+                            for dayIdx in tripAllSelected.days.indices {
+                                for photoIdx in tripAllSelected.days[dayIdx].photos.indices {
+                                    tripAllSelected.days[dayIdx].photos[photoIdx].isSelected = true
+                                }
+                            }
+                            createdRecapStore.addCreatedBlog(trip: tripAllSelected)
+                            tripForBuild = tripAllSelected
                         } else {
                             tripForBuild = createdRecapStore.tripDraft(for: trip.id) ?? trip
                         }

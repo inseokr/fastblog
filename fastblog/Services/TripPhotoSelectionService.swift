@@ -58,7 +58,10 @@ actor TripPhotoSelectionService {
         for dayIdx in updatedTrip.days.indices {
             for photoIdx in updatedTrip.days[dayIdx].photos.indices {
                 if let localId = updatedTrip.days[dayIdx].photos[photoIdx].localIdentifier {
-                    if selectedAssetIds.contains(localId) {
+                    if localId.hasPrefix(AppCapturePhotoService.prefix) {
+                        // In-app captures are always user-intentional — never deselect them.
+                        updatedTrip.days[dayIdx].photos[photoIdx].isSelected = true
+                    } else if selectedAssetIds.contains(localId) {
                         updatedTrip.days[dayIdx].photos[photoIdx].isSelected = true
                     } else {
                         updatedTrip.days[dayIdx].photos[photoIdx].isSelected = false

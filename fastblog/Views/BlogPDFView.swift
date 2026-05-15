@@ -111,14 +111,17 @@ struct BlogPDFView: View {
                 .frame(height: 56)
             }
 
-            if let caption = day.dayCaption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // Day story on the page only when there is no map — with a map it sits on the tile bottom (matches PDF export)
+            if mapSnapshots[day.id] == nil,
+               let caption = day.dayCaption,
+               !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(caption)
                     .font(Font.custom("Georgia-Italic", size: 15))
                     .foregroundColor(.black.opacity(0.75))
                     .lineSpacing(7)
             }
 
-            // Map — day + date overlaid top-left (matches PDF export)
+            // Map — day + date overlaid top-left; day story bottom scrim (matches PDF export)
             if let mapImage = mapSnapshots[day.id] {
                 ZStack(alignment: .topLeading) {
                     Image(uiImage: mapImage)
@@ -133,6 +136,36 @@ struct BlogPDFView: View {
                     )
                     .frame(width: contentWidth, height: 140)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                    if let caption = day.dayCaption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        VStack(spacing: 0) {
+                            Spacer(minLength: 0)
+                            LinearGradient(
+                                colors: [.clear, .black.opacity(0.38), .black.opacity(0.62)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(width: contentWidth, height: 160)
+                            .allowsHitTesting(false)
+                        }
+                        .allowsHitTesting(false)
+
+                        VStack {
+                            Spacer()
+                            Text(caption)
+                                .italic()
+                                .font(Font.custom("Georgia-Italic", size: 14))
+                                .foregroundColor(.white.opacity(0.92))
+                                .shadow(color: .black.opacity(0.55), radius: 3, x: 0, y: 1)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .padding(.bottom, 14)
+                                .padding(.top, 12)
+                                .lineLimit(10)
+                                .minimumScaleFactor(0.92)
+                        }
+                    }
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("DAY \(dayIndex)")

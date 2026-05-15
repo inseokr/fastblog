@@ -9,7 +9,7 @@ enum SlideshowMusicPreference {
     static let explicitNoneSentinel = "__none__"
 
     /// Default track filename used when no preference has ever been saved for a blog.
-    static let defaultFilename = "burtysounds-happy-124917.mp3"
+    static let defaultFilename = "Afterhours.mp3"
 
     private static func filenameKey(blogId: String) -> String {
         "slideshow.bundled.filename.\(blogId)"

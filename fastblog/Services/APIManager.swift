@@ -355,6 +355,51 @@ final class APIManager {
         return try await uploadPhoto(image: image, filename: filename)
     }
 
+    /// Uploads arbitrary `Data` to the file server as a named file.
+    /// Uses the same multipart endpoint as `uploadPhoto`. Returns the cloud URL string on success.
+    func uploadJSONData(_ data: Data, filename: String) async throws -> String {
+        guard let url = URL(string: fileServerURL + "/place/file_upload") else {
+            throw APIError.invalidURL
+        }
+        let boundary = UUID().uuidString
+        var body = Data()
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"photo\"; filename=\"\(filename)\"\r\n".utf8))
+        body.append(Data("Content-Type: application/json\r\n\r\n".utf8))
+        body.append(data)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if let token = AuthService.shared.currentJwtToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = body
+
+        print("🌐 [POST] \(fileServerURL)/place/file_upload — json: \(filename) (\(data.count) bytes)")
+        let (responseData, response): (Data, URLResponse)
+        do {
+            (responseData, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw APIError.networkError(error)
+        }
+        guard let httpResponse = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            var msg = "Upload failed."
+            if let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any] {
+                msg = (json["message"] as? String) ?? (json["error"] as? String) ?? msg
+            }
+            throw APIError.httpError(statusCode: httpResponse.statusCode, message: msg)
+        }
+        struct FileUploadResponse: Decodable { let path: String? }
+        let result = try JSONDecoder().decode(FileUploadResponse.self, from: responseData)
+        guard let rawURL = result.path, !rawURL.isEmpty else { throw APIError.invalidResponse }
+        let cloudURL = APIManager.stripQueryParams(from: rawURL)
+        print("   ✅ JSON uploaded → \(cloudURL)")
+        return cloudURL
+    }
+
     /// Uploads the user's profile picture (POST /profile/:user_id/file_upload on LS_API).
     /// Backend expects multipart field name "file_name". Returns the server path on success.
     func uploadProfilePicture(userId: String, image: UIImage) async throws -> String {

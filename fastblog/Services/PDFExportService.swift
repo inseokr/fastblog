@@ -89,7 +89,8 @@ struct PDFPhotoShapeOptions: Codable, Equatable {
 
 struct PDFExportOptions: Codable, Equatable {
     var fontTheme: FontTheme = .classic
-    var colorStyle: BlogColor = .white
+    /// Default to dark story / PDF chrome; users can switch to light in export settings.
+    var colorStyle: BlogColor = .black
     var photoShapeOptions: PDFPhotoShapeOptions = PDFPhotoShapeOptions()
 }
 
@@ -133,7 +134,7 @@ class PDFExportService {
     // Card styling (light gray on white paper ≈ app's Color(white: 0.12) on black)
     static let cardBg = UIColor(white: 0.92, alpha: 1.0)
     static let cardRadius: CGFloat = 12
-    static let cardPadding: CGFloat = 16
+    nonisolated static let cardPadding: CGFloat = 16
 
     // Photo grid — sized to fit INSIDE the card (not full contentW)
     // Card interior = contentW - cardPadding*2 = 508
@@ -301,19 +302,23 @@ class PDFExportService {
                                  font: Self.font(for: options.fontTheme, size: 20, weight: .bold), color: options.primaryTextColor)
                 }
 
-                // Day caption
-                if let caption = day.dayCaption,
-                   !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    pen.skip(4)
-                    pen.drawLeft(caption,
-                                 font: Self.font(for: options.fontTheme, size: 15),
-                                 color: options.secondaryTextColor)
-                    pen.skip(8)
+                // Day caption — on the page only when there is no map; with a map it’s overlaid on the tile bottom.
+                if !hasMap {
+                    if let caption = day.dayCaption,
+                       !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        pen.skip(4)
+                        pen.drawLeft(caption,
+                                     font: Self.font(for: options.fontTheme, size: 15),
+                                     color: options.secondaryTextColor)
+                        pen.skip(8)
+                    } else {
+                        pen.skip(8)
+                    }
                 } else {
                     pen.skip(8)
                 }
 
-                // Map snapshot — day label + date overlaid at top-left (with top scrim + text shadow)
+                // Map snapshot — day label + date overlaid at top-left; day story at bottom (scrim + opacity)
                 if let mapImg = assets.maps[day.id] {
                     let mapH = min(contentW * (mapImg.size.height / mapImg.size.width), 280)
                     let mapOriginY = pen.y
@@ -325,6 +330,13 @@ class PDFExportService {
                         dateText: day.shortDateText,
                         fontTheme: options.fontTheme
                     )
+                    if let cap = day.dayCaption?.trimmingCharacters(in: .whitespacesAndNewlines), !cap.isEmpty {
+                        Self.drawPDFMapDayStoryBottomOverlay(
+                            mapFrame: mapFrame,
+                            caption: cap,
+                            fontTheme: options.fontTheme
+                        )
+                    }
                     pen.skip(8)
                 }
 
@@ -526,7 +538,7 @@ class PDFExportService {
         // ── Badge + Title (app: HStack spacing 12) ──
         pen.drawBadge(number: number, color: badgeColor, size: badgeSize)
 
-        var titleAttrs: [NSAttributedString.Key: Any] = [
+        let titleAttrs: [NSAttributedString.Key: Any] = [
             .font: titleFont,
             .foregroundColor: options.primaryTextColor
         ]
@@ -902,6 +914,102 @@ class PDFExportService {
             options: []
         )
         gc.restoreGState()
+    }
+
+    /// Bottom-up gradient so day story text reads on the map (map remains visible through the fade).
+    private static func drawPDFBottomEdgeGradientOverlay(in rect: CGRect, maxHeight: CGFloat) {
+        guard let gc = UIGraphicsGetCurrentContext() else { return }
+        let h = min(maxHeight, rect.height)
+        guard h > 1 else { return }
+        let strip = CGRect(x: rect.minX, y: rect.maxY - h, width: rect.width, height: h)
+        gc.saveGState()
+        gc.clip(to: strip)
+        let colors = [
+            UIColor.black.withAlphaComponent(0.0).cgColor,
+            UIColor.black.withAlphaComponent(0.38).cgColor,
+            UIColor.black.withAlphaComponent(0.62).cgColor
+        ] as CFArray
+        let locs: [CGFloat] = [0, 0.5, 1]
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let gradient = CGGradient(colorsSpace: space, colors: colors, locations: locs) else {
+            gc.restoreGState()
+            return
+        }
+        gc.drawLinearGradient(
+            gradient,
+            start: CGPoint(x: strip.midX, y: strip.minY),
+            end: CGPoint(x: strip.midX, y: strip.maxY),
+            options: []
+        )
+        gc.restoreGState()
+    }
+
+    private static func drawPDFMapDayStoryBottomOverlay(
+        mapFrame: CGRect,
+        caption: String,
+        fontTheme: FontTheme
+    ) {
+        let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let scrimH = min(200, max(96, mapFrame.height * 0.48))
+        drawPDFBottomEdgeGradientOverlay(in: mapFrame, maxHeight: scrimH)
+
+        let shadow = NSShadow()
+        shadow.shadowColor = UIColor.black.withAlphaComponent(0.55)
+        shadow.shadowBlurRadius = 3
+        shadow.shadowOffset = CGSize(width: 0, height: 1)
+
+        let para = NSMutableParagraphStyle()
+        para.alignment = .left
+        para.lineBreakMode = .byWordWrapping
+
+        let storyFont = StoryFontHelper.uiItalicFont(for: fontTheme, size: StoryPageLayout.dayStoryCaptionFontSize)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: storyFont,
+            .foregroundColor: UIColor.white.withAlphaComponent(0.92),
+            .paragraphStyle: para,
+            .shadow: shadow
+        ]
+
+        let padX: CGFloat = 14
+        let padBottom: CGFloat = 12
+        let padTopInScrim: CGFloat = 16
+        let textW = mapFrame.width - padX * 2
+        let maxTextH = max(24, scrimH - padTopInScrim - padBottom)
+
+        let ns = trimmed as NSString
+        let natural = ns.boundingRect(
+            with: CGSize(width: textW, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attrs,
+            context: nil
+        ).height
+
+        let drawH = min(ceil(natural), maxTextH)
+        let textY = mapFrame.maxY - padBottom - drawH
+        let textRect = CGRect(x: mapFrame.minX + padX, y: textY, width: textW, height: drawH)
+
+        if natural > maxTextH + 0.5 {
+            let truncPara = NSMutableParagraphStyle()
+            truncPara.setParagraphStyle(para)
+            truncPara.lineBreakMode = .byTruncatingTail
+            var truncAttrs = attrs
+            truncAttrs[.paragraphStyle] = truncPara
+            ns.draw(
+                with: textRect,
+                options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
+                attributes: truncAttrs,
+                context: nil
+            )
+        } else {
+            ns.draw(
+                with: textRect,
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: attrs,
+                context: nil
+            )
+        }
     }
 
     private static func drawPDFMapDayHeaderOverlay(

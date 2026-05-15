@@ -67,6 +67,27 @@ enum StoryWritingStyle {
     }
 }
 
+// MARK: - Visit timing (daypart labels for copy — no clock times)
+
+/// Human-readable time-of-day bucket for travel-blog prompts (e.g. morning, lunchtime, evening).
+enum VisitDaypart: Sendable {
+    /// Local wall-clock bucket for `date` in `timeZone` (defaults to device timezone).
+    static func label(for date: Date, in timeZone: TimeZone = .current) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        let hour = cal.component(.hour, from: date)
+        switch hour {
+        case 5..<10: return "morning"
+        case 10..<12: return "late morning"
+        case 12..<15: return "lunchtime"
+        case 15..<17: return "afternoon"
+        case 17..<20: return "evening"
+        case 20..<23: return "late evening"
+        default: return "night"
+        }
+    }
+}
+
 // MARK: - Place Category
 
 /// Normalized place category used to select the right prompt modifier.
@@ -267,7 +288,7 @@ struct EnhanceOverallPlaceStoryContext {
 
 // MARK: - Narrative Context Types (LLM-only, no template fallback)
 
-/// Input context for a 4–6 line place narrative generated on demand.
+/// Input context for a short place narrative (at most 3 sentences) generated on demand.
 struct PlaceNarrativeContext {
     let tags: [String]
     let placeName: String
@@ -281,7 +302,7 @@ struct PlaceNarrativeContext {
     let existingStory: String?
 }
 
-/// Input context for a 4–6 line day narrative generated on demand.
+/// Input context for a short day narrative (at most 3 sentences) generated on demand.
 struct DayNarrativeContext {
     /// Human-readable date string (e.g. "Saturday Jan-18").
     let dayDateText: String
@@ -291,7 +312,7 @@ struct DayNarrativeContext {
     let weatherSummary: String?
 }
 
-/// Input context for a 5–6 line trip opening narrative generated on demand.
+/// Input context for a short trip opening narrative (at most 3 sentences) generated on demand.
 struct TripNarrativeContext {
     let tripTitle: String
     let dateRangeText: String

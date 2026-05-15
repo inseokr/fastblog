@@ -62,12 +62,18 @@ actor PhotoQualityScorer {
             return [:]
         }
 
+        /// Unbounded parallelism against `assetsd` (dozens of concurrent `PHImageManager` requests) reliably
+        /// triggers XPC/CoreData flakes on large trips — cap in-flight scoring work.
+        let maxConcurrentScores = 6
         var results: [String: PhotoScore] = [:]
+        var iterator = assets.makeIterator()
         await withTaskGroup(of: (String, PhotoScore?).self) { group in
-            for asset in assets {
-                group.addTask {
-                    let score = await self.scoreAsset(asset)
-                    return (asset.localIdentifier, score)
+            for _ in 0..<min(maxConcurrentScores, assets.count) {
+                if let asset = iterator.next() {
+                    group.addTask {
+                        let score = await self.scoreAsset(asset)
+                        return (asset.localIdentifier, score)
+                    }
                 }
             }
             for await (identifier, score) in group {
@@ -75,6 +81,12 @@ actor PhotoQualityScorer {
                     results[identifier] = score
                 } else {
                     print("[PQS] scorePhotos: scoreAsset returned nil for \(identifier.prefix(8))…")
+                }
+                if let next = iterator.next() {
+                    group.addTask {
+                        let s = await self.scoreAsset(next)
+                        return (next.localIdentifier, s)
+                    }
                 }
             }
         }
@@ -247,15 +259,66 @@ actor PhotoQualityScorer {
 extension Array where Element == RecapPhoto {
     /// Returns the top-quality photo ids that should be included by default.
     /// 3 photos if total > 5, 2 if 3–5, 1 if 1–2. Users can add more via "Manage Photos".
-    /// Adds duplicate control: avoid selecting photos that are too close in time/location.
+    /// Favorites (PHAsset.isFavorite) are always prioritized: if there are fewer favorites than the
+    /// slot limit they are always included; if there are more, the best-scoring ones fill the slots.
+    /// When no favorites exist, falls back to pure score ranking.
     func autoSelectedIds() -> Set<UUID> {
         guard !isEmpty else { return [] }
         let count = self.count
         let maxSelected: Int = count > 5 ? 3 : (count >= 3 ? 2 : 1)
 
+        let minTimeDistance: TimeInterval = 90
+        let minSpatialDistance: CLLocationDistance = 35
+
+        let favorites = filter(\.isFavorite)
+        let nonFavorites = filter { !$0.isFavorite }
+
+        if !favorites.isEmpty {
+            if favorites.count >= maxSelected {
+                // More favorites than needed — pick best-scoring ones.
+                let ranked = favorites.sorted {
+                    ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0)
+                }
+                var selected: [RecapPhoto] = []
+                for candidate in ranked {
+                    guard selected.count < maxSelected else { break }
+                    if isDistinctEnough(candidate, from: selected, minTimeDistance: minTimeDistance, minSpatialDistance: minSpatialDistance) {
+                        selected.append(candidate)
+                    }
+                }
+                if selected.count < maxSelected {
+                    for candidate in ranked where !selected.contains(where: { $0.id == candidate.id }) {
+                        guard selected.count < maxSelected else { break }
+                        selected.append(candidate)
+                    }
+                }
+                return Set(selected.map(\.id))
+            } else {
+                // Fewer favorites than the limit — always include all favorites, fill remainder by score.
+                var selected = favorites
+                let remaining = maxSelected - favorites.count
+                let ranked = nonFavorites.sorted {
+                    ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0)
+                }
+                for candidate in ranked {
+                    guard selected.count < maxSelected else { break }
+                    if isDistinctEnough(candidate, from: selected, minTimeDistance: minTimeDistance, minSpatialDistance: minSpatialDistance) {
+                        selected.append(candidate)
+                    }
+                }
+                if selected.count < maxSelected {
+                    for candidate in ranked where !selected.contains(where: { $0.id == candidate.id }) {
+                        guard selected.count - favorites.count < remaining else { break }
+                        selected.append(candidate)
+                    }
+                }
+                return Set(selected.map(\.id))
+            }
+        }
+
+        // No favorites — use score-based selection.
         let scored = filter { $0.qualityScore != nil }
         if scored.isEmpty {
-            // No scores yet – fall through to original selection
             return Set(filter(\.isIncluded).map(\.id))
         }
 
@@ -263,24 +326,14 @@ extension Array where Element == RecapPhoto {
             ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0)
         }
 
-        // Keep deterministic, but skip obvious near-duplicate burst shots.
-        let minTimeDistance: TimeInterval = 90 // seconds
-        let minSpatialDistance: CLLocationDistance = 35 // meters
         var selected: [RecapPhoto] = []
-
         for candidate in rankedPhotos {
             guard selected.count < maxSelected else { break }
-            if isDistinctEnough(
-                candidate,
-                from: selected,
-                minTimeDistance: minTimeDistance,
-                minSpatialDistance: minSpatialDistance
-            ) {
+            if isDistinctEnough(candidate, from: selected, minTimeDistance: minTimeDistance, minSpatialDistance: minSpatialDistance) {
                 selected.append(candidate)
             }
         }
 
-        // Fallback to ensure we still fill the expected count in dense/same-spot sequences.
         if selected.count < maxSelected {
             for candidate in rankedPhotos where !selected.contains(where: { $0.id == candidate.id }) {
                 guard selected.count < maxSelected else { break }

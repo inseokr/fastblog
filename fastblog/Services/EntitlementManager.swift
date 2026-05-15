@@ -11,7 +11,6 @@
 
 import Combine
 import Foundation
-import StoreKit
 
 @MainActor
 final class EntitlementManager: ObservableObject {
@@ -82,14 +81,8 @@ final class EntitlementManager: ObservableObject {
 
     // MARK: - Effective Entitlements (merges real + mock)
 
-    /// Effective Pro status: real StoreKit always wins; mock only applies when no real Pro.
-    var isProActive: Bool {
-        if realProActive { return true }
-        #if DEBUG
-        if mockProEnabled && !mockExpiredPro { return true }
-        #endif
-        return false
-    }
+    /// All users get Pro access for the initial release — subscription not yet enabled.
+    var isProActive: Bool { return true }
 
     /// Free tier storage cap: 500 MB in bytes.
     static let freeTierStorageLimit: Int64 = 524_288_000
@@ -186,63 +179,13 @@ final class EntitlementManager: ObservableObject {
         }
     }
 
-    // MARK: - Handle Transactions
+    // MARK: - Refresh (no-op for initial release — IAP not yet enabled)
 
-    /// Called after a successful purchase or from the transaction listener.
-    func handleTransaction(_ transaction: Transaction, productID: String) async {
-        if ProductID.proIDs.contains(productID) {
-            realProActive = true
-            proExpirationDate = transaction.expirationDate
-            proPlanType = productID == ProductID.proMonthly ? "monthly" : "yearly"
-            saveToDefaults()
-            CreatedRecapBlogStore.shared.enforceArchiveRules()
-        } else if productID == ProductID.lifetimeBlog {
-            lifetimeBlogSlots += 1
-            saveToDefaults()
-            CreatedRecapBlogStore.shared.enforceArchiveRules()
-        }
-    }
-
-    // MARK: - Refresh from StoreKit
-
-    /// Re-check all current entitlements from StoreKit (called on launch, foreground, restore).
-    /// Returns true if any Pro entitlement was found.
     @discardableResult
     func refreshEntitlements() async -> Bool {
-        var foundPro = false
-        var expDate: Date?
-        var planType: String?
-
-        for await result in Transaction.currentEntitlements {
-            guard case .verified(let transaction) = result else { continue }
-
-            if ProductID.proIDs.contains(transaction.productID) {
-                if transaction.revocationDate == nil {
-                    foundPro = true
-                    expDate = transaction.expirationDate
-                    planType = transaction.productID == ProductID.proMonthly ? "monthly" : "yearly"
-                }
-            }
-        }
-
-        let wasProActive = isProActive
-        realProActive = foundPro
-        proExpirationDate = expDate
-        proPlanType = foundPro ? planType : nil
-
-        if !foundPro {
-            proExpirationDate = nil
-            proPlanType = nil
-        }
-
         lastRestoreDate = Date()
         saveToDefaults()
-
-        if wasProActive != isProActive {
-            CreatedRecapBlogStore.shared.enforceArchiveRules()
-        }
-
-        return foundPro
+        return true
     }
 
     // MARK: - Lifetime Slot Allocation

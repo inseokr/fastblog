@@ -440,6 +440,7 @@ enum PlacePOICategoryPresentation {
 
 struct PlacePOICategoryBadge: View {
     let rawCategory: String?
+    var isOnPhoto: Bool = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -451,12 +452,14 @@ struct PlacePOICategoryBadge: View {
                 .font(.caption2)
                 .fontWeight(.medium)
         }
-        .foregroundStyle(p.color)
+        .foregroundStyle(isOnPhoto ? Color.white : p.color)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(
             Capsule()
-                .fill(p.color.opacity(colorScheme == .dark ? 0.22 : 0.14))
+                .fill(isOnPhoto
+                    ? Color.black.opacity(0.35)
+                    : p.color.opacity(colorScheme == .dark ? 0.22 : 0.14))
         )
     }
 }

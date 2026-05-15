@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 /// When the selected day changes due to thumbnail-strip past-edge scroll, we scroll to first or last thumbnail of the new day.
 enum DayChangeScrollEdge {
@@ -100,33 +101,31 @@ struct PhotoSelectView: View {
 #endif
 
     var body: some View {
-        ZStack {
-            Color.black
-                .ignoresSafeArea()
+        VStack(spacing: 0) {
+            // Full-screen photo: fills remaining space (shrinks when embedded bottom content is present)
+            // ignoresSafeArea(.container, .top) lets the photo draw behind the nav bar without expanding
+            // the VStack's layout frame — keeping sibling overlays (day tabs) properly below the nav bar.
+            mainPhotoArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea(.container, edges: .top)
 
-            VStack(spacing: 0) {
-                // Full-screen photo: fills remaining space (shrinks when embedded bottom content is present)
-                mainPhotoArea
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                // Bottom: count label, horizontal strip, then optional Create button when embedded
-                VStack(spacing: 24) {
-                    selectedCountLabel
-                    thumbnailStrip
-                }
-                .padding(.top, 24)
-                .padding(.bottom, 12)
-                .background(Color.black)
-
-                if embedded, let content = embeddedBottomContent {
-                    content()
-                        .padding(.top, 4)
-                        .padding(.bottom, 24)
-                }
+            // Bottom: count label, horizontal strip, then optional Create button when embedded
+            VStack(spacing: 24) {
+                selectedCountLabel
+                thumbnailStrip
             }
+            .padding(.top, 24)
+            .padding(.bottom, 12)
             .background(Color.black)
+
+            if embedded, let content = embeddedBottomContent {
+                content()
+                    .padding(.top, 4)
+            }
         }
-        .navigationTitle(embedded ? "" : "Select Photos")
+        .background(Color.black.ignoresSafeArea())
+        .background(PopGestureDisabler())
+        .navigationTitle(embedded ? "Photo Selection" : "Select Photos")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !embedded {
@@ -169,33 +168,28 @@ struct PhotoSelectView: View {
     private var mainPhotoArea: some View {
         ZStack {
             if let photo = currentPhoto {
-                ZStack {
-                    mainPhotoImage(photo: photo)
-                    if photo.isSelected {
-                        Color.black.opacity(0.4)
-                            .allowsHitTesting(false)
-                        selectionCheckOverlay
-                    }
-                }
-                .id(photo.id)
-                .contentShape(Rectangle())
-                .onTapGesture { toggleSelection() }
-                .gesture(
-                    DragGesture(minimumDistance: 40)
-                        .onEnded { value in
-                            let idx = photos.firstIndex(where: { $0.id == currentPhotoId }) ?? 0
-                            let dx = value.translation.width
-                            if dx < -40, idx + 1 < photos.count {
-                                withAnimation(.easeInOut(duration: 0.22)) {
-                                    currentPhotoId = photos[idx + 1].id
-                                }
-                            } else if dx > 40, idx > 0 {
-                                withAnimation(.easeInOut(duration: 0.22)) {
-                                    currentPhotoId = photos[idx - 1].id
+                mainPhotoImage(photo: photo)
+                    .opacity(photo.isSelected ? 1.0 : 0.7)
+                    .animation(.easeInOut(duration: 0.2), value: photo.isSelected)
+                    .id(photo.id)
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggleSelection() }
+                    .gesture(
+                        DragGesture(minimumDistance: 40)
+                            .onEnded { value in
+                                let idx = photos.firstIndex(where: { $0.id == currentPhotoId }) ?? 0
+                                let dx = value.translation.width
+                                if dx < -40, idx + 1 < photos.count {
+                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                        currentPhotoId = photos[idx + 1].id
+                                    }
+                                } else if dx > 40, idx > 0 {
+                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                        currentPhotoId = photos[idx - 1].id
+                                    }
                                 }
                             }
-                        }
-                )
+                    )
             }
         }
         .animation(.easeInOut(duration: 0.22), value: currentPhotoId)
@@ -204,14 +198,7 @@ struct PhotoSelectView: View {
     private func mainPhotoImage(photo: MockPhoto) -> some View {
         MockPhotoThumbnail(photo: photo, cornerRadius: 0, showIcon: false)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var selectionCheckOverlay: some View {
-        Image(systemName: "checkmark.circle.fill")
-            .font(.system(size: 72))
-            .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.4), radius: 6)
-            .transition(.scale.combined(with: .opacity))
+            .clipped()
     }
 
     private func toggleSelection() {
@@ -384,6 +371,7 @@ struct ThumbnailCell: View {
             ZStack(alignment: .topTrailing) {
                 MockPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false)
                     .frame(width: 56, height: 56)
+                    .clipped()
                 if photo.isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 14))
@@ -397,12 +385,32 @@ struct ThumbnailCell: View {
                         .allowsHitTesting(false)
                 }
             }
+            .frame(width: 56, height: 56)
+            .clipped()
             .overlay(
                 RoundedRectangle(appChromeBaseRadius: 8)
                     .stroke(isCurrent ? Color.white : Color.clear, lineWidth: 3)
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+// Disables the NavigationStack's edge-swipe-back gesture while the photo viewer
+// is visible, preventing it from competing with the left/right photo-navigation swipe.
+private struct PopGestureDisabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> VC { .init() }
+    func updateUIViewController(_: VC, context: Context) {}
+
+    final class VC: UIViewController {
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            navigationController?.interactivePopGestureRecognizer?.isEnabled = false
+        }
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+        }
     }
 }
 

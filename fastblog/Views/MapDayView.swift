@@ -24,6 +24,7 @@ struct PlaceMapMarker: Identifiable {
     let coordinate: CLLocationCoordinate2D
     let firstPhoto: RecapPhoto
     let placeTitle: String
+    var placeCategory: String?
 }
 
 /// Map for one day: one marker per place (first photo as marker image), place name below, route line in visit order. Tap to open full-screen map when onTap provided.
@@ -37,20 +38,24 @@ struct MapDayView: View {
     var onAnnotationTap: ((UUID) -> Void)? = nil
     /// If true, suppress any green/orange "Start" or "End" visual styling on markers.
     var hideStartEndMarkers: Bool = false
+    /// When set, called when the user taps a native MapKit POI. Only pass this in full-screen contexts.
+    var onPOITapped: ((MapFeature) -> Void)? = nil
 
     @State private var cameraPosition: MapCameraPosition = .automatic
+    @State private var selectedMapFeature: MapFeature?
 
-    init(placeStops: [PlaceStop], height: CGFloat = 220, onTap: (() -> Void)? = nil, focusedPlaceId: UUID? = nil, onAnnotationTap: ((UUID) -> Void)? = nil, hideStartEndMarkers: Bool = false) {
+    init(placeStops: [PlaceStop], height: CGFloat = 220, onTap: (() -> Void)? = nil, focusedPlaceId: UUID? = nil, onAnnotationTap: ((UUID) -> Void)? = nil, hideStartEndMarkers: Bool = false, onPOITapped: ((MapFeature) -> Void)? = nil) {
         self.placeStops = placeStops
         self.height = height
         self.onTap = onTap
         self.focusedPlaceId = focusedPlaceId
         self.onAnnotationTap = onAnnotationTap
         self.hideStartEndMarkers = hideStartEndMarkers
+        self.onPOITapped = onPOITapped
     }
 
     var body: some View {
-        Map(position: $cameraPosition) {
+        Map(position: $cameraPosition, selection: $selectedMapFeature) {
             if routeCoordinates.count >= 2 {
                 MapPolyline(coordinates: routeCoordinates)
                     .stroke(Color(red: 0, green: 122/255, blue: 1), lineWidth: 4)
@@ -65,7 +70,8 @@ struct MapDayView: View {
                         title: marker.placeTitle,
                         placeNumber: placeNumber,
                         isFirst: isFirst,
-                        isLast: isLast
+                        isLast: isLast,
+                        placeCategory: marker.placeCategory
                     )
                     .onTapGesture {
                         onAnnotationTap?(marker.id)
@@ -89,6 +95,13 @@ struct MapDayView: View {
                     }
                 }
             }
+        }
+        // Match onboarding's native Apple Maps look (less 3D terrain-heavy than realistic elevation).
+        .mapStyle(.standard(elevation: .flat))
+        .onChange(of: selectedMapFeature) { _, newFeature in
+            guard let newFeature, let onPOITapped else { return }
+            onPOITapped(newFeature)
+            selectedMapFeature = nil
         }
         .frame(height: height)
         .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
@@ -130,7 +143,8 @@ struct MapDayView: View {
                 id: stop.id,
                 coordinate: coordinate,
                 firstPhoto: first,
-                placeTitle: stop.placeTitle
+                placeTitle: stop.placeTitle,
+                placeCategory: stop.placeCategory
             )
         }
     }
@@ -207,6 +221,7 @@ private struct PlaceMarkerView: View {
     let placeNumber: Int
     let isFirst: Bool
     let isLast: Bool
+    var placeCategory: String? = nil
 
     private var orderLabel: String {
         switch placeNumber {
@@ -227,7 +242,7 @@ private struct PlaceMarkerView: View {
                 startEndBadge(text: "END", color: Color.orange)
             }
 
-            ZStack(alignment: .bottomTrailing) {
+            ZStack(alignment: .topLeading) {
                 RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 80, height: 80))
                     .frame(width: 48, height: 48)
                     .clipShape(Circle())
@@ -240,13 +255,29 @@ private struct PlaceMarkerView: View {
                     )
                     .shadow(color: .black.opacity(0.35), radius: 2)
 
-                Text("\(placeNumber)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 18, height: 18)
-                    .background(Circle().fill(Color.blue.opacity(0.9)))
-                    .overlay(Circle().stroke(Color.white, lineWidth: 1))
-                    .offset(x: 4, y: 4)
+                // Middle stops only: order badge on the photo. Start/end use the pills above.
+                if !isFirst && !isLast {
+                    Text("\(placeNumber)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(Color.blue.opacity(0.9)))
+                        .overlay(Circle().stroke(Color.white, lineWidth: 1))
+                        .offset(x: -4, y: -4)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if let raw = placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+                    let presentation = PlacePOICategoryPresentation.presentation(forRaw: raw)
+                    Image(systemName: presentation.symbol)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(presentation.color))
+                        .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1))
+                        .offset(x: 4, y: -2)
+                        .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
+                }
             }
 
             Text(title)
@@ -328,6 +359,8 @@ struct FullScreenMapView: View {
     @State private var selectedCategory: String? = nil
     @State private var scrolledPlaceID: UUID?
     @State private var editablePlaceStops: [PlaceStop]
+    @State private var activePOIFeature: MapFeature?
+    @State private var showPOISheet: Bool = false
 
     init(
         day: RecapBlogDay,
@@ -353,7 +386,7 @@ struct FullScreenMapView: View {
         let includeOthers = editablePlaceStops.contains {
             ($0.placeCategory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-        return PlacePOICategoryCatalog.mergedCategoryRawsForFilters(dataRaws: dataRaws, includeOthers: includeOthers)
+        return PlacePOICategoryCatalog.categoryRawsAppearingInDataForFilters(dataRaws: dataRaws, includeOthers: includeOthers)
     }
 
     private var filteredStops: [PlaceStop] {
@@ -429,7 +462,11 @@ struct FullScreenMapView: View {
                             guard let stop = filteredStops.first(where: { $0.id == stopId }) else { return }
                             openPhotoModal(for: stop)
                         },
-                        hideStartEndMarkers: selectedCategory != nil
+                        hideStartEndMarkers: selectedCategory != nil,
+                        onPOITapped: { feature in
+                            activePOIFeature = feature
+                            showPOISheet = true
+                        }
                     )
                     .ignoresSafeArea(edges: .all)
 
@@ -555,6 +592,17 @@ struct FullScreenMapView: View {
                             editablePlaceStops[idx] = updated
                         }
                         onPlaceNameSaved?(updated.id, name, category, coord, subtitleLine)
+                    },
+                    onSavePlaceCategory: { newCategory in
+                        guard var updated = photoModalStop else { return }
+                        updated.placeCategory = newCategory
+                        photoModalStop = updated
+                        if let idx = editablePlaceStops.firstIndex(where: { $0.id == updated.id }) {
+                            editablePlaceStops[idx] = updated
+                        }
+                        let subtitleLine = (updated.placeSubtitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        let coord = updated.representativeLocation?.clCoordinate
+                        onPlaceNameSaved?(updated.id, updated.placeTitle, newCategory, coord, subtitleLine)
                     }
                 )
                 .transition(.asymmetric(insertion: .opacity, removal: .identity))
@@ -566,6 +614,13 @@ struct FullScreenMapView: View {
         // so PlacePhotoModalView's caption editor inset stays above the keyboard.
         .ignoresSafeArea(.container, edges: .all)
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showPOISheet, onDismiss: {
+            activePOIFeature = nil
+        }) {
+            if let feature = activePOIFeature {
+                POIInfoSheet(feature: feature)
+            }
+        }
         .animation(.easeInOut(duration: 0.38), value: photoModalStop?.id)
         .onAppear {
             applyInitialFocusIfNeeded()
@@ -587,10 +642,11 @@ struct FullScreenMapView: View {
             HStack(spacing: 6) {
                 Image(systemName: p.symbol)
                     .font(.system(size: 12, weight: .semibold))
+                    .symbolRenderingMode(.monochrome)
                 Text(label)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
             }
-            .foregroundColor(.white)
+            .foregroundStyle(isSelected ? Color.white : Color.white.opacity(0.88))
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(isSelected ? p.color : p.color.opacity(0.35))

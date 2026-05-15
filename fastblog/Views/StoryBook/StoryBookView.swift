@@ -73,32 +73,56 @@ struct StoryBookView: View {
             case .ready(let pages):
                 ZStack {
                     ZStack {
-                        TabView(selection: $selectedPageIndex) {
-                            ForEach(0..<pages.count, id: \.self) { i in
-                                StoryPageView(page: pages[i], onTOCDayTap: { entry in
-                                    let idx = entry.dayStartPageNumber - 1
-                                    if pages.indices.contains(idx) {
-                                        selectedPageIndex = idx
+                        // Paging `ScrollView` + `scrollTransition` crossfades adjacent pages while dragging.
+                        // This makes the last photo page of a day blend into the next day’s map (and other page turns feel softer).
+                        GeometryReader { geo in
+                            let pageWidth = geo.size.width
+                            let pageHeight = geo.size.height
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 0) {
+                                    ForEach(0..<pages.count, id: \.self) { i in
+                                        StoryPageView(page: pages[i], onTOCDayTap: { entry in
+                                            let idx = entry.dayStartPageNumber - 1
+                                            if pages.indices.contains(idx) {
+                                                withAnimation(.easeInOut(duration: 0.32)) {
+                                                    selectedPageIndex = idx
+                                                }
+                                            }
+                                        })
+                                        .environment(\.storyFontTheme, savedOptions.fontTheme)
+                                        .environment(\.storyBlogColor, savedOptions.colorStyle)
+                                        .frame(width: pageWidth, height: pageHeight)
+                                        .scrollTransition(.interactive, axis: .horizontal) { content, phase in
+                                            content.opacity(Self.storyPagingInterPageOpacity(phase: phase))
+                                        }
+                                        .id(i)
                                     }
-                                })
-                                    .environment(\.storyFontTheme, savedOptions.fontTheme)
-                                    .environment(\.storyBlogColor, savedOptions.colorStyle)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .tag(i)
+                                }
+                                .scrollTargetLayout()
                             }
+                            .scrollTargetBehavior(.paging)
+                            .scrollPosition(
+                                id: Binding(
+                                    get: { Optional(selectedPageIndex) },
+                                    set: { if let v = $0 { selectedPageIndex = v } }
+                                )
+                            )
+                            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                            .simultaneousGesture(
+                                TapGesture().onEnded {
+                                    showChrome.toggle()
+                                }
+                            )
                         }
-                        .tabViewStyle(.page(indexDisplayMode: .never))
-                        .simultaneousGesture(
-                            TapGesture().onEnded {
-                                showChrome.toggle()
-                            }
-                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                         // Invisible tap zones on the left/right edges for prev/next navigation.
                         HStack(spacing: 0) {
                             Button {
                                 if selectedPageIndex > 0 {
-                                    selectedPageIndex -= 1
+                                    withAnimation(.easeInOut(duration: 0.32)) {
+                                        selectedPageIndex -= 1
+                                    }
                                 }
                             } label: {
                                 Rectangle().fill(Color.clear)
@@ -113,7 +137,9 @@ struct StoryBookView: View {
 
                             Button {
                                 if selectedPageIndex < pages.count - 1 {
-                                    selectedPageIndex += 1
+                                    withAnimation(.easeInOut(duration: 0.32)) {
+                                        selectedPageIndex += 1
+                                    }
                                 }
                             } label: {
                                 Rectangle().fill(Color.clear)
@@ -204,12 +230,12 @@ struct StoryBookView: View {
         } message: {
             Text(exportErrorMessage ?? "Unknown error")
         }
-        .onChange(of: triggerShare) { newValue in
+        .onChange(of: triggerShare) { _, newValue in
             guard newValue else { return }
             triggerShare = false
             Task { await exportStoryModePDFAndShare() }
         }
-        .onChange(of: isContentReady) { ready in
+        .onChange(of: isContentReady) { _, ready in
             contentReady = ready
         }
         .onAppear { syncStoryStatusBarColorScheme() }
@@ -264,6 +290,11 @@ struct StoryBookView: View {
         case .ready: return true
         case .loading, .failed: return false
         }
+    }
+
+    /// Opacity while horizontally paging so outgoing and incoming pages overlap in a soft crossfade.
+    nonisolated private static func storyPagingInterPageOpacity(phase: ScrollTransitionPhase) -> CGFloat {
+        max(0, min(1, 1 - abs(phase.value)))
     }
 
     @ViewBuilder

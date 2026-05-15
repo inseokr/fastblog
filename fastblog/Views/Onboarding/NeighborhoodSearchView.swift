@@ -7,6 +7,9 @@ import MapKit
 import SwiftUI
 
 struct NeighborhoodSearchView: View {
+    /// Wide enough for "Cancel" / "Save" so the title stays centered in one row.
+    private static let navChromeSideSlot: CGFloat = 76
+
     var onDismiss: () -> Void
 
     @StateObject private var searchHelper = CitySearchHelper()
@@ -45,30 +48,42 @@ struct NeighborhoodSearchView: View {
                     .frame(width: 36, height: 5)
                     .padding(.top, 12)
 
-                // Header with title, cancel, and save
-                ZStack {
+                // Header row: single HStack (title vertically aligned with Cancel / Save).
+                HStack(alignment: .center, spacing: 0) {
+                    Button {
+                        onDismiss()
+                    } label: {
+                        Text("Cancel")
+                            .foregroundColor(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: Self.navChromeSideSlot, height: 44, alignment: .leading)
+
                     Text("Set Home")
                         .font(.headline)
                         .foregroundColor(.white)
+                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
 
-                    HStack {
-                        Button("Cancel") {
-                            onDismiss()
-                        }
-                        .foregroundColor(.white)
-                        .padding()
-                        Spacer()
+                    Group {
                         if hasPendingSelection {
-                            Button("Save") {
+                            Button {
                                 saveAndDismiss()
+                            } label: {
+                                Text("Save")
+                                    .font(.headline.weight(.semibold))
+                                    .foregroundColor(OnboardingConstants.Colors.doneButtonBlue)
                             }
-                            .fontWeight(.semibold)
-                            .foregroundColor(.blue)
-                            .padding()
+                            .buttonStyle(.plain)
+                        } else {
+                            Color.clear
                         }
                     }
+                    .frame(width: Self.navChromeSideSlot, height: 44, alignment: .trailing)
                 }
                 .padding(.top, 8)
+                .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
 
                 // Search field
                 HStack {
@@ -96,8 +111,8 @@ struct NeighborhoodSearchView: View {
                 }
                 .padding(12)
                 .background(Color.white.opacity(0.1))
-                .appChromeCornerRadius(12)
-                .padding(.horizontal)
+                .appChromeCornerRadius(OnboardingConstants.Layout.searchCornerRadius)
+                .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
                 .padding(.top, 10)
 
                 // Content area

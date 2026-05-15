@@ -3,6 +3,18 @@ import SwiftUI
 
 struct DayMapPageView: View {
     let day: StoryDay
+    @Environment(\.storyFontTheme) private var fontTheme
+
+    private var trimmedDayStory: String? {
+        guard let raw = day.dayCaption?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        return raw
+    }
+
+    private var storyBottomReservedPadding: CGFloat {
+        // `StoryPageLayout.storyChromeBottomOverlayHeight` reserves the bar's *internal* height,
+        // but the bar also adds the window safe-area inset in `StoryBookView.storyModeBottomBar`.
+        StoryPageLayout.storyChromeBottomOverlayHeight + StoryRenderMetrics.windowSafeAreaInsets.bottom + 18
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -36,6 +48,40 @@ struct DayMapPageView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .allowsHitTesting(false)
+
+            // Bottom scrim + day story (story mode + story PDF match this full-bleed map page)
+            if let story = trimmedDayStory {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.48), .black.opacity(0.82)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 260)
+                    .allowsHitTesting(false)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .allowsHitTesting(false)
+
+                VStack {
+                    Spacer()
+                    Text(story)
+                        .italic()
+                        .font(Font(StoryFontHelper.uiItalicFont(for: fontTheme, size: StoryPageLayout.dayStoryCaptionFontSize)))
+                        .foregroundColor(.white.opacity(0.92))
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(8)
+                        .minimumScaleFactor(0.88)
+                        .shadow(color: .black.opacity(0.55), radius: 3, x: 0, y: 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 22)
+                        .padding(.top, 10)
+                        .padding(.bottom, storyBottomReservedPadding)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
+            }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("DAY \(day.dayNumber)")

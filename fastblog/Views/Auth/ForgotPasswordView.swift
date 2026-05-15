@@ -23,6 +23,7 @@ struct ForgotPasswordView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var didSendEmail = false
+    @State private var showForgotUsername = false
 
     var body: some View {
         NavigationStack {
@@ -118,6 +119,17 @@ struct ForgotPasswordView: View {
                   || email.trimmingCharacters(in: .whitespaces).isEmpty
                   || isLoading)
         .padding(.top, 8)
+
+        Button("Don't know your username?") {
+            showForgotUsername = true
+        }
+        .font(.subheadline)
+        .foregroundColor(.white.opacity(0.55))
+        .padding(.top, 4)
+        .sheet(isPresented: $showForgotUsername) {
+            ForgotUsernameView()
+                .environmentObject(authService)
+        }
     }
 
     private var successBanner: some View {

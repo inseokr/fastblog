@@ -12,9 +12,11 @@ struct EmailLoginView: View {
     @EnvironmentObject private var authService: AuthService
 
     var onAuthenticated: (() -> Void)?
-    
-    init(onAuthenticated: (() -> Void)? = nil) {
+    var onDismiss: (() -> Void)?
+
+    init(onAuthenticated: (() -> Void)? = nil, onDismiss: (() -> Void)? = nil) {
         self.onAuthenticated = onAuthenticated
+        self.onDismiss = onDismiss
     }
 
     @State private var email = ""
@@ -43,7 +45,7 @@ struct EmailLoginView: View {
                     .padding(.top, 32)
 
                     VStack(spacing: 16) {
-                        TextField("Email or Username", text: $email)
+                        TextField("Username", text: $email)
                             .keyboardType(.emailAddress)
                             .textContentType(.emailAddress)
                             .autocapitalization(.none)
@@ -81,7 +83,7 @@ struct EmailLoginView: View {
                         errorRow(err)
                     }
 
-                    primaryButton("Sign In", icon: "arrow.right.circle.fill") {
+                    primaryButton("Log In") {
                         performLogin()
                     }
                     .disabled(email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
@@ -102,9 +104,27 @@ struct EmailLoginView: View {
                     loadingOverlay
                 }
             }
+            .navigationBarBackButtonHidden(true)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        if let onDismiss { onDismiss() } else { dismiss() }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .foregroundColor(.white)
+                    }
+                }
+            }
             .preferredColorScheme(.dark)
-            .onAppear { emailFocused = true }
+            .onAppear {
+                if let saved = UserDefaults.standard.string(forKey: "blogify.lastLoginUsername"), !saved.isEmpty {
+                    email = saved
+                    passwordFocused = true
+                } else {
+                    emailFocused = true
+                }
+            }
             .sheet(isPresented: $showForgotPassword) {
                 ForgotPasswordView(initialUsername: email.trimmingCharacters(in: .whitespaces).isEmpty ? nil : email.trimmingCharacters(in: .whitespaces))
                     .environmentObject(authService)
@@ -142,20 +162,17 @@ struct EmailLoginView: View {
         .animation(.easeInOut, value: message)
     }
 
-    private func primaryButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+    private func primaryButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                Text(title)
-                    .fontWeight(.semibold)
-            }
-            .font(.system(size: 17))
-            .foregroundColor(Color(red: 0.05, green: 0.08, blue: 0.22))
-            .frame(maxWidth: .infinity)
-            .frame(height: 54)
-            .background(Color.white)
-            .appChromeCornerRadius(14)
-            .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+            Text(title)
+                .fontWeight(.semibold)
+                .font(.system(size: 17))
+                .foregroundColor(Color(red: 0.05, green: 0.08, blue: 0.22))
+                .frame(maxWidth: .infinity)
+                .frame(height: 54)
+                .background(Color.white)
+                .appChromeCornerRadius(14)
+                .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
         }
         .buttonStyle(.plain)
     }

@@ -7,6 +7,13 @@ import Photos
 import SwiftUI
 import UIKit
 
+private struct TriageUndoState {
+    let photo: RecapPhoto
+    let dayIndex: Int
+    let stopIndex: Int
+    let insertionIndex: Int
+}
+
 struct StorageManagementView: View {
     @Binding var draft: RecapBlogDetail
     var onSave: () -> Void
@@ -29,12 +36,19 @@ struct StorageManagementView: View {
     @State private var pendingPhone: [RecapPhoto] = []
     @State private var deletedAny = false
     @State private var showInAppAlert = false
-    @State private var showPhoneAlert = false
+    @State private var showPhoneDeleteFailedAlert = false
 
-    // MARK: - Full-screen slideshow
+    // MARK: - Triage state
 
-    @State private var fullScreenPhotoId: UUID?
-    @State private var downloadToast: String?
+    @State private var triageStartPhotoId: UUID?
+    @State private var triageUndoSnapshot: TriageUndoState?
+    @State private var triageUndoNonce: Int = 0
+    @State private var triagePhysicalDeletionTask: Task<Void, Never>?
+
+    // MARK: - First-time tooltip
+
+    @AppStorage("bloggo.hasSeenUnusedPhotosTooltip") private var hasSeenUnusedPhotosTooltip: Bool = false
+    @State private var showIntroTooltip: Bool = false
 
     // MARK: - Grid layout (matches ManagePhotosView)
 
@@ -70,7 +84,6 @@ struct StorageManagementView: View {
     }
 
     private var navigationTitleText: String {
-        if fullScreenPhotoId != nil { return "" }
         if isSelectMode { return "\(selectedPhotoIds.count) selected" }
         return "Unused Photos"
     }
@@ -79,17 +92,11 @@ struct StorageManagementView: View {
         !visiblePhotos.isEmpty && visiblePhotos.allSatisfy { selectedPhotoIds.contains($0.photo.id) }
     }
 
-    /// Photo currently shown in the full-screen unused-photos viewer (updates when the user swipes).
-    private var fullScreenHeaderPhoto: RecapPhoto? {
-        guard let id = fullScreenPhotoId else { return nil }
-        return visiblePhotos.first { $0.photo.id == id }?.photo
-    }
-
     var body: some View {
         ZStack(alignment: .bottom) {
             Color.black.ignoresSafeArea()
             photoGrid
-            if fullScreenPhotoId == nil {
+            if triageStartPhotoId == nil {
                 bottomActionBar
             }
             if showFilterDropdown {
@@ -108,34 +115,40 @@ struct StorageManagementView: View {
                     }
                 }
             }
-            if fullScreenPhotoId != nil {
-                UnusedPhotosSlideshowView(
+
+            if showIntroTooltip {
+                UnusedPhotosIntroTooltipOverlay(onGotIt: {
+                    hasSeenUnusedPhotosTooltip = true
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        showIntroTooltip = false
+                    }
+                })
+                .transition(.opacity)
+                .zIndex(60)
+            }
+
+            if let startId = triageStartPhotoId {
+                UnusedPhotoTriageView(
                     photos: visiblePhotos.map(\.photo),
-                    selectedPhotoId: $fullScreenPhotoId,
-                    shouldOfferDownload: { !isPhotoLibraryAsset($0) },
-                    onDelete: { beginDeleteFromSlideshow($0) },
-                    onDownload: { downloadPhotoToLibrary($0) }
+                    startingPhotoId: startId,
+                    keepAliveForUndo: triageUndoSnapshot != nil,
+                    undoNonce: $triageUndoNonce,
+                    canUndo: triageUndoSnapshot != nil,
+                    onUndo: { performTriageUndo() },
+                    onDelete: { beginDeleteFromTriage($0) },
+                    onDismiss: { dismissTriage() }
                 )
                 .transition(.opacity)
                 .zIndex(40)
             }
-            if let downloadToast {
-                VStack {
-                    Spacer()
-                    Text(downloadToast)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Capsule().fill(.black.opacity(0.7)))
-                        .padding(.bottom, 32)
-                }
-                .transition(.opacity)
-                .allowsHitTesting(false)
-                .zIndex(50)
+        }
+        .animation(.easeInOut(duration: 0.25), value: showIntroTooltip)
+        .animation(.easeInOut(duration: 0.3), value: triageStartPhotoId != nil)
+        .onAppear {
+            if !hasSeenUnusedPhotosTooltip && !showIntroTooltip {
+                showIntroTooltip = true
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: downloadToast != nil)
         .navigationTitle(navigationTitleText)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -153,23 +166,96 @@ struct StorageManagementView: View {
             Button("Delete", role: .destructive) { executeDeleteInApp() }
             Button("No", role: .cancel) {
                 pendingInApp = []
-                if !pendingPhone.isEmpty { showPhoneAlert = true }
+                if !pendingPhone.isEmpty {
+                    executeDeletePhone()
+                }
             }
         } message: {
             Text("Removes from Bloggo gallery.")
         }
-        .alert(
-            "Delete \(pendingPhone.count) Photo\(pendingPhone.count == 1 ? "" : "s") From Phone?",
-            isPresented: $showPhoneAlert
-        ) {
-            Button("Delete", role: .destructive) { executeDeletePhone() }
-            Button("No", role: .cancel) {
-                pendingPhone = []
-                finishDeleteFlow()
-            }
+        .alert("Couldn’t Delete From Photos", isPresented: $showPhoneDeleteFailedAlert) {
+            Button("OK", role: .cancel) {}
         } message: {
-            Text("Save storage by cleaning up unwanted photos.")
+            Text("We couldn’t delete this photo from the Photos app. Please try again.")
         }
+    }
+
+    private func photoPlacement(for photoId: UUID) -> (day: Int, stop: Int, index: Int)? {
+        for (d, day) in draft.days.enumerated() {
+            for (s, stop) in day.placeStops.enumerated() {
+                if let i = stop.photos.firstIndex(where: { $0.id == photoId }) {
+                    return (d, s, i)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Deletes capture files / Photo Library assets only. Does not mutate `draft`.
+    private func performPhysicalDeletionOnly(for photos: [RecapPhoto]) {
+        let inApp = photos.filter { !isPhotoLibraryAsset($0) }
+        let phone = photos.filter { isPhotoLibraryAsset($0) }
+
+        for photo in inApp {
+            if let lid = photo.localIdentifier,
+               lid.hasPrefix(AppCapturePhotoService.prefix),
+               let uuid = AppCapturePhotoService.uuid(from: lid) {
+                AppCapturePhotoService.shared.deleteCapture(captureId: uuid)
+            }
+        }
+        let storeIds: Set<UUID> = Set(inApp.compactMap { photo in
+            let name = photo.imageName
+            if let direct = UUID(uuidString: name) { return direct }
+            let stripped = (name as NSString).deletingPathExtension
+            return UUID(uuidString: stripped)
+        })
+        if !storeIds.isEmpty {
+            InAppCameraPhotoStore.shared.removePhotos(ids: storeIds)
+        }
+
+        let identifiers = phone.compactMap(\.localIdentifier).filter { lid in
+            !lid.isEmpty && !lid.hasPrefix(AppCapturePhotoService.prefix)
+        }
+        guard !identifiers.isEmpty else { return }
+        Task {
+            try? await deletePhotoLibraryAssets(localIdentifiers: identifiers)
+        }
+    }
+
+    private func flushPendingTriageUndoPhysically() {
+        guard let snapshot = triageUndoSnapshot else { return }
+        triagePhysicalDeletionTask?.cancel()
+        triagePhysicalDeletionTask = nil
+        performPhysicalDeletionOnly(for: [snapshot.photo])
+        triageUndoSnapshot = nil
+    }
+
+    private func beginDeleteFromTriage(_ photo: RecapPhoto) {
+        triagePhysicalDeletionTask?.cancel()
+        triagePhysicalDeletionTask = nil
+        triageUndoSnapshot = nil
+        queueDeletion(for: [photo])
+    }
+
+    private func performTriageUndo() {
+        guard let snapshot = triageUndoSnapshot else { return }
+        triagePhysicalDeletionTask?.cancel()
+        triagePhysicalDeletionTask = nil
+        var stop = draft.days[snapshot.dayIndex].placeStops[snapshot.stopIndex]
+        let idx = min(snapshot.insertionIndex, stop.photos.count)
+        stop.photos.insert(snapshot.photo, at: idx)
+        draft.days[snapshot.dayIndex].placeStops[snapshot.stopIndex] = stop
+        triageUndoSnapshot = nil
+        triageUndoNonce += 1
+        onSave()
+    }
+
+    private func dismissTriage() {
+        triagePhysicalDeletionTask?.cancel()
+        triagePhysicalDeletionTask = nil
+        flushPendingTriageUndoPhysically()
+        triageUndoNonce = 0
+        triageStartPhotoId = nil
     }
 
     // MARK: - Grid
@@ -226,7 +312,7 @@ struct StorageManagementView: View {
                 toggleSelection(photo.id)
             } else {
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    fullScreenPhotoId = photo.id
+                    triageStartPhotoId = photo.id
                 }
             }
         }
@@ -254,15 +340,13 @@ struct StorageManagementView: View {
     @ToolbarContentBuilder
     private var navigationToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigationBarLeading) {
-            if fullScreenPhotoId != nil {
+            if triageStartPhotoId != nil {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { fullScreenPhotoId = nil }
+                    dismissTriage()
                 } label: {
                     Image(systemName: "xmark")
                         .fontWeight(.semibold)
                 }
-                .foregroundStyle(.white)
-                .accessibilityLabel("Close full photo")
             } else if isSelectMode {
                 Button("Cancel") { exitSelectMode() }
             } else {
@@ -274,47 +358,20 @@ struct StorageManagementView: View {
                 }
             }
         }
-        if fullScreenPhotoId != nil, let photo = fullScreenHeaderPhoto {
-            ToolbarItem(placement: .principal) {
-                VStack(spacing: 2) {
-                    Text(Self.unusedPhotoFullscreenHeaderDateFormatter.string(from: photo.timestamp))
-                    Text(Self.unusedPhotoFullscreenHeaderTimeFormatter.string(from: photo.timestamp))
-                }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-            }
-        }
-        if fullScreenPhotoId == nil {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if isSelectMode {
-                    Button(allVisiblePhotosAreSelected ? "Deselect All" : "Select All") {
-                        if allVisiblePhotosAreSelected {
-                            deselectAll()
-                        } else {
-                            selectAll()
-                        }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            if triageStartPhotoId == nil, isSelectMode {
+                Button(allVisiblePhotosAreSelected ? "Deselect All" : "Select All") {
+                    if allVisiblePhotosAreSelected {
+                        deselectAll()
+                    } else {
+                        selectAll()
                     }
-                } else {
-                    Button("Select") { enterSelectMode() }
                 }
+            } else if triageStartPhotoId == nil {
+                Button("Select") { enterSelectMode() }
             }
         }
     }
-
-    private static let unusedPhotoFullscreenHeaderDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MMM d yyyy"
-        f.locale = Locale.autoupdatingCurrent
-        return f
-    }()
-
-    private static let unusedPhotoFullscreenHeaderTimeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "h:mm a"
-        f.locale = Locale.autoupdatingCurrent
-        return f
-    }()
 
     private func enterSelectMode() {
         isSelectMode = true
@@ -398,10 +455,6 @@ struct StorageManagementView: View {
         queueDeletion(for: selected)
     }
 
-    private func beginDeleteFromSlideshow(_ photo: RecapPhoto) {
-        queueDeletion(for: [photo])
-    }
-
     private func queueDeletion(for photos: [RecapPhoto]) {
         pendingInApp = photos.filter { !isPhotoLibraryAsset($0) }
         pendingPhone = photos.filter { isPhotoLibraryAsset($0) }
@@ -409,57 +462,7 @@ struct StorageManagementView: View {
         if !pendingInApp.isEmpty {
             showInAppAlert = true
         } else if !pendingPhone.isEmpty {
-            showPhoneAlert = true
-        }
-    }
-
-    private func downloadPhotoToLibrary(_ photo: RecapPhoto) {
-        Task {
-            let image = await loadUIImageForBloggoExport(photo)
-            await MainActor.run {
-                guard let image else {
-                    downloadToast = "Couldn't load photo"
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
-                    return
-                }
-                PHPhotoLibrary.shared().performChanges({
-                    PHAssetChangeRequest.creationRequestForAsset(from: image)
-                }, completionHandler: { success, _ in
-                    DispatchQueue.main.async {
-                        downloadToast = success ? "1 photo saved to Photos" : "Couldn't save to Photos"
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            downloadToast = nil
-                        }
-                    }
-                })
-            }
-        }
-    }
-
-    private func loadUIImageForBloggoExport(_ photo: RecapPhoto) async -> UIImage? {
-        if let lid = photo.localIdentifier, lid.hasPrefix(AppCapturePhotoService.prefix),
-           let uuid = AppCapturePhotoService.uuid(from: lid) {
-            return AppCapturePhotoService.shared.loadImage(captureId: uuid)
-        }
-        let name = photo.imageName
-        let uuidFromName = UUID(uuidString: name) ?? UUID(uuidString: (name as NSString).deletingPathExtension)
-        if let uuid = uuidFromName {
-            if let entry = InAppCameraPhotoStore.shared.entries.first(where: { $0.id == uuid }) {
-                return InAppCameraPhotoStore.shared.image(for: entry)
-            }
-            let url = InAppCameraPhotoStore.photoDirectory.appendingPathComponent("\(uuid.uuidString).jpg")
-            if let data = try? Data(contentsOf: url), let img = UIImage(data: data) {
-                return img
-            }
-        }
-        let cloud = photo.cloudURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !cloud.isEmpty else { return nil }
-        do {
-            let signed = try await APIManager.shared.fetchSignedPhotoURL(permanentURL: cloud)
-            let (data, _) = try await URLSession.shared.data(from: signed)
-            return UIImage(data: data)
-        } catch {
-            return nil
+            executeDeletePhone()
         }
     }
 
@@ -569,7 +572,7 @@ struct StorageManagementView: View {
         pendingInApp = []
 
         if !pendingPhone.isEmpty {
-            showPhoneAlert = true
+            executeDeletePhone()
         } else {
             finishDeleteFlow()
         }
@@ -580,24 +583,75 @@ struct StorageManagementView: View {
         let identifiers = photos.compactMap(\.localIdentifier).filter { lid in
             !lid.isEmpty && !lid.hasPrefix(AppCapturePhotoService.prefix)
         }
+
         guard !identifiers.isEmpty else {
-            removeFromDraft(photos)
-            deletedAny = true
             pendingPhone = []
-            finishDeleteFlow()
+            showPhoneDeleteFailedAlert = true
             return
         }
-        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
-        PHPhotoLibrary.shared().performChanges({
-            PHAssetChangeRequest.deleteAssets(fetchResult)
-        }, completionHandler: { _, _ in
-            DispatchQueue.main.async {
-                removeFromDraft(photos)
-                deletedAny = true
-                pendingPhone = []
-                finishDeleteFlow()
+
+        Task {
+            do {
+                try await deletePhotoLibraryAssets(localIdentifiers: identifiers)
+                await MainActor.run {
+                    removeFromDraft(photos)
+                    deletedAny = true
+                    pendingPhone = []
+                    finishDeleteFlow()
+                }
+            } catch PhotoDeletionError.userCancelled {
+                await MainActor.run {
+                    pendingPhone = []
+                }
+            } catch {
+                await MainActor.run {
+                    pendingPhone = []
+                    showPhoneDeleteFailedAlert = true
+                }
             }
-        })
+        }
+    }
+
+    private enum PhotoDeletionError: Error {
+        case notAuthorized
+        case noAssetsFound
+        case failedToDelete
+        case userCancelled
+    }
+
+    private func deletePhotoLibraryAssets(localIdentifiers: [String]) async throws {
+        let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        let status: PHAuthorizationStatus
+        if current == .notDetermined {
+            status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+        } else {
+            status = current
+        }
+
+        guard status == .authorized || status == .limited else {
+            throw PhotoDeletionError.notAuthorized
+        }
+
+        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil)
+        guard fetchResult.count > 0 else {
+            throw PhotoDeletionError.noAssetsFound
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges({
+                PHAssetChangeRequest.deleteAssets(fetchResult)
+            }, completionHandler: { success, error in
+                if success {
+                    continuation.resume()
+                } else if let nsError = error as NSError?,
+                          nsError.domain == "PHPhotosErrorDomain",
+                          nsError.code == 3072 {
+                    continuation.resume(throwing: PhotoDeletionError.userCancelled)
+                } else {
+                    continuation.resume(throwing: PhotoDeletionError.failedToDelete)
+                }
+            })
+        }
     }
 
     private func removeFromDraft(_ photos: [RecapPhoto]) {
@@ -618,9 +672,7 @@ struct StorageManagementView: View {
             isSelectMode = false
             selectedPhotoIds = []
             activeDayFilter = nil
-            fullScreenPhotoId = nil
-        } else if let fs = fullScreenPhotoId, !remaining.contains(fs) {
-            fullScreenPhotoId = visiblePhotos.first?.photo.id
+            triageStartPhotoId = nil
         }
     }
 }
@@ -783,6 +835,374 @@ private struct UnusedPhotosSlideshowView: View {
                 zoomScale = 1.0
                 baseZoomScale = 1.0
             }
+        }
+    }
+}
+
+// MARK: - Triage view
+
+private struct UnusedPhotoTriageView: View {
+    let photos: [RecapPhoto]
+    let startingPhotoId: UUID
+    var keepAliveForUndo: Bool
+    @Binding var undoNonce: Int
+    var canUndo: Bool
+    var onUndo: () -> Void
+    var onDelete: (RecapPhoto) -> Void
+    var onDismiss: () -> Void
+
+    @State private var triageQueue: [UUID] = []
+    @State private var currentQueueIndex: Int = 0
+    @State private var dragOffset: CGFloat = 0
+    @State private var dragRotation: Double = 0
+    @State private var deleteOverlayOpacity: Double = 0
+    @State private var keepOverlayOpacity: Double = 0
+    @AppStorage("bloggo.hasSeenUnusedPhotosTriageTooltip") private var hasSeenTriageTooltip: Bool = false
+    @State private var showTriageTooltip = false
+
+    // MARK: - Derived
+
+    private var currentPhoto: RecapPhoto? {
+        guard currentQueueIndex < triageQueue.count else { return nil }
+        let id = triageQueue[currentQueueIndex]
+        return photos.first { $0.id == id }
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Custom top bar
+                HStack {
+                    Color.clear.frame(width: 44, height: 44)
+
+                    Spacer()
+
+                    if !triageQueue.isEmpty {
+                        Text("Photo \(currentQueueIndex + 1) of \(triageQueue.count)")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white)
+                    }
+
+                    Spacer()
+
+                    if canUndo {
+                        Button(action: onUndo) {
+                            Text("Undo")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Color.clear.frame(width: 44, height: 44)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+
+                // Photo area
+                if let photo = currentPhoto {
+                    ZStack {
+                        RecapPhotoThumbnail(
+                            photo: photo,
+                            cornerRadius: 0,
+                            showIcon: false,
+                            targetSize: CGSize(width: 1200, height: 1200)
+                        )
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                        // Delete tint (swipe left)
+                        Color.red
+                            .opacity(deleteOverlayOpacity * 0.35)
+                            .allowsHitTesting(false)
+
+                        // Keep tint (swipe right)
+                        Color.green
+                            .opacity(keepOverlayOpacity * 0.35)
+                            .allowsHitTesting(false)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .offset(x: dragOffset)
+                    .rotationEffect(.degrees(dragRotation))
+                    .gesture(
+                        DragGesture(minimumDistance: 20)
+                            .onChanged { value in
+                                let x = value.translation.width
+                                dragOffset = x
+                                dragRotation = max(-5, min(5, Double(x) / 20))
+                                if x < 0 {
+                                    deleteOverlayOpacity = min(abs(Double(x)) / 80, 1.0)
+                                    keepOverlayOpacity = 0
+                                } else {
+                                    keepOverlayOpacity = min(Double(x) / 80, 1.0)
+                                    deleteOverlayOpacity = 0
+                                }
+                            }
+                            .onEnded { value in
+                                let x = value.translation.width
+                                if x < -80 {
+                                    commitSwipe(direction: .left)
+                                } else if x > 80 {
+                                    commitSwipe(direction: .right)
+                                } else {
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                                        resetDrag()
+                                    }
+                                }
+                            }
+                    )
+                } else {
+                    Spacer()
+                    if photos.isEmpty {
+                        Text("No unused photos left")
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.45))
+                    }
+                    Spacer()
+                }
+
+                // Swipe hint
+                if currentPhoto != nil {
+                    Text("\u{2190} delete      keep \u{2192}")
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.45))
+                        .padding(.vertical, 12)
+                }
+
+                // CTA buttons
+                HStack(spacing: 12) {
+                    Button { triggerDelete() } label: {
+                        Label("Delete", systemImage: "trash")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Color(red: 1.0, green: 0.27, blue: 0.23))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(currentPhoto == nil)
+
+                    Button { triggerKeep() } label: {
+                        Label("Keep", systemImage: "checkmark")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(currentPhoto == nil)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+            }
+
+            if showTriageTooltip {
+                UnusedPhotosTriageTooltipOverlay(onGotIt: {
+                    hasSeenTriageTooltip = true
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        showTriageTooltip = false
+                    }
+                })
+                .transition(.opacity)
+                .zIndex(10)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: showTriageTooltip)
+        .onAppear {
+            buildQueue()
+            if !hasSeenTriageTooltip {
+                showTriageTooltip = true
+            }
+        }
+        .onChange(of: photos.map(\.id)) { _, newIds in
+            if newIds.isEmpty { return }
+            guard currentQueueIndex < triageQueue.count else { return }
+            let currentId = triageQueue[currentQueueIndex]
+            let newIdSet = Set(newIds)
+            if !newIdSet.contains(currentId) { advance() }
+        }
+        .onChange(of: undoNonce) { _, _ in
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
+                currentQueueIndex = max(0, currentQueueIndex - 1)
+                resetDrag()
+            }
+        }
+    }
+
+    // MARK: - Queue
+
+    private func buildQueue() {
+        let allIds = photos.map(\.id)
+        guard let startIdx = allIds.firstIndex(of: startingPhotoId) else {
+            triageQueue = allIds
+            currentQueueIndex = 0
+            return
+        }
+        triageQueue = Array(allIds[startIdx...]) + Array(allIds[..<startIdx])
+        currentQueueIndex = 0
+    }
+
+    // MARK: - Actions
+
+    private func advance() {
+        currentQueueIndex += 1
+        if currentQueueIndex >= triageQueue.count {
+            if photos.isEmpty, keepAliveForUndo { return }
+            onDismiss()
+        }
+    }
+
+    private func triggerDelete() {
+        guard let photo = currentPhoto else { return }
+        onDelete(photo)
+    }
+
+    private func triggerKeep() {
+        guard currentPhoto != nil else { return }
+        advance()
+    }
+
+    private enum SwipeDirection { case left, right }
+
+    private func commitSwipe(direction: SwipeDirection) {
+        let targetOffset: CGFloat = direction == .left
+            ? -UIScreen.main.bounds.width
+            : UIScreen.main.bounds.width
+        withAnimation(.easeOut(duration: 0.2)) {
+            dragOffset = targetOffset
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(220))
+            resetDrag()
+            if direction == .left {
+                triggerDelete()
+            } else {
+                triggerKeep()
+            }
+        }
+    }
+
+    private func resetDrag() {
+        dragOffset = 0
+        dragRotation = 0
+        deleteOverlayOpacity = 0
+        keepOverlayOpacity = 0
+    }
+}
+
+// MARK: - First-time tooltip overlay
+
+private struct UnusedPhotosIntroTooltipOverlay: View {
+    let onGotIt: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.52)
+                .ignoresSafeArea()
+                .allowsHitTesting(true)
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "photo.stack")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text("Unused Photos")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.white)
+                }
+
+                Text("These are the photos from this trip that aren't included in your blog.")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Free up space by removing the ones you no longer need from your phone or from Bloggo.")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.72))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button(action: onGotIt) {
+                    Text("Got it")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.white.opacity(0.2), in: RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 6)
+            }
+            .padding(24)
+            .background(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
+            )
+            .padding(.horizontal, 28)
+        }
+    }
+}
+
+private struct UnusedPhotosTriageTooltipOverlay: View {
+    let onGotIt: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.52)
+                .ignoresSafeArea()
+                .allowsHitTesting(true)
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "hand.draw")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text("Review Your Photos")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.white)
+                }
+
+                Text("Swipe left to delete \u{00B7} Swipe right to keep.")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("We'll go through each one.")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.72))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button(action: onGotIt) {
+                    Text("Got it")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            Color.white.opacity(0.2),
+                            in: RoundedRectangle(appChromeBaseRadius: 14, style: .continuous)
+                        )
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 6)
+            }
+            .padding(24)
+            .background(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
+            )
+            .padding(.horizontal, 28)
         }
     }
 }

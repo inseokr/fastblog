@@ -101,7 +101,7 @@ struct LandingView: View {
                     )
                     Spacer()
                     Button {
-                        withAnimation(.easeInOut(duration: 0.3)) { showNotifications = true }
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { showNotifications = true }
                     } label: {
                         Image(systemName: "bell.fill")
                             .font(.title2)
@@ -131,13 +131,14 @@ struct LandingView: View {
             }
 
             // Notifications slide-in from the right
-            if showNotifications {
-                NotificationsOverlayView(onDismiss: {
-                    withAnimation(.easeInOut(duration: 0.3)) { showNotifications = false }
-                })
-                .transition(.move(edge: .trailing))
-                .zIndex(10)
-            }
+            NotificationsOverlayView(onDismiss: {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { showNotifications = false }
+            })
+            .offset(x: showNotifications ? 0 : UIScreen.main.bounds.width)
+            .opacity(showNotifications ? 1 : 0)
+            .allowsHitTesting(showNotifications)
+            .animation(.spring(response: 0.4, dampingFraction: 0.9), value: showNotifications)
+            .zIndex(10)
 
             // Post-camera toast banner
             if let toastMsg = postCameraToastMessage {
@@ -193,17 +194,6 @@ struct LandingView: View {
         }
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
         .preferredColorScheme(.dark)
-        // Use simultaneousGesture so vertical drags don’t win over the bottom bar buttons (exclusive .gesture can).
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 40)
-                .onEnded { value in
-                    if value.translation.height < -50 && abs(value.translation.height) > abs(value.translation.width) {
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            showCameraFromHome = true
-                        }
-                    }
-                }
-        )
         .sheet(isPresented: $showSettings) {
             SettingsView()
             .environmentObject(authService)
@@ -515,7 +505,7 @@ struct CreatedRecapCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack(alignment: .bottomLeading) {
+            ZStack(alignment: .topLeading) {
                 TripCoverImage(theme: recap.coverImageName, coverAssetIdentifier: recap.coverAssetIdentifier)
                     .frame(width: 80, height: 80)
                     .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
@@ -816,6 +806,7 @@ private struct SettingsView: View {
     @State private var tripExclusionRadius = NeighborhoodStore.tripExclusionRadiusMiles
 
     @State private var showImportBackupPicker = false
+    @State private var showReceiveBlogDrop = false
     @State private var isExportingAllBackups = false
     @State private var isImportingBackup = false
     @State private var backupFlowProgress: Double = 0
@@ -978,12 +969,9 @@ private struct SettingsView: View {
                 }
 
                 Section {
-                    NavigationLink(
-                        destination: NeighborhoodIntroView(onDismiss: {
-                            showNeighborhoodFlow = false
-                        }),
-                        isActive: $showNeighborhoodFlow
-                    ) {
+                    Button {
+                        showNeighborhoodFlow = true
+                    } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 8) {
                                 Label("Neighborhood", systemImage: "mappin.circle.fill")
@@ -994,8 +982,12 @@ private struct SettingsView: View {
                                 }
                             }
                             Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
                     }
+                    .buttonStyle(.plain)
 
                     if photoAuth.status != .limited {
                         VStack(alignment: .leading, spacing: 8) {
@@ -1049,6 +1041,12 @@ private struct SettingsView: View {
                         Label("Import blog backup", systemImage: "arrow.down.doc")
                     }
                     .disabled(isImportingBackup)
+
+                    Button {
+                        showReceiveBlogDrop = true
+                    } label: {
+                        Label("Receive Blog Drop", systemImage: "arrow.down.circle")
+                    }
 
                     Toggle(isOn: $preferPhotoLibraryWhenImportingBackup) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -1148,6 +1146,11 @@ private struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showNeighborhoodFlow) {
+                NeighborhoodIntroView(onDismiss: {
+                    showNeighborhoodFlow = false
+                })
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -1160,14 +1163,12 @@ private struct SettingsView: View {
             .sheet(item: $settingsHelpTopic) { topic in
                 SettingsHelpSheet(topic: topic)
             }
-            .sheet(isPresented: $showAuth) {
+            .fullScreenCover(isPresented: $showAuth) {
                 AuthView(onAuthenticated: {
                     showAuth = false
                     dismiss()
-                }, showsCloseButton: false)
+                })
                 .environmentObject(authService)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
             }
             .onAppear {
                 customProfileImageData = authService.profileImageData
@@ -1205,6 +1206,10 @@ private struct SettingsView: View {
                 if let u = backupAllShareURL {
                     ShareSheet(items: [u])
                 }
+            }
+            .sheet(isPresented: $showReceiveBlogDrop) {
+                BlogDropReceiveSheet()
+                    .environmentObject(createdRecapStore)
             }
             .alert(backupFlowAlertTitle, isPresented: $showBackupFlowAlert) {
                 Button("OK", role: .cancel) {}
@@ -1321,7 +1326,7 @@ private struct SettingsView: View {
     }
 
     private func loadCloudStorageIfNeeded() {
-        guard authService.isSignedIn, EntitlementManager.shared.isProActive else {
+        guard authService.isSignedIn, EntitlementManager.shared.realProActive else {
             cloudStorageUsage = nil
             cloudStorageError = nil
             return
@@ -1376,7 +1381,7 @@ struct AllRecentsSheet: View {
                         dismiss()
                     } label: {
                         HStack(spacing: 14) {
-                            ZStack(alignment: .bottomLeading) {
+                            ZStack(alignment: .topLeading) {
                                 TripCoverImage(theme: recap.coverImageName, coverAssetIdentifier: recap.coverAssetIdentifier)
                                     .frame(width: 60, height: 60)
                                     .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
@@ -1423,6 +1428,9 @@ struct AllRecentsSheet: View {
 private struct NotificationsOverlayView: View {
     var onDismiss: () -> Void
     private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
+    private let dismissThreshold: CGFloat = 100
+
+    @GestureState private var dragOffsetX: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1454,6 +1462,20 @@ private struct NotificationsOverlayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(backgroundBlue.ignoresSafeArea())
         .preferredColorScheme(.dark)
+        .offset(x: max(0, dragOffsetX))
+        .gesture(
+            DragGesture()
+                .updating($dragOffsetX) { value, state, _ in
+                    if value.translation.width > 0 {
+                        state = value.translation.width
+                    }
+                }
+                .onEnded { value in
+                    if value.translation.width > dismissThreshold {
+                        onDismiss()
+                    }
+                }
+        )
     }
 }
 

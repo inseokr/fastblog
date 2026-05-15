@@ -17,8 +17,8 @@ enum PlaceLibraryPhotoImport {
     }
 
     /// Capture instant when `PHAsset.creationDate` is missing: parse `visitedTimeDigitized` in the place timezone, else noon on the trip day in that zone.
-    static func resolvedTimestamp(asset: PHAsset, stop: PlaceStop, day: RecapBlogDay, placeTimeZone: TimeZone) -> Date {
-        if let d = asset.creationDate { return d }
+    static func resolvedTimestamp(asset: PHAsset?, stop: PlaceStop, day: RecapBlogDay, placeTimeZone: TimeZone) -> Date {
+        if let asset, let d = asset.creationDate { return d }
         let parser = DateFormatter()
         parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
         parser.locale = Locale(identifier: "en_US_POSIX")
@@ -31,8 +31,8 @@ enum PlaceLibraryPhotoImport {
         return cal.date(bySettingHour: 12, minute: 0, second: 0, of: day.date) ?? day.date
     }
 
-    static func resolvedCoordinate(asset: PHAsset, stop: PlaceStop) -> PhotoCoordinate? {
-        if let loc = asset.location {
+    static func resolvedCoordinate(asset: PHAsset?, stop: PlaceStop) -> PhotoCoordinate? {
+        if let asset, let loc = asset.location {
             return PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
         }
         return defaultCoordinate(for: stop)

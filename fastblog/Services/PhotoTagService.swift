@@ -64,7 +64,7 @@ actor PhotoTagService {
         } catch {
             return []
         }
-        guard let results = request.results as? [VNClassificationObservation] else { return [] }
+        guard let results = request.results else { return [] }
         return results
             .filter { $0.confidence >= minConfidence }
             .prefix(maxTags)

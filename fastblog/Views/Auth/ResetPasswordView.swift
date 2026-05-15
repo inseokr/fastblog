@@ -15,16 +15,23 @@ struct ResetPasswordView: View {
 
     @State private var newPassword = ""
     @State private var confirmPassword = ""
+    @State private var showPassword = false
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showSuccessAlert = false
 
-    private let minPasswordLength = 8
+    private var passwordsMatch: Bool { !newPassword.isEmpty && newPassword == confirmPassword }
+    private var isPasswordLengthValid: Bool { newPassword.count >= 8 }
+    private var hasUppercase: Bool { newPassword.rangeOfCharacter(from: .uppercaseLetters) != nil }
+    private var hasLowercase: Bool { newPassword.rangeOfCharacter(from: .lowercaseLetters) != nil }
+    private var hasNumber: Bool { newPassword.rangeOfCharacter(from: .decimalDigits) != nil }
+    private var hasSpecialChar: Bool { newPassword.rangeOfCharacter(from: CharacterSet(charactersIn: "!@#$%^&*()_+-=[]{};':\"\\|,.<>/?")) != nil }
 
-    private var passwordsMatch: Bool { newPassword == confirmPassword }
-    private var isLengthValid: Bool { newPassword.count >= minPasswordLength }
+    private var isPasswordValid: Bool {
+        isPasswordLengthValid && hasUppercase && hasLowercase && hasNumber && hasSpecialChar
+    }
     private var canSubmit: Bool {
-        !newPassword.isEmpty && !confirmPassword.isEmpty && passwordsMatch && isLengthValid && !isLoading
+        isPasswordValid && passwordsMatch && !isLoading
     }
 
     var body: some View {
@@ -37,8 +44,8 @@ struct ResetPasswordView: View {
                         Text("Set New Password")
                             .font(.system(size: 26, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
-                        Text("Enter your new password below. Use at least \(minPasswordLength) characters.")
-                            .font(.subheadline)
+                        Text("Use at least 8 characters with uppercase, lowercase, number, and special character.")
+                            .font(.caption)
                             .foregroundColor(.white.opacity(0.65))
                             .lineSpacing(2)
                     }
@@ -46,7 +53,15 @@ struct ResetPasswordView: View {
                     .padding(.top, 32)
 
                     VStack(spacing: 16) {
-                        SecureField("New Password", text: $newPassword)
+                        // New Password field with show/hide toggle
+                        ZStack(alignment: .trailing) {
+                            Group {
+                                if showPassword {
+                                    TextField("New Password", text: $newPassword)
+                                } else {
+                                    SecureField("New Password", text: $newPassword)
+                                }
+                            }
                             .textContentType(.newPassword)
                             .padding()
                             .background(Color.white.opacity(0.1))
@@ -58,25 +73,56 @@ struct ResetPasswordView: View {
                             .foregroundColor(.white)
                             .tint(.white)
 
-                        SecureField("Confirm Password", text: $confirmPassword)
+                            Button { showPassword.toggle() } label: {
+                                Image(systemName: showPassword ? "eye" : "eye.slash")
+                                    .foregroundColor(.white.opacity(0.6))
+                                    .padding(.trailing, 16)
+                            }
+                        }
+
+                        // Requirements checklist
+                        VStack(alignment: .leading, spacing: 6) {
+                            requirementRow("8+ chars", isValid: isPasswordLengthValid)
+                            requirementRow("Uppercase", isValid: hasUppercase)
+                            requirementRow("Lowercase", isValid: hasLowercase)
+                            requirementRow("Number", isValid: hasNumber)
+                            requirementRow("Special (@#$!)", isValid: hasSpecialChar)
+                        }
+
+                        // Confirm Password field
+                        ZStack(alignment: .trailing) {
+                            Group {
+                                if showPassword {
+                                    TextField("Confirm Password", text: $confirmPassword)
+                                } else {
+                                    SecureField("Confirm Password", text: $confirmPassword)
+                                }
+                            }
                             .textContentType(.newPassword)
                             .padding()
                             .background(Color.white.opacity(0.1))
                             .overlay(
                                 RoundedRectangle(appChromeBaseRadius: 12)
-                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                    .stroke(
+                                        confirmPassword.isEmpty ? Color.white.opacity(0.2)
+                                            : passwordsMatch ? Color.green.opacity(0.6)
+                                            : Color.red.opacity(0.6),
+                                        lineWidth: 1
+                                    )
                             )
                             .appChromeCornerRadius(12)
                             .foregroundColor(.white)
                             .tint(.white)
+
+                            if !confirmPassword.isEmpty && !passwordsMatch {
+                                Text("Mismatched")
+                                    .font(.caption2)
+                                    .foregroundColor(.red)
+                                    .padding(.trailing, 16)
+                            }
+                        }
                     }
 
-                    if !confirmPassword.isEmpty && !passwordsMatch {
-                        errorRow("Passwords do not match.")
-                    }
-                    if !newPassword.isEmpty && !isLengthValid {
-                        errorRow("Password must be at least \(minPasswordLength) characters.")
-                    }
                     if let err = errorMessage {
                         errorRow(err)
                     }
@@ -119,12 +165,12 @@ struct ResetPasswordView: View {
     private func submitReset() {
         guard canSubmit else { return }
         errorMessage = nil
-        if !passwordsMatch {
-            errorMessage = "Passwords do not match."
+        if !isPasswordValid {
+            errorMessage = "Password must be 8+ characters with uppercase, lowercase, number, and special character."
             return
         }
-        if !isLengthValid {
-            errorMessage = "Password must be at least \(minPasswordLength) characters."
+        if !passwordsMatch {
+            errorMessage = "Passwords do not match."
             return
         }
 
@@ -137,6 +183,17 @@ struct ResetPasswordView: View {
                 errorMessage = error.localizedDescription
             }
             isLoading = false
+        }
+    }
+
+    private func requirementRow(_ text: String, isValid: Bool) -> some View {
+        HStack {
+            Image(systemName: isValid ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(isValid ? .green : .white.opacity(0.5))
+                .font(.system(size: 14))
+            Text(text)
+                .font(.caption)
+                .foregroundColor(isValid ? .green : .white.opacity(0.7))
         }
     }
 

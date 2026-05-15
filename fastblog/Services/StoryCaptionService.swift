@@ -74,19 +74,9 @@ actor StoryCaptionService {
         return await generator.generateCaption(context: context)
     }
 
-    /// Derives a human-readable time-of-day label from a timestamp.
+    /// Derives a human-readable time-of-day label from a timestamp (blog-style buckets, no clock).
     private func timeOfDayLabel(from date: Date, in timeZone: TimeZone) -> String {
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = timeZone
-        let hour = cal.component(.hour, from: date)
-        switch hour {
-        case 5..<9:   return "morning"
-        case 9..<12:  return "late morning"
-        case 12..<14: return "midday"
-        case 14..<17: return "afternoon"
-        case 17..<20: return "golden hour"
-        default:      return "night"
-        }
+        VisitDaypart.label(for: date, in: timeZone)
     }
 
     /// Detects indoor/outdoor from Vision tags. Returns nil when uncertain.
@@ -311,7 +301,7 @@ actor StoryCaptionService {
 
     // MARK: - Narrative Generation (LLM-only, hidden when not capable)
 
-    /// Generates a 4–6 line narrative for a place visit. Returns nil when the on-device LLM is unavailable.
+    /// Generates a short place narrative (at most 3 sentences). Returns nil when the on-device LLM is unavailable.
     func generatePlaceNarrative(stop: PlaceStop, dayDate: Date?) async -> String? {
         guard LocalLLMStoryCaptionGenerator.isCapable else { return nil }
         let included = stop.photos.filter(\.isIncluded)
@@ -343,7 +333,7 @@ actor StoryCaptionService {
         return await LocalLLMStoryCaptionGenerator.shared.generatePlaceNarrative(context: context)
     }
 
-    /// Generates a 4–6 line narrative for a travel day. Returns nil when the on-device LLM is unavailable.
+    /// Generates a short day narrative (at most 3 sentences). Returns nil when the on-device LLM is unavailable.
     func generateDayNarrative(day: RecapBlogDay) async -> String? {
         guard LocalLLMStoryCaptionGenerator.isCapable else { return nil }
         let placeEntries = day.placeStops.map { stop -> (name: String, story: String) in
@@ -357,7 +347,7 @@ actor StoryCaptionService {
         return await LocalLLMStoryCaptionGenerator.shared.generateDayNarrative(context: context)
     }
 
-    /// Generates a 5–6 line trip opening narrative. Returns nil when the on-device LLM is unavailable.
+    /// Generates a short trip opening narrative (at most 3 sentences). Returns nil when the on-device LLM is unavailable.
     func generateTripNarrative(detail: RecapBlogDetail) async -> String? {
         guard LocalLLMStoryCaptionGenerator.isCapable else { return nil }
         var locationSet: [String] = []
@@ -417,6 +407,73 @@ actor StoryCaptionService {
             placeStories: placeStories
         )
         return await generator.generateDaySummary(context: context)
+    }
+
+    // MARK: - Fun photo insight (Apple Intelligence / on-device LLM only)
+
+    /// True when on-device image analysis produced at least one non-empty tag for this photo asset.
+    func photoHasAnalyzedVisionTags(photo: RecapPhoto) async -> Bool {
+        guard let lid = photo.localIdentifier, !lid.isEmpty else { return false }
+        let tags = await tagService.tags(forLocalIdentifier: lid)
+        return tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    /// Up to two blog-style sentences grounded in Vision tags, place, category, and approximate daypart (no clock times).
+    func generateFunPhotoInsight(
+        photo: RecapPhoto,
+        placeName: String,
+        placeSubtitle: String?,
+        placeCategoryMK: String?,
+        visitTimeZone: TimeZone? = nil,
+        userCaptionHint: String?
+    ) async -> String {
+        guard LocalLLMStoryCaptionGenerator.isCapable else { return "" }
+        let tags: [String]
+        if let lid = photo.localIdentifier {
+            tags = await tagService.tags(forLocalIdentifier: lid)
+        } else {
+            tags = []
+        }
+        let trimmedTags = tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !trimmedTags.isEmpty else { return "" }
+        let categoryID = PlaceCategoryID.from(mkCategory: placeCategoryMK, placeName: placeName)
+        let daypart = VisitDaypart.label(for: photo.timestamp, in: visitTimeZone ?? .current)
+        return await LocalLLMStoryCaptionGenerator.shared.generateFunPhotoInsight(
+            tags: trimmedTags,
+            placeName: placeName,
+            placeSubtitle: placeSubtitle,
+            visitDaypart: daypart,
+            userCaptionHint: userCaptionHint,
+            categoryID: categoryID
+        )
+    }
+
+    /// Up to two blog-style sentences for the **place** row, using aggregated tags, photo captions, place metadata, and daypart.
+    func generatePlaceLevelAIShortStory(stop: PlaceStop, dayDate: Date?) async -> String {
+        guard LocalLLMStoryCaptionGenerator.isCapable else { return "" }
+        let included = stop.photos.filter(\.isIncluded)
+        var tagSet: [String] = []
+        for photo in included.prefix(6) {
+            if let lid = photo.localIdentifier {
+                let photoTags = await tagService.tags(forLocalIdentifier: lid)
+                for t in photoTags where !tagSet.contains(t) { tagSet.append(t) }
+            }
+        }
+        let trimmedTags = tagSet.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        let captions = included.map { ($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        let tz = await captureTimeZone(for: stop)
+        let earliest = included.map(\.timestamp).min() ?? dayDate
+        let daypart = earliest.map { VisitDaypart.label(for: $0, in: tz) } ?? ""
+        let categoryID = PlaceCategoryID.from(mkCategory: stop.placeCategory, placeName: stop.placeTitle)
+        return await LocalLLMStoryCaptionGenerator.shared.generatePlaceLevelAIShortStory(
+            tags: trimmedTags,
+            photoCaptions: captions,
+            placeName: stop.placeTitle,
+            placeSubtitle: stop.placeSubtitle,
+            categoryID: categoryID,
+            visitDaypart: daypart,
+            photoCount: included.count
+        )
     }
 
 }

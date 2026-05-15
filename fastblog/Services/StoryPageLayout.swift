@@ -159,8 +159,12 @@ enum StoryPageLayout {
         h += 12
         return h
     }
-    /// Hero strip above CONTENTS on the first TOC page (cover photo + page indicator).
-    static let tocCoverStripHeight: CGFloat = 88
+    /// Hero strip above CONTENTS on the first TOC page (cover + trip summary).
+    /// ~20% of the story viewport height (Story Mode / storybook PDF) so the cover reads as a real header, not a sliver.
+    static var tocCoverStripHeight: CGFloat {
+        let raw = StoryRenderMetrics.effectiveStoryViewportHeight * 0.20
+        return max(96, min(raw, 260))
+    }
     /// First TOC page: small inset below the last row (page numbers sit on the cover strip, not here).
     static let tocFirstPageBottomChrome: CGFloat = 12
     /// Continuation TOC pages: invisible CONTENTS row + divider + 8pt gap before first day (matches gap before trip title on page 1).
@@ -429,7 +433,7 @@ enum StoryPageLayout {
                 break
             }
 
-            var (head, tail) = takePrefixFittingHeight(remaining, font: font, width: width, maxHeight: maxH)
+            let (head, tail) = takePrefixFittingHeight(remaining, font: font, width: width, maxHeight: maxH)
             if head.isEmpty {
                 let ch = String(remaining.prefix(1))
                 chunks.append(ch)
@@ -1350,7 +1354,8 @@ enum StoryPageLayout {
                 isLastDay: isLastDay,
                 nextDayName: nextDayName,
                 metrics: metrics,
-                fontTheme: fontTheme
+                fontTheme: fontTheme,
+                dayStoryShownOnMapPage: day.mapSnapshot != nil
             )
             dayPages.append(contentsOf: contentPages.map { .dayContent($0) })
         }
@@ -1419,16 +1424,19 @@ enum StoryPageLayout {
         isLastDay: Bool,
         nextDayName: String?,
         metrics: Metrics,
-        fontTheme: FontTheme
+        fontTheme: FontTheme,
+        dayStoryShownOnMapPage: Bool
     ) -> [DayContentPage] {
 
         var allSlots: [ContentSlot] = []
 
-        // Day caption (only emitted once — DayContentPageView shows it only on isFirstPage)
-        if let caption = day.dayCaption {
-            let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                allSlots.append(.dayCaption(trimmed))
+        // Day caption on the first text page unless it is overlaid on the full-bleed day map (`DayMapPageView`).
+        if !dayStoryShownOnMapPage {
+            if let caption = day.dayCaption {
+                let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    allSlots.append(.dayCaption(trimmed))
+                }
             }
         }
 

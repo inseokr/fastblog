@@ -20,14 +20,28 @@ final class ProfileMapViewModel: ObservableObject {
     @Published var mapRegionChangeCounter: Int = 0
 
     private let store: CreatedRecapBlogStore
-    private let defaultRegion = MKCoordinateRegion(
+
+    /// When no trip has a mappable point; also avoids `Map(.automatic)` fitting all trips into a geographic mean.
+    private static let fallbackRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
         span: MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
     )
 
     init(createdRecapStore: CreatedRecapBlogStore) {
         self.store = createdRecapStore
-        self.mapRegion = defaultRegion
+        self.mapRegion = Self.initialMapRegion(store: createdRecapStore)
+    }
+
+    /// Same ordering as ``visibleTrips`` with no search/filter: newest `createdAt` first; centers on that trip’s first place.
+    private static func initialMapRegion(store: CreatedRecapBlogStore) -> MKCoordinateRegion {
+        let trips = store.visibleRecents.sorted { $0.createdAt > $1.createdAt }
+        guard let first = trips.first, let coord = store.coordinate(for: first.sourceTripId) else {
+            return fallbackRegion
+        }
+        return MKCoordinateRegion(
+            center: coord,
+            span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)
+        )
     }
 
     /// All visible blogs appear on the Profile map, matching the My Blogs page list.
@@ -47,7 +61,13 @@ final class ProfileMapViewModel: ObservableObject {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !query.isEmpty {
             trips = trips.filter { blog in
-                blog.title.lowercased().contains(query) || (blog.countryName?.lowercased().contains(query) ?? false)
+                if blog.title.lowercased().contains(query) { return true }
+                if blog.countryName?.lowercased().contains(query) ?? false { return true }
+                guard let trip = store.tripDraft(for: blog.sourceTripId) else { return false }
+                let city = trip.cityWithMostPhotosDisplayName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let drop: Set<String> = ["", "new place", "unknown place"]
+                guard !drop.contains(city) else { return false }
+                return city.contains(query)
             }
         }
         
@@ -108,9 +128,12 @@ final class ProfileMapViewModel: ObservableObject {
     }
 
     /// Recenter map to latest trip overall (with animation).
+    /// If the latest trip has no coordinate, falls back to the first visible trip that does.
     func recenterToLatestTrip() {
-        guard let trip = latestTripOverall, let coord = coordinate(for: trip) else {
-            mapRegion = defaultRegion
+        let coord = latestTripOverall.flatMap { coordinate(for: $0) }
+                 ?? tripsWithCoordinates.first?.coordinate
+        guard let coord else {
+            mapRegion = Self.fallbackRegion
             mapRegionChangeCounter += 1
             return
         }
@@ -154,9 +177,12 @@ final class ProfileMapViewModel: ObservableObject {
     /// Call when view appears to center on latest trip and select it in the card list.
     func onAppear() {
         if selectedCountryID == nil {
-            // Select the latest (newest) trip first so the card scroll receives it
-            // via onChange(of: selectedTripID), then recenter the map.
-            selectedTripID = visibleTrips.first?.sourceTripId
+            // Prefer the most recently created trip; fall back to the first one
+            // that has a coordinate so the card selection and map center stay in sync.
+            let latestHasCoord = latestTripOverall.flatMap { coordinate(for: $0) } != nil
+            selectedTripID = latestHasCoord
+                ? latestTripOverall?.sourceTripId
+                : (tripsWithCoordinates.first?.blog.sourceTripId ?? latestTripOverall?.sourceTripId)
             recenterToLatestTrip()
         }
     }

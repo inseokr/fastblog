@@ -36,7 +36,7 @@ struct PrivacyPolicyView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 8)
 
-                    Text("Last Updated: April 8, 2026")
+                    Text("Last Updated: May 7, 2026")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -50,8 +50,9 @@ struct PrivacyPolicyView: View {
 
                 Group {
                     sectionTitle("2. Your Blog Content Stays on Your Device")
-                    bodyText("Your blogs, drafts, and the photos you include in them are stored and processed on your device. Bloggo does not upload your blog content or your photos to our servers for backup, sync, hosting, or publishing.")
-                    bodyText("Whether you use Bloggo as a guest or with an account, your blog material stays on your device unless you export it yourself (for example, as a PDF or zip file). If you create an account, we store the information needed to sign you in and operate your account on our systems, such as username and email. That account information is separate from your blog files, which remain on your device.")
+                    bodyText("Your blogs, drafts, and the photos you include in them are stored and processed on your device. Bloggo does not upload your blog content or your photo library to our servers for editing, server-side backup, sync, hosting, or publishing.")
+                    bodyText("We do not store or sync your blog files on our systems; only the account and technical data described elsewhere in this policy are processed on our servers.")
+                    bodyText("Whether you use Bloggo as a guest or with an account, your blog files stay with you locally unless you export them yourself (for example, PDF, zip, or video using the app's export tools). If you create an account, we store the information needed to sign you in and operate your account on our systems, such as username and email—that is separate from your blog drafts and media, which remain on your device.")
                     bullet("Blog generation uses AI that runs entirely on your device. Your photos are not sent to external AI services for that processing.")
                 }
 
@@ -63,10 +64,12 @@ struct PrivacyPolicyView: View {
 
                 Group {
                     sectionTitle("4. Sharing and Personal Backup")
-                    bodyText("Sharing in Bloggo is something you start from the app; we do not put your blog on a public website. Typical options include:")
-                    bullet("PDF: The app can create a PDF on your device. You can save or download it and share it manually using Mail, AirDrop, Files, or any other app you choose. Those services have their own privacy practices.")
-                    bullet("QR code: You can use a QR code to hand off a blog to another Bloggo user in person (for example, so they can open it in Bloggo on their device), or for your own convenience. That flow is designed for direct, user initiated sharing; it is not for us to host or publish your blog online.")
-                    bullet("Zip export: You can export your blog as a zip file (or similar archive) for your own backup or to move it between your devices. Those files stay under your control unless you choose to send them somewhere else.")
+                    bodyText("Sharing is something you start from the app; we do not put your blog on a public website. Typical options include:")
+                    bullet("PDF / storybook export: Generated on-device. Sharing via Mail, AirDrop, or other apps inherits those vendors' privacy terms.")
+                    bullet("Video export: Rendered locally; you choose whether to save to Photos or hand off via the share sheet.")
+                    bullet("Carousel Studio–style tooling: Helps build image sets or canvases for TikTok, Facebook, Messages, etc. Once you invoke an external app's share APIs, those apps' notices apply—not this policy alone.")
+                    bullet("ZIP (or comparable archive): Packaged backups you can save yourself (for example via the Files app or another destination you choose).")
+                    bullet("QR code (“Share with Bloggo”): Encodes a handshake so recipients open Bloggo locally. Keep the QR out of unintended hands the same way you would a link.")
                 }
 
                 Group {
@@ -88,11 +91,12 @@ struct PrivacyPolicyView: View {
                 Group {
                     sectionTitle("7. Guest and Registered User Access")
                     bodyText("Bloggo offers two tiers of access:")
-                    bullet("Guest users (no account): Guests may create and export a limited number of blogs, as shown in the app. To save additional blogs or use features that require an account, you can create one.")
+                    bullet("Guest users (no account): Guests may create and export one (1) blog. To save additional blogs or use features that require an account, you can create one.")
                     bullet("Registered users: Users with a Bloggo account can save and export blogs according to the limits shown in the app. Account creation requires a valid email address.")
-                    bullet("You must be at least 13 years old to create an account. If you are under 13, you may use Bloggo only as a guest.")
+                    bodyText("Age and accounts. Bloggo is listed on the Apple App Store with a 4+ age rating. That rating reflects the general suitability of the app for download and everyday use, including when you use Bloggo without registering. Creating a Bloggo account is different: it requires you to provide personal information (such as an email address) that we process on our systems. For that reason, you must be at least 13 years old to create an account. If you are not yet 13, you may not register; you may still use Bloggo as a guest within the limits shown in the app, without submitting the information we collect for registered users.")
+                    bullet("By creating an account, you represent that you are at least 13 years of age, or the minimum age required in your jurisdiction to consent to the collection of your personal information online, whichever is higher.")
                     bullet("Only one account may be created per email address.")
-                    bodyText("An account does not move your blog content to our servers; it is still stored on your device as described in Section 2, while we store the account details needed to sign you in.")
+                    bodyText("An account does not move your blog content to our servers; drafts and photos stay on your device as described in Section 2, while we store the account details needed to sign you in.")
                 }
 
                 Group {
@@ -103,7 +107,7 @@ struct PrivacyPolicyView: View {
 
                 Group {
                     sectionTitle("9. Data Security")
-                    bodyText("We implement security measures consistent with industry practice. Data sent between the app and our servers for account sign in and related services is encrypted in transit (HTTPS/TLS). Your blog content itself is not uploaded to our servers under this policy. No method of storage or transmission is perfectly secure; we encourage you to use a strong, unique password for your Bloggo account and to keep your device and Apple ID secure.")
+                    bodyText("We implement security measures consistent with industry practice. Data sent between the app and our servers for account sign-in and related services is encrypted in transit (HTTPS/TLS). Your blog content itself is not stored on our servers under this policy. No method of storage or transmission is perfectly secure; we encourage you to use a strong, unique password for your Bloggo account and to keep your device and Apple ID secure.")
                 }
 
                 Group {

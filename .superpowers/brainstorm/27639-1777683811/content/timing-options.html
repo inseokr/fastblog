@@ -1,0 +1,61 @@
+<h2>When should the falling photos appear?</h2>
+<p class="subtitle">The current creation animation runs for 5 seconds. Here are 3 timing options for the falling-photos finale.</p>
+
+<div style="margin-bottom: 32px; padding: 0 8px;">
+
+  <!-- Option A -->
+  <div class="option" data-choice="a" onclick="toggleSelect(this)" style="margin-bottom: 16px; display: block; cursor: pointer;">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Last 2 seconds of the existing 5s window</h3>
+      <p>At ~3s, the rings/progress UI fades out and the falling photos kick in for the final 2 seconds. Total animation time stays at 5s. Clean &amp; fast — no extra wait added.</p>
+      <div style="margin-top: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 12px; font-family: monospace; font-size: 12px; color: #ccc;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+          <div style="width: 160px; height: 18px; background: linear-gradient(to right, #3b82f6, #6366f1); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;">Rings + progress (3s)</div>
+          <div style="width: 80px; height: 18px; background: linear-gradient(to right, #f59e0b, #ef4444); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;">Photos fall (2s)</div>
+          <div style="color: #888; font-size: 10px;">→ Blog reveals</div>
+        </div>
+        <div style="color: #666; font-size: 10px;">|---- 5s total ----|</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B -->
+  <div class="option" data-choice="b" onclick="toggleSelect(this)" style="margin-bottom: 16px; display: block; cursor: pointer;">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>After the 5s animation finishes (extended finale)</h3>
+      <p>Full 5s animation plays as-is. Once the blog is ready, the rings fade out and the falling photos play as a dedicated ~2.5s finale before revealing the blog. Total: ~7.5s. More dramatic, but adds wait time.</p>
+      <div style="margin-top: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 12px; font-family: monospace; font-size: 12px; color: #ccc;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+          <div style="width: 160px; height: 18px; background: linear-gradient(to right, #3b82f6, #6366f1); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;">Rings + progress (5s)</div>
+          <div style="width: 96px; height: 18px; background: linear-gradient(to right, #f59e0b, #ef4444); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;">Photos fall (2.5s)</div>
+          <div style="color: #888; font-size: 10px;">→ Blog</div>
+        </div>
+        <div style="color: #666; font-size: 10px;">|-------- ~7.5s total --------|</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option C -->
+  <div class="option" data-choice="c" onclick="toggleSelect(this)" style="margin-bottom: 16px; display: block; cursor: pointer;">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Overlay: photos fall on top of the existing animation</h3>
+      <p>At ~3s, the photos begin falling while the rings are still faintly visible underneath. Both layers coexist briefly, then a flash transition reveals the blog. Adds depth — photos feel like they emerge from the app icon.</p>
+      <div style="margin-top: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 12px; font-family: monospace; font-size: 12px; color: #ccc;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+          <div style="width: 240px; height: 18px; background: linear-gradient(to right, #3b82f6, #6366f1); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;">Rings + progress (fades to 30% at 3s)</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; padding-left: 120px;">
+          <div style="width: 120px; height: 18px; background: linear-gradient(to right, #f59e0b, #ef4444); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;">Photos fall on top</div>
+          <div style="color: #888; font-size: 10px;">→ Flash → Blog</div>
+        </div>
+        <div style="color: #666; font-size: 10px;">|---- 5s total ----|</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="font-size: 13px;">Note: In all options, the actual blog data finishes loading asynchronously — the animation waits for it regardless of which timing approach is used.</p>

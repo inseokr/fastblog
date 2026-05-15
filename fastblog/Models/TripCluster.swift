@@ -46,9 +46,9 @@ func clusterTrips(
     // Cluster radius in degrees latitude. Minimum 0.05° so nothing clusters at city level unexpectedly.
     let radiusDeg = max(0.05, span.latitudeDelta * 0.12)
 
-    // Each entry: (cluster center, accumulated blogs)
+    // Each entry: seed coordinate for proximity matching, accumulated (blog, coordinate) pairs.
     var centers: [CLLocationCoordinate2D] = []
-    var groups: [[CreatedRecapBlog]] = []
+    var groups: [[(blog: CreatedRecapBlog, coordinate: CLLocationCoordinate2D)]] = []
 
     for item in items {
         let coord = item.coordinate
@@ -59,19 +59,24 @@ func clusterTrips(
             abs(centers[i].latitude - coord.latitude) < radiusDeg &&
             abs(centers[i].longitude - coord.longitude) < radiusDeg / lonFactor
         }) {
-            groups[idx].append(item.blog)
+            groups[idx].append(item)
         } else {
             centers.append(coord)
-            groups.append([item.blog])
+            groups.append([item])
         }
     }
 
-    return zip(centers, groups).compactMap { center, blogs in
-        guard let first = blogs.first else {
+    return groups.compactMap { group in
+        guard let first = group.first else {
             assertionFailure("TripCluster invariant violated: cluster group is empty")
             return nil
         }
-        return TripCluster(representative: first, coordinate: center, blogs: blogs)
+        // Use the geographic centroid so the pin sits in the middle of the cluster.
+        let centroid = CLLocationCoordinate2D(
+            latitude: group.map(\.coordinate.latitude).reduce(0, +) / Double(group.count),
+            longitude: group.map(\.coordinate.longitude).reduce(0, +) / Double(group.count)
+        )
+        return TripCluster(representative: first.blog, coordinate: centroid, blogs: group.map(\.blog))
     }
 }
 
@@ -108,7 +113,7 @@ func clusterVisitedPlaces(
 
     let radiusDeg = max(0.05, span.latitudeDelta * 0.12)
     var centers: [CLLocationCoordinate2D] = []
-    var groups: [[VisitedPlaceSummary]] = []
+    var groups: [[(place: VisitedPlaceSummary, coordinate: CLLocationCoordinate2D)]] = []
 
     for item in items {
         let coord = item.coordinate
@@ -117,18 +122,23 @@ func clusterVisitedPlaces(
             abs(centers[i].latitude - coord.latitude) < radiusDeg &&
             abs(centers[i].longitude - coord.longitude) < radiusDeg / lonFactor
         }) {
-            groups[idx].append(item.place)
+            groups[idx].append(item)
         } else {
             centers.append(coord)
-            groups.append([item.place])
+            groups.append([item])
         }
     }
 
-    return zip(centers, groups).compactMap { center, places in
-        guard let first = places.first else {
+    return groups.compactMap { group in
+        guard let first = group.first else {
             assertionFailure("VisitedPlaceCluster invariant violated: group is empty")
             return nil
         }
-        return VisitedPlaceCluster(representative: first, coordinate: center, places: places)
+        // Use the geographic centroid so the pin sits in the middle of the cluster.
+        let centroid = CLLocationCoordinate2D(
+            latitude: group.map(\.coordinate.latitude).reduce(0, +) / Double(group.count),
+            longitude: group.map(\.coordinate.longitude).reduce(0, +) / Double(group.count)
+        )
+        return VisitedPlaceCluster(representative: first.place, coordinate: centroid, places: group.map(\.place))
     }
 }

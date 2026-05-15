@@ -69,6 +69,10 @@ final class TripsViewModel: ObservableObject {
     @Published var loadingMessage: String = "Loading Past Trips…"
     /// Progress of the initial default scan (0.0 → 1.0). Reset to 0 on each new scan.
     @Published var defaultScanProgress: Double = 0
+    /// TripsView observes this when the user taps **Use Camera** on `ContentView`’s default-scan overlay (TripsView no longer renders a duplicate loader under that overlay).
+    @Published var openInAppCameraFromDefaultScanRequest: UUID?
+    /// When true, `ContentView` should mount the Trips overlay and reveal it when this default scan returns to `.idle` (e.g. home-mile radius changed in Settings).
+    @Published var openTripsWhenCurrentDefaultScanFinishes: Bool = false
 
     /// When true, show the "Select Photos / To Create A Blog" intro after scan completes (unless user chose "Do not show again").
     @Published var showSelectPhotosIntroAfterScan: Bool = true
@@ -239,19 +243,15 @@ final class TripsViewModel: ObservableObject {
         }
     }
 
-    /// Returns a camera-created trip draft (coverImageName == "camera.fill") that matches
-    /// the capture date — same day or within maxGapDaysToBridge after the draft's last day (same rule as trip scanner).
+    /// Returns a camera-created trip draft (coverImageName == "camera.fill") whose last photo
+    /// is within 24 hours of the capture date. If the gap exceeds 24 hours, the capture starts a new trip.
     func cameraTripDraftMatching(captureDate: Date) -> TripDraft? {
-        let cal = Calendar.current
-        let captureDay = cal.startOfDay(for: captureDate)
         let drafts = tripDrafts.filter { $0.coverImageName == "camera.fill" }
         for draft in drafts {
             guard let draftEnd = draft.latestDate else { continue }
-            let draftEndDay = cal.startOfDay(for: draftEnd)
-            let draftStartDay = cal.startOfDay(for: draft.earliestDate ?? draftEnd)
-            if captureDay >= draftStartDay && captureDay <= draftEndDay { return draft }
-            let dayDiff = cal.dateComponents([.day], from: draftEndDay, to: captureDay).day ?? Int.max
-            if dayDiff >= 1 && dayDiff <= ScanConfig.maxGapDaysToBridge { return draft }
+            // Negative means capture is before draft end (within the draft) — always match.
+            // Positive means capture is after draft end — only match within 24 hours.
+            if captureDate.timeIntervalSince(draftEnd) <= 86400 { return draft }
         }
         return nil
     }
@@ -282,7 +282,7 @@ final class TripsViewModel: ObservableObject {
             tripDrafts[idx] = merged
             lastSelectedVisibleTripID = tripId
             pendingScrollToCameraTripID = tripId
-            if var window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
+            if let window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
                 var w = window
                 w[wi] = merged
                 currentWindowTrips = w
@@ -304,7 +304,31 @@ final class TripsViewModel: ObservableObject {
         }
         if changed {
             tripDrafts[idx] = draft
-            if var window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
+            if let window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
+                var w = window
+                w[wi] = draft
+                currentWindowTrips = w
+            }
+        }
+    }
+
+    /// Updates caption text for a photo already stored in a camera trip draft (in-app camera flow).
+    func updatePhotoCaptionInCameraDraft(tripId: UUID, photoId: UUID, caption: String?) {
+        guard let idx = tripDrafts.firstIndex(where: { $0.id == tripId }),
+              tripDrafts[idx].coverImageName == "camera.fill" else { return }
+        var draft = tripDrafts[idx]
+        var changed = false
+        draft.days = draft.days.map { day in
+            var photos = day.photos
+            for pIdx in photos.indices where photos[pIdx].id == photoId {
+                photos[pIdx].caption = caption.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+                changed = true
+            }
+            return TripDay(id: day.id, dayIndex: day.dayIndex, dateText: day.dateText, photos: photos, countryCode: day.countryCode, countryName: day.countryName, cityName: day.cityName)
+        }
+        if changed {
+            tripDrafts[idx] = draft
+            if let window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
                 var w = window
                 w[wi] = draft
                 currentWindowTrips = w
@@ -701,18 +725,34 @@ final class TripsViewModel: ObservableObject {
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
+        // When the user signs out, clear cached scan data so the next onAppear() triggers a
+        // fresh scan after re-login. This ensures detectNewMomentsForOnTheGoTrip re-evaluates
+        // with account blogs visible and the active on-the-go blog is properly detected.
+        AuthService.shared.$currentUser
+            .dropFirst()
+            .filter { $0 == nil }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.tripDrafts = []
+                self?.currentWindowTrips = nil
+            }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: .blogifyTripExclusionRadiusDidFinishAdjusting)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 guard scanState == .idle else { return }
-                startDefaultScan(forceFullScan: true)
+                startDefaultScan(forceFullScan: true, openTripsWhenFinished: true)
             }
             .store(in: &cancellables)
     }
 
     func onAppear() {
-        guard scanState == .idle, tripDrafts.isEmpty else { return }
+        // Do not require `tripDrafts.isEmpty`: after the in-app camera creates a trip/blog,
+        // `addCameraTripDraft` leaves drafts in memory — we still need a library scan on return
+        // so camera-roll trips merge in without requiring an app restart.
+        guard scanState == .idle else { return }
         if createdRecapStore.isLoading {
             // Wait for store to load before scanning so occupiedDateRanges is accurate
             createdRecapStore.$isLoading
@@ -759,25 +799,48 @@ final class TripsViewModel: ObservableObject {
     func cancelDefaultScan() {
         defaultScanTask?.cancel()
         defaultScanTask = nil
+        openTripsWhenCurrentDefaultScanFinishes = false
         scanState = .idle
         defaultScanProgress = 0
     }
 
+    /// Called from `ContentView`’s scan overlay when the user taps **Use Camera** (TripsView presents the capture flow).
+    func requestOpenInAppCameraFromDefaultScanOverlay() {
+        openInAppCameraFromDefaultScanRequest = UUID()
+    }
+
+    private func finishDefaultScanToIdle() {
+        openTripsWhenCurrentDefaultScanFinishes = false
+        scanState = .idle
+    }
+
     /// When true, skips incremental scan and runs a full-window scan (e.g. after user selects more photos in Limited Library picker).
-    func startDefaultScan(forceFullScan: Bool = false) {
+    /// Set `openTripsWhenFinished` when the scan was user-initiated from Settings (home radius) so the Trips overlay appears when the scan completes.
+    func startDefaultScan(forceFullScan: Bool = false, openTripsWhenFinished: Bool = false) {
         if forceFullScan {
             PhotoLibraryTripService.invalidateScanCache()
         }
+        openTripsWhenCurrentDefaultScanFinishes = openTripsWhenFinished
         showSelectPhotosIntroAfterScan = true
         scanState = .scanningDefault
-        loadingMessage = "Loading your recent trips…"
+        loadingMessage = "Checking for new moments…"
         defaultScanProgress = 0
         newlyScannedPhotos = []
         newMomentsMatchedBlog = nil
         showNewlyScannedSheet = false
         AppAnalytics.shared.trackEvent(name: "trip_scan_started")
         /// While the active on-the-go blog’s latest photo is under 24 hours old, re-scan whole calendar days from trip start through now: omit only that blog from occupied ranges (so library assets on day 1 are not stripped) and widen incremental fetch / overlap window to `tripStartDate`.
-        let activeOnTheGoBlogId = OnTheGoTripStore.activeBlogId
+        // Prefer the explicit on-the-go store, but also handle the "first launch → open camera → create blog → scan"
+        // sequence where the scan can start before on-the-go state is readable in this view model.
+        let inferredFreshCameraBlogId: UUID? = {
+            let now = Date()
+            return createdRecapStore.visibleRecents.first(where: { blog in
+                blog.coverImageName == "camera.fill"
+                    && now.timeIntervalSince(blog.createdAt) < 120
+                    && (blog.tripEndDate.map { now.timeIntervalSince($0) < 24 * 3600 } ?? false)
+            })?.sourceTripId
+        }()
+        let activeOnTheGoBlogId = OnTheGoTripStore.activeBlogId ?? inferredFreshCameraBlogId
         let latestPhotoForActiveOnTheGo: Date? = {
             guard let id = activeOnTheGoBlogId else { return nil }
             if let t = createdRecapStore.latestPhotoTimestamp(forSourceTripId: id) { return t }
@@ -785,13 +848,14 @@ final class TripsViewModel: ObservableObject {
                 ?? OnTheGoTripStore.tripEndDate
         }()
         let scanFullCalendarDaysForFreshOnTheGo = activeOnTheGoBlogId != nil
-            && OnTheGoTripStore.isTripStillOngoing()
+            && (OnTheGoTripStore.isTripStillOngoing() || inferredFreshCameraBlogId != nil)
             && (latestPhotoForActiveOnTheGo.map { Date().timeIntervalSince($0) < 24 * 3600 } ?? false)
         let occupiedRangesExcludedBlogIds: Set<UUID> = {
             guard scanFullCalendarDaysForFreshOnTheGo, let id = activeOnTheGoBlogId else { return Set() }
             return Set([id])
         }()
         let occupiedRanges = createdRecapStore.occupiedDateRanges(excludingSourceTripIds: occupiedRangesExcludedBlogIds)
+        let savedCaptureIds = createdRecapStore.allInAppCaptureIdentifiersInVisibleBlogs()
         let userId = currentUserId
         let previousLastScanned = forceFullScan ? nil : ScanSessionStore.lastScannedDate(for: userId)
 
@@ -820,16 +884,29 @@ final class TripsViewModel: ObservableObject {
                 #endif
 
                 let allTrips = await photoLibraryService.scanAllForLimitedAccess(
-                    occupiedDateRanges: occupiedRanges,
+                    // Always scan camera roll (selected photos) even if they overlap saved blogs/drafts.
+                    // We dedupe against saved blogs later so the user still sees trips from the camera roll.
+                    occupiedDateRanges: [],
                     progress: { [weak self] value in
                         Task { @MainActor in self?.defaultScanProgress = value }
                     }
                 )
 
-                tripDrafts = allTrips
+                let mergedLimitedTrips = photoLibraryService.mergingBloggoCaptures(
+                    into: allTrips,
+                    occupiedDateRanges: occupiedRanges,
+                    scanStart: .distantPast,
+                    scanEnd: Date(),
+                    savedCaptureIdentifiers: savedCaptureIds
+                )
+                let preservedCameraDrafts = tripDrafts.filter { draft in
+                    draft.coverImageName == "camera.fill"
+                        && !mergedLimitedTrips.contains(where: { $0.id == draft.id })
+                }
+                tripDrafts = preservedCameraDrafts + mergedLimitedTrips
                 currentWindowTrips = nil
-                if let first = allTrips.first?.days.first?.photos.first?.timestamp,
-                   let last = allTrips.last?.days.last?.photos.last?.timestamp {
+                if let first = mergedLimitedTrips.first?.days.first?.photos.first?.timestamp,
+                   let last = mergedLimitedTrips.last?.days.last?.photos.last?.timestamp {
                     earliestScannedDate = first
                     latestScannedDate = last
                 } else {
@@ -838,9 +915,9 @@ final class TripsViewModel: ObservableObject {
                 }
 
                 AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
-                AppAnalytics.shared.incrementCounter("trips_detected", by: allTrips.count)
+                AppAnalytics.shared.incrementCounter("trips_detected", by: mergedLimitedTrips.count)
                 ScanSessionStore.saveLastScannedDate(Date(), for: userId)
-                scanState = .idle
+                finishDefaultScanToIdle()
                 presentNewMomentsSheetIfNeeded()
                 return
             }
@@ -851,13 +928,16 @@ final class TripsViewModel: ObservableObject {
             let windowEnd = now
 
             // Incremental scan: only fetch photos since the last scan when we already have
-            // trips in memory. Saves time and allows merging new moments into existing trips.
+            // *library* trips in memory. In-app camera trips alone don't count — they don't
+            // represent camera roll state, so a full scan is still needed to load all library
+            // trips (e.g. user opens camera first, then taps trip scanning).
+            let hasLibraryTripDrafts = tripDrafts.contains { $0.coverImageName != "camera.fill" }
             let canDoIncremental = previousLastScanned != nil
                 && previousLastScanned! > fullWindowStart
-                && !tripDrafts.isEmpty
+                && hasLibraryTripDrafts
 
             #if DEBUG
-            debugPrint("[Scan] canDoIncremental = \(canDoIncremental)  (hasLastScanned=\(previousLastScanned != nil) lastScanned>\(scanDbg(fullWindowStart))=\(previousLastScanned.map { $0 > fullWindowStart } ?? false) tripDrafts.isEmpty=\(tripDrafts.isEmpty))")
+            debugPrint("[Scan] canDoIncremental = \(canDoIncremental)  (hasLastScanned=\(previousLastScanned != nil) lastScanned>\(scanDbg(fullWindowStart))=\(previousLastScanned.map { $0 > fullWindowStart } ?? false) hasLibraryTripDrafts=\(hasLibraryTripDrafts))")
             #endif
 
             if canDoIncremental, let lastDate = previousLastScanned {
@@ -914,7 +994,14 @@ final class TripsViewModel: ObservableObject {
                 #endif
 
                 mergeIncrementalTrips(incrementalTrips, since: lastDate)
-                scanState = .idle
+                tripDrafts = photoLibraryService.mergingBloggoCaptures(
+                    into: tripDrafts,
+                    occupiedDateRanges: occupiedRanges,
+                    scanStart: fullWindowStart,
+                    scanEnd: windowEnd,
+                    savedCaptureIdentifiers: savedCaptureIds
+                )
+                finishDefaultScanToIdle()
                 presentNewMomentsSheetIfNeeded()
 
             } else {
@@ -930,7 +1017,9 @@ final class TripsViewModel: ObservableObject {
                 let allTrips = await photoLibraryService.scanInDateRange(
                     startDate: fetchStart,
                     endDate: windowEnd,
-                    occupiedDateRanges: occupiedRanges,
+                    // Always scan camera roll; do not exclude saved blog ranges here.
+                    // Filtering happens after merging so the user still sees camera-roll trips.
+                    occupiedDateRanges: [],
                     progress: { [weak self] value in
                         Task { @MainActor in self?.defaultScanProgress = value }
                     }
@@ -949,7 +1038,18 @@ final class TripsViewModel: ObservableObject {
                 AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
                 AppAnalytics.shared.incrementCounter("trips_detected", by: windowTrips.count)
 
-                tripDrafts = windowTrips
+                let mergedWindowTrips = photoLibraryService.mergingBloggoCaptures(
+                    into: windowTrips,
+                    occupiedDateRanges: occupiedRanges,
+                    scanStart: fullWindowStart,
+                    scanEnd: windowEnd,
+                    savedCaptureIdentifiers: savedCaptureIds
+                )
+                let preservedCameraDrafts = tripDrafts.filter { draft in
+                    draft.coverImageName == "camera.fill"
+                        && !mergedWindowTrips.contains(where: { $0.id == draft.id })
+                }
+                tripDrafts = preservedCameraDrafts + mergedWindowTrips
                 currentWindowTrips = nil
                 earliestScannedDate = fullWindowStart
                 latestScannedDate = windowEnd
@@ -989,7 +1089,7 @@ final class TripsViewModel: ObservableObject {
                 debugPrint("[Scan] saved lastScannedDate = \(scanDbg(now))")
                 #endif
 
-                scanState = .idle
+                finishDefaultScanToIdle()
 
                 detectNewMomentsForOnTheGoTrip(scannedDrafts: windowTrips)
                 newlyScannedPhotos = dedupePhotosByLocalId(newlyScannedPhotos)
@@ -1592,16 +1692,18 @@ final class TripsViewModel: ObservableObject {
         let startMonth = findMoreStartMonth
         let endYear = findMoreEndYear
         let endMonth = findMoreEndMonth
-        let occupiedRanges = createdRecapStore.occupiedDateRanges()
         findMoreScanTask = Task {
             // Keep My Drafts for dedup context
             let myDraftIds = TripDraftStore.draftTripIds()
             let draftOnlyTrips = tripDrafts.filter { myDraftIds.contains($0.id) }
 
+            // Always read the full camera roll for the chosen range. Saved-blog overlap
+            // is handled by `isDraftRedundantWithSavedBlogs` downstream so library trips
+            // still surface even when an in-app-camera blog covers the same days.
             let newTrips = await photoLibraryService.scanInDateRange(
                 startYear: startYear, startMonth: startMonth,
                 endYear: endYear, endMonth: endMonth,
-                occupiedDateRanges: occupiedRanges,
+                occupiedDateRanges: [],
                 progress: { [weak self] value in
                     Task { @MainActor in
                         self?.findMoreScanProgress = value
@@ -1786,8 +1888,6 @@ final class TripsViewModel: ObservableObject {
         let startDate = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: expandedStart)) ?? expandedStart
         // 1 day after the latest continuous trip's end
         let endDate = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: expandedEnd)) ?? expandedEnd
-        let occupiedRanges = createdRecapStore.occupiedDateRanges()
-
         let dbgFmt = ISO8601DateFormatter()
         dbgFmt.formatOptions = [.withFullDate]
         print("[VisitedCity] Tapped: \(cityTrip.displayTitle)")
@@ -1799,10 +1899,11 @@ final class TripsViewModel: ObservableObject {
         print("[VisitedCity]   scan endDate        : \(dbgFmt.string(from: endDate))")
 
         visitedCityScanTask = Task {
+            // Always read the camera roll for the chosen range; dedup happens downstream.
             let newTrips = await photoLibraryService.scanInDateRange(
                 startDate: startDate,
                 endDate: endDate,
-                occupiedDateRanges: occupiedRanges,
+                occupiedDateRanges: [],
                 progress: { [weak self] p in
                     Task { @MainActor [weak self] in self?.visitedCityScanProgress = p }
                 }
@@ -1970,8 +2071,7 @@ final class TripsViewModel: ObservableObject {
             )
         }
 
-        let firstDate = dayGroups.first!.date
-        let lastDate = dayGroups.last!.date
+        guard let firstDate = dayGroups.first?.date, let lastDate = dayGroups.last?.date else { return }
         let dateRangeText = cal.isDate(firstDate, inSameDayAs: lastDate)
             ? formatter.string(from: firstDate)
             : "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
@@ -2012,7 +2112,6 @@ final class TripsViewModel: ObservableObject {
         olderTripsResult = .none
         AppAnalytics.shared.trackEvent(name: "trip_scan_started")
 
-        let occupiedRanges = createdRecapStore.occupiedDateRanges()
         loadOlderScanTask = Task {
             var currentWindowEnd = cal.startOfDay(for: earliest)
             var finalTrips: [TripDraft] = []
@@ -2032,10 +2131,11 @@ final class TripsViewModel: ObservableObject {
                     let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: windowStart) ?? windowStart
                     let fetchEnd = cal.date(byAdding: .day, value: Self.fetchPaddingDays, to: windowEnd) ?? windowEnd
 
+                    // Always read the camera roll; saved-blog overlap is filtered in `applyWindowTrips`.
                     let allTrips = await photoLibraryService.scanInDateRange(
                         startDate: fetchStart,
                         endDate: fetchEnd,
-                        occupiedDateRanges: occupiedRanges,
+                        occupiedDateRanges: [],
                         progress: { [weak self] value in
                             Task { @MainActor in self?.loadOlderProgress = value }
                         }
@@ -2128,12 +2228,12 @@ final class TripsViewModel: ObservableObject {
         let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: windowStart) ?? windowStart
         let fetchEnd = cal.date(byAdding: .day, value: Self.fetchPaddingDays, to: windowEnd) ?? windowEnd
 
-        let occupiedRanges = createdRecapStore.occupiedDateRanges()
         loadNewerScanTask = Task {
+            // Always read the camera roll; saved-blog overlap is filtered in `applyWindowTrips`.
             let allTrips = await photoLibraryService.scanInDateRange(
                 startDate: fetchStart,
                 endDate: fetchEnd,
-                occupiedDateRanges: occupiedRanges,
+                occupiedDateRanges: [],
                 progress: { [weak self] value in
                     Task { @MainActor in self?.loadNewerProgress = value }
                 }

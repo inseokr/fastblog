@@ -99,14 +99,20 @@ struct fastblogApp: App {
         var justFinishedOnboarding = false
     @AppStorage("blogify.hasCheckedExistingUser") private
         var hasCheckedExistingUser = false
+    @AppStorage("blogify.hasSkippedPhotoPermission") private
+        var hasSkippedPhotoPermission = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var isAppReady = false
     @State private var pendingResetToken: String?
+    @State private var showResetPassword = false
+    @State private var showSignInAfterReset = false
     @State private var showPushPermissionPrompt = false
 
     #if DEBUG
         /// Flip to `true` to skip splash + onboarding and land directly on ManagePhotosView.
         private static let kDevBypassToManagePhotos = false
+        /// Flip to `true` to skip splash + onboarding and land directly on KakaoMapTestView.
+        private static let kDevBypassToKakaoMapTest = false
     #endif
 
     var body: some Scene {
@@ -120,7 +126,17 @@ struct fastblogApp: App {
                 .environmentObject(TripNearbyShareSessionController.shared)
                 .onOpenURL { url in
                     if let token = Self.parseResetPasswordToken(from: url) {
-                        DispatchQueue.main.async { pendingResetToken = token }
+                        pendingResetToken = token
+                        if splashManager.phase == .done {
+                            // Warm start: ContentView's NavigationStack already owns the
+                            // UIKit presentation context, so SwiftUI's fullScreenCover on
+                            // the parent view is silently dropped. Present via UIKit instead.
+                            Self.presentResetPasswordOverlay(token: token, authService: authService) {
+                                pendingResetToken = nil
+                            }
+                        }
+                        // Cold start: onChange(of: splashManager.phase) triggers
+                        // showResetPassword = true after the splash finishes.
                     } else if let jwt = Self.parseVerifyEmailToken(from: url) {
                         Task { await authService.loginWithVerificationToken(jwt) }
                     } else if Self.isReceiveTripURL(url) {
@@ -130,31 +146,17 @@ struct fastblogApp: App {
                         _ = GoogleAuthManager.handleURL(url)
                     }
                 }
-                .sheet(
-                    isPresented: Binding(
-                        get: { isAppReady && pendingResetToken != nil },
-                        set: { if !$0 { pendingResetToken = nil } }
-                    )
-                ) {
-                    if let token = pendingResetToken {
-                        ResetPasswordView(token: token) {
-                            pendingResetToken = nil
-                        }
-                        .environmentObject(authService)
-                    }
-                }
                 // Import drafts modal presented at app root so it overlays any screen
                 .sheet(isPresented: $authStateManager.showImportDraftsModal) {
                     ImportDraftsModalView()
                         .environmentObject(authStateManager)
                         .environmentObject(createdRecapStore)
                 }
-                // Migrate anonymous drafts + import prompt on login; also kick off cloud sync.
+                // Migrate anonymous drafts + import prompt on login.
                 .onChange(of: authStateManager.authState) { _, newState in
                     if case .loggedIn(let userId) = newState {
                         createdRecapStore.importAnonymousDrafts(into: userId)
                         authStateManager.checkAndPromptImportIfNeeded()
-                        Task { await createdRecapStore.syncFromCloud() }
                         // Register any pending APNs token now that the user has an account.
                         Task {
                             let isDenied = await DraftReminderNotificationManager.handlePostLoginSetup()
@@ -179,7 +181,9 @@ struct fastblogApp: App {
     @ViewBuilder
     private var appContent: some View {
         #if DEBUG
-            if Self.kDevBypassToManagePhotos {
+            if Self.kDevBypassToKakaoMapTest {
+                NavigationStack { KakaoMapTestView() }
+            } else if Self.kDevBypassToManagePhotos {
                 ManagePhotosDevWrapper()
             } else {
                 normalAppRoot
@@ -204,15 +208,14 @@ struct fastblogApp: App {
                             hasCompletedOnboarding = true
                             justFinishedOnboarding = true
                         }
-                    } else if photoAuth.isAuthorized {
+                    } else if photoAuth.isAuthorized || hasSkippedPhotoPermission {
                         ContentView()
                     } else {
                         PhotosPermissionView(
                             status: photoAuth.status,
                             onOpenSettings: { openSettings() },
                             onContinueWithoutScanning: {
-                                hasCompletedOnboarding = true
-                                justFinishedOnboarding = true
+                                hasSkippedPhotoPermission = true
                             }
                         )
                     }
@@ -251,7 +254,6 @@ struct fastblogApp: App {
         .onAppear {
             GoogleAuthManager.shared.restorePreviousSignIn()
             Task {
-                await EntitlementManager.shared.refreshEntitlements()
                 createdRecapStore.enforceArchiveRules()
 
                 // Ensure splash is visible for at least 1.5 seconds.
@@ -285,12 +287,37 @@ struct fastblogApp: App {
             } else if newPhase == .active {
                 AppAnalytics.shared.flushOnBackground()
                 Task {
-                    await EntitlementManager.shared.refreshEntitlements()
                     createdRecapStore.enforceArchiveRules()
-                    if authStateManager.isLoggedIn {
-                        await createdRecapStore.syncFromCloud()
-                    }
                 }
+            }
+        }
+        // Cold start: token arrived during splash → show once splash is done.
+        .onChange(of: splashManager.phase) { _, phase in
+            if phase == .done, pendingResetToken != nil {
+                showResetPassword = true
+            }
+        }
+        // Reset-password deep link cover. Uses a plain @State Bool so SwiftUI's
+        // presentation system observes it directly — computed Binding(get:set:)
+        // is not reliably tracked for triggering new presentations on warm start.
+        .fullScreenCover(isPresented: $showResetPassword, onDismiss: {
+            pendingResetToken = nil
+        }) {
+            if let token = pendingResetToken {
+                ResetPasswordView(token: token) {
+                    showResetPassword = false
+                    showSignInAfterReset = true
+                }
+                .environmentObject(authService)
+            }
+        }
+        .fullScreenCover(isPresented: $showSignInAfterReset) {
+            NavigationStack {
+                EmailLoginView(
+                    onAuthenticated: { showSignInAfterReset = false },
+                    onDismiss: { showSignInAfterReset = false }
+                )
+                .environmentObject(authService)
             }
         }
     }
@@ -300,6 +327,71 @@ struct fastblogApp: App {
             return
         }
         UIApplication.shared.open(url)
+    }
+
+    /// Presents `ResetPasswordView` from the topmost `UIViewController`, bypassing
+    /// SwiftUI's presentation hierarchy. This is required on warm start because
+    /// `ContentView`'s `NavigationStack` creates a `UINavigationController` that
+    /// takes over as the active UIKit presentation context, causing any `fullScreenCover`
+    /// on a SwiftUI ancestor view to be silently dropped.
+    private static func presentResetPasswordOverlay(
+        token: String,
+        authService: AuthService,
+        onDismiss: @escaping () -> Void
+    ) {
+        guard
+            let windowScene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene }).first,
+            let window = windowScene.windows.first(where: { $0.isKeyWindow })
+                ?? windowScene.windows.first
+        else { return }
+
+        var topVC: UIViewController? = window.rootViewController
+        while let presented = topVC?.presentedViewController { topVC = presented }
+        guard let presenterVC = topVC else { return }
+
+        let resetView = ResetPasswordView(token: token) { [weak presenterVC] in
+            onDismiss()
+            presenterVC?.dismiss(animated: true) {
+                Self.presentSignInOverlay(authService: authService)
+            }
+        }
+        .environmentObject(authService)
+
+        let hostingVC = UIHostingController(rootView: resetView)
+        hostingVC.modalPresentationStyle = .overFullScreen
+        presenterVC.present(hostingVC, animated: true)
+    }
+
+    /// Presents `EmailLoginView` from the topmost UIViewController (warm-start path,
+    /// called after the reset password overlay has fully dismissed).
+    private static func presentSignInOverlay(authService: AuthService) {
+        guard
+            let windowScene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene }).first,
+            let window = windowScene.windows.first(where: { $0.isKeyWindow })
+                ?? windowScene.windows.first
+        else { return }
+
+        var topVC: UIViewController? = window.rootViewController
+        while let presented = topVC?.presentedViewController { topVC = presented }
+        guard let presenterVC = topVC else { return }
+
+        let signInView = NavigationStack {
+            EmailLoginView(
+                onAuthenticated: { [weak presenterVC] in
+                    presenterVC?.dismiss(animated: true)
+                },
+                onDismiss: { [weak presenterVC] in
+                    presenterVC?.dismiss(animated: true)
+                }
+            )
+            .environmentObject(authService)
+        }
+
+        let hostingVC = UIHostingController(rootView: signInView)
+        hostingVC.modalPresentationStyle = .overFullScreen
+        presenterVC.present(hostingVC, animated: true)
     }
 
     /// Parses fastblog://reset-password?token=... deep link. Returns token if valid.

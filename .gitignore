@@ -7,6 +7,8 @@
 # Xcode
 build/
 DerivedData/
+# Cursor / local Xcode+agent build trees (10k+ files — do not commit)
+.derivedData*
 *.pbxuser
 !default.pbxuser
 *.mode1v3
@@ -54,3 +56,6 @@ playground.xcworkspace
 
 # Secrets — never commit real keys
 Secrets.xcconfig
+
+# Xcode test results
+TestResults/

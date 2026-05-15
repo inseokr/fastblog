@@ -9,9 +9,20 @@ import SwiftUI
 import UIKit
 
 struct PhotoCaptionEditSheet: View {
+    /// Matches `PlaceStopRowView` / `PlacePhotoModalView` AI story accent.
+    private static let funAISparkleGradient = LinearGradient(
+        colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
     let photo: RecapPhoto
     let placeTitle: String
     let placeSubtitle: String?
+    /// MK POI category raw string for this stop (optional tone hint for on-device “AI story”).
+    var placeCategory: String? = nil
+    /// When true, this photo’s caption was typed by the user — hide on-device “AI story”.
+    var captionIsManual: Bool = false
     @Binding var caption: String
     var onSave: () -> Void
     var onCancel: () -> Void
@@ -19,8 +30,6 @@ struct PhotoCaptionEditSheet: View {
     var onEnhance: ((String) async -> String)? = nil
     /// Called after AI successfully applies a result.
     var onEnhanceApplied: (() -> Void)? = nil
-    /// Pure translation — no AI story generation.
-    var onTranslate: ((String) async -> String)? = nil
     /// Parent presents recap `PlacePhotoModalView` for this photo.
     var onRequestFullPhotoView: (() -> Void)? = nil
     /// Match `PlacePhotoModalItem.id` while that modal is presented; when it becomes nil, editor text reloads from the caption binding.
@@ -30,7 +39,8 @@ struct PhotoCaptionEditSheet: View {
 
     @State private var editedText: String = ""
     @State private var isEnhancing = false
-    @State private var isTranslating = false
+    @State private var isGeneratingFunPhotoInsight = false
+    @State private var photoHasVisionTagsForAIStory = false
     @State private var showEnhanceStylePicker = false
     @State private var showWritingStyleSheet = false
     @AppStorage(StoryWritingStyle.presetStorageKey) private var stylePresetId: String = ""
@@ -46,6 +56,10 @@ struct PhotoCaptionEditSheet: View {
 
     private var trimmedEditedText: String {
         editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var photoCaptionBlocksAIShortStory: Bool {
+        captionIsManual && !trimmedEditedText.isEmpty
     }
 
     /// Matches `PlaceStopRowView` edit-mode title row on dark caption chrome.
@@ -161,6 +175,39 @@ struct PhotoCaptionEditSheet: View {
                 .clipped()
                 .contentShape(Rectangle())
 
+                if LocalLLMStoryCaptionGenerator.isCapable && photoHasVisionTagsForAIStory && !photoCaptionBlocksAIShortStory {
+                    HStack {
+                        Spacer(minLength: 0)
+                        if isGeneratingFunPhotoInsight {
+                            HStack(spacing: 6) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.85)))
+                                    .scaleEffect(0.75)
+                                Text("Thinking…")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.75))
+                            }
+                        } else {
+                            Button(action: runFunPhotoInsight) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "sparkles")
+                                        .font(.caption)
+                                        .foregroundStyle(Self.funAISparkleGradient)
+                                    Text("AI story")
+                                        .font(.caption)
+                                        .foregroundStyle(Self.funAISparkleGradient)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isEnhancing || isGeneratingFunPhotoInsight)
+                            .accessibilityLabel("Generate up to two sentences from on-device photo tags")
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 6)
+                    .padding(.bottom, 2)
+                }
+
                 // Action bar
                 if !trimmedEditedText.isEmpty {
                     HStack(spacing: 16) {
@@ -184,32 +231,15 @@ struct PhotoCaptionEditSheet: View {
                                     originalDraft = nil
                                 }
                             } label: {
-                                Label("", systemImage: "arrow.uturn.backward")
-                                    .font(.subheadline)
-                                    .foregroundColor(.white.opacity(0.7))
-                            }
-                        }
-
-                        if let translate = onTranslate {
-                            Button {
-                                runTranslate(translate)
-                            } label: {
-                                if isTranslating {
-                                    HStack(spacing: 4) {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle())
-                                            .scaleEffect(0.75)
-                                        Text("Translating…")
-                                            .font(.subheadline)
-                                            .foregroundColor(.white.opacity(0.7))
-                                    }
-                                } else {
-                                    Image(systemName: "translate")
-                                        .font(.subheadline)
-                                        .foregroundColor(.white.opacity(0.7))
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.uturn.backward")
+                                        .font(.caption)
+                                    Text("Revert")
+                                        .font(.caption)
                                 }
+                                .foregroundColor(.white.opacity(0.7))
                             }
-                            .disabled(isEnhancing || isTranslating)
+                            .accessibilityLabel("Revert caption")
                         }
                     }
                     .padding(.horizontal, 20)
@@ -248,6 +278,14 @@ struct PhotoCaptionEditSheet: View {
             .background(Color.clear)
         }
         .preferredColorScheme(.dark)
+        .task(id: photo.id) {
+            guard LocalLLMStoryCaptionGenerator.isCapable else {
+                await MainActor.run { photoHasVisionTagsForAIStory = false }
+                return
+            }
+            let has = await StoryCaptionService.shared.photoHasAnalyzedVisionTags(photo: photo)
+            await MainActor.run { photoHasVisionTagsForAIStory = has }
+        }
         .onAppear {
             editedText = caption
             DispatchQueue.main.async {
@@ -273,7 +311,36 @@ struct PhotoCaptionEditSheet: View {
             ?? "Custom"
     }
 
+    private func runFunPhotoInsight() {
+        guard LocalLLMStoryCaptionGenerator.isCapable, photoHasVisionTagsForAIStory, !photoCaptionBlocksAIShortStory else { return }
+        if originalDraft == nil { originalDraft = editedText }
+        isGeneratingFunPhotoInsight = true
+        DispatchQueue.main.async { wantsCaptionKeyboardFocus = false }
+        let hintRaw = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            let text = await StoryCaptionService.shared.generateFunPhotoInsight(
+                photo: photo,
+                placeName: placeTitle,
+                placeSubtitle: placeSubtitle,
+                placeCategoryMK: placeCategory,
+                visitTimeZone: nil,
+                userCaptionHint: hintRaw.isEmpty ? nil : hintRaw
+            )
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            await MainActor.run {
+                isGeneratingFunPhotoInsight = false
+                if !trimmed.isEmpty {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        editedText = trimmed
+                    }
+                    onEnhanceApplied?()
+                }
+            }
+        }
+    }
+
     private func runEnhance(_ enhance: @escaping (String) async -> String, preset: StoryWritingStylePreset?) {
+        guard !isGeneratingFunPhotoInsight else { return }
         if let preset {
             stylePresetId = preset.id
             UserDefaults.standard.set(preset.prompt, forKey: StoryWritingStyle.storageKey)
@@ -287,19 +354,6 @@ struct PhotoCaptionEditSheet: View {
                 editedText = result
                 isEnhancing = false
                 onEnhanceApplied?()
-            }
-        }
-    }
-
-    private func runTranslate(_ translate: @escaping (String) async -> String) {
-        if originalDraft == nil { originalDraft = editedText }
-        let textToTranslate = editedText
-        isTranslating = true
-        Task {
-            let result = await translate(textToTranslate)
-            await MainActor.run {
-                editedText = result
-                isTranslating = false
             }
         }
     }

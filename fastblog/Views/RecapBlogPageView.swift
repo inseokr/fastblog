@@ -16,6 +16,25 @@ private struct TitleMinYPreferenceKey: PreferenceKey {
     }
 }
 
+/// Measured height of the hero title row (view or edit) so we can vertically center the title on the cover image.
+private struct CoverHeroTitleHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        value = max(value, next)
+    }
+}
+
+/// Global-frame anchor for the Blog Settings (gear) toolbar control — used by the first-save spotlight.
+private struct BlogSettingsGearFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        guard next.width > 0.5, next.height > 0.5 else { return }
+        value = next
+    }
+}
+
 // MARK: - Caption Edit Sheet Item Types
 
 /// Carries the day identity + header lines for the full-screen day caption editor overlay.
@@ -131,6 +150,7 @@ struct RecapBlogPageView: View {
     /// Require swipes to begin at the screen edge to avoid fighting inner horizontal carousels.
     private let daySwipeEdgeInset: CGFloat = 80
     @State private var overflowStop: OverflowItem?
+    @State private var transportModePickerItem: OverflowItem?
     @State private var mergeSelectionItem: MergeSelectionItem?
     @State private var showEditNameForStop: PlaceStop?
     @State private var placeCategoryPickerTarget: PlaceCategoryPickerTarget?
@@ -149,12 +169,15 @@ struct RecapBlogPageView: View {
     @State private var expandedDayCaptionIds: Set<UUID> = []
     /// Snapshot taken when ManagePhotosView opens, used to diff on dismiss for targeted cloud sync.
     @State private var managePhotosEditInfo: ManagePhotosEditInfo?
+    /// After popping Manage Photos, `dayPageScrollView.onAppear` runs again; skip the default scroll-to-map/top so the user's offset is preserved.
+    @State private var skipDefaultDayPageScrollOnNextAppear = false
     /// Presents the system photo picker while managing a place's photo group.
     @State private var showLibraryImportForManageStop = false
+    /// Presents the Bloggo Gallery picker while managing a place's photo group.
+    @State private var showBloggoGalleryImportForManageStop = false
     @State private var isEditMode = true
     @State private var showBlogSettings = false
     @State private var showShareSheet = false
-    @State private var showEditPhotoFlow = false
     @State private var fullScreenMapDay: RecapBlogDay?
     @State private var fullScreenMapFocusedPlaceId: UUID?
     @State private var showTitleChange = false
@@ -169,6 +192,8 @@ struct RecapBlogPageView: View {
     @State private var cyclingCoverPhotoId: String? = nil
     /// Stabilizes cover hero sizing so transient share/QR layout changes don't stretch the cover.
     @State private var coverHeroBaseScreenHeight: CGFloat? = nil
+    /// Last measured height of the cover-hero title (view or edit) for vertical centering on the photo.
+    @State private var coverHeroMeasuredTitleHeight: CGFloat = 0
     /// Prevents transient hero metadata overlap when switching edit → view after Save.
     @State private var showHeroMetadata = true
     /// Snapshot of the draft when edit mode was entered; compared to detect changes.
@@ -177,11 +202,16 @@ struct RecapBlogPageView: View {
     @AppStorage("bloggo.hasSeenPhotoGroupingTip") private var hasSeenPhotoGroupingTip = false
     @AppStorage("hasUploadedFirstBlog") private var hasUploadedFirstBlog = false
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
+    @AppStorage(DistanceUnit.storageKey) private var distanceUnitRaw: String = DistanceUnit.miles.rawValue
     @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
     @State private var showCloudOnboardingModal = false
     @State private var newlyUploadedBlogKey: Int? = nil
     @State private var showSaveTipAlert = false
     @State private var showFirstSaveBanner = false
+    /// One-time coachmark after the very first toolbar Save, highlighting Blog Settings (gear).
+    @AppStorage("bloggo.hasSeenFirstSaveBlogSettingsCoachmark") private var hasSeenFirstSaveBlogSettingsCoachmark = false
+    @State private var showFirstSaveBlogSettingsSpotlight = false
+    @State private var blogSettingsGearFrameGlobal: CGRect = .zero
     @State private var showNewBlogExitConfirmation = false
     /// Overlay presentation (e.g. ContentView blog layer from Places visited): back with unsaved edits.
     @State private var showOverlayDraftExitConfirmation = false
@@ -221,9 +251,6 @@ struct RecapBlogPageView: View {
     @State private var pendingSecondSaveCommitAfterAuth = false
     @State private var pendingEarlyAccessAfterAuth = false
     @State private var pendingCloudUploadAfterAuth = false
-    @State private var pendingExportAfterAuth = false
-    /// When true, shows "Sign in or Cancel" alert for guest tapping Export.
-    @State private var showExportSignInAlert = false
     /// Pull-up modal shown when a guest taps the cloud upload button.
     @State private var showGuestCloudUploadModal = false
     /// Single pull-up modal: shown when non-nil; content is "You're on the list" when true, else "Join Early Access" prompt.
@@ -242,6 +269,7 @@ struct RecapBlogPageView: View {
     @State private var shareYourBlogSheetPhase: ShareYourBlogSheetPhase = .menu
     @State private var shareSheetPresentationDetent: PresentationDetent = .height(492) // updated to shareMenuDetentHeight on appear
     @State private var showVideoExportOptions = false
+    @State private var showSocialPostStudio = false
     @State private var blogVideoShareURL: URL? = nil
     @State private var showBlogVideoShareSheet = false
     @State private var showCloudSharingComingSoonAlert = false
@@ -265,6 +293,8 @@ struct RecapBlogPageView: View {
     /// The day ID currently having its caption AI-generated (nil when idle).
     /// Day caption full-screen overlay trigger.
     @State private var dayCaptionEditItem: DayCaptionEditItem?
+    /// Trip-level opening story (`tripNarrative`) full-screen overlay.
+    @State private var showTripNarrativeEdit = false
     /// Place caption full-screen overlay trigger.
     @State private var placeCaptionEditItem: PlaceCaptionEditItem?
     /// Photo caption full-screen overlay trigger.
@@ -283,6 +313,8 @@ struct RecapBlogPageView: View {
     @State private var showRescanResultAlert = false
     @State private var rescanResultMessage = ""
     @State private var hasCheckedFirstTimeTip = false
+    /// Presents the in-app camera from an ongoing/current blog.
+    @State private var showCameraCaptureFromRecap = false
 
     // MARK: - Panorama
     @State private var showPanorama = false
@@ -424,6 +456,28 @@ struct RecapBlogPageView: View {
                     .zIndex(127)
             }
 
+            if let day = fullScreenMapDay {
+                FullScreenMapView(day: day, onDismiss: {
+                    fullScreenMapDay = nil
+                    fullScreenMapFocusedPlaceId = nil
+                }, onCaptionSaved: { stopId, photoId, newCaption in
+                    bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
+                    persistRecapBlogDetail()
+                    syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
+                }, onPlaceNameSaved: { stopId, name, category, coordinate, subtitleLine in
+                    updatePlaceTitle(
+                        stopId: stopId,
+                        to: name,
+                        category: category,
+                        coordinate: coordinate,
+                        placeSubtitleLine: subtitleLine
+                    )
+                }, initialFocusedPlaceId: fullScreenMapFocusedPlaceId)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .zIndex(145)
+            }
+
             if let item = placeCaptionEditItem, let stop = placeStop(dayId: item.dayId, stopId: item.stopId) {
                 placeCaptionEditLayer(item: item, stop: stop)
                     .transition(.opacity)
@@ -434,6 +488,12 @@ struct RecapBlogPageView: View {
                 dayCaptionEditLayer(item: item)
                     .transition(.opacity)
                     .zIndex(131)
+            }
+
+            if showTripNarrativeEdit {
+                tripNarrativeEditLayer()
+                    .transition(.opacity)
+                    .zIndex(133)
             }
 
             if let item = placePhotoModalItem {
@@ -478,20 +538,43 @@ struct RecapBlogPageView: View {
                 .zIndex(158)
             }
 
+            if showFirstSaveBlogSettingsSpotlight {
+                FirstSaveBlogSettingsSpotlightOverlay(
+                    holeInGlobal: blogSettingsGearFrameGlobal,
+                    onOpenBlogSettings: { showBlogSettings = true }
+                )
+                .transition(.opacity)
+                .zIndex(165)
+            }
+
         }
         // When Story Mode is open, drive the entire hierarchy’s color scheme (including status bar) from the story.
         .preferredColorScheme(showStoryMode ? storyStatusBarColorScheme : nil)
+        .dynamicTypeSize(.large)
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
+        .animation(.easeOut(duration: 0.22), value: showTripNarrativeEdit)
         .animation(.easeInOut(duration: 0.22), value: showPanorama)
+        .animation(.easeInOut(duration: 0.28), value: fullScreenMapDay?.id)
         .animation(.easeInOut(duration: 0.38), value: placePhotoModalItem?.id)
         .animation(.spring(response: 0.28, dampingFraction: 0.9), value: revealRecapNavigationDuringPhotoDismiss)
         .animation(.easeOut(duration: 0.22), value: photoCaptionEditItem?.id)
         .animation(.spring(response: 0.38, dampingFraction: 0.88), value: earlyAccessSheetPresented)
         .animation(.easeInOut(duration: 0.28), value: showMissingPhotosTooltip)
+        .animation(.easeOut(duration: 0.22), value: showFirstSaveBlogSettingsSpotlight)
+        .onPreferenceChange(BlogSettingsGearFramePreferenceKey.self) { rect in
+            if rect.width > 0.5, rect.height > 0.5 {
+                blogSettingsGearFrameGlobal = rect
+            }
+        }
+        .onChange(of: showBlogSettings) { _, isPresented in
+            guard isPresented, showFirstSaveBlogSettingsSpotlight else { return }
+            dismissFirstSaveBlogSettingsSpotlight(markedSeen: true)
+        }
         .onAppear {
             refreshMissingPhotosTooltipVisibility()
+            Task { await createdRecapStore.inferTransportModesIfNeeded(for: blogId) }
         }
         .onDisappear {
             // Overlay blogs dismiss entirely — do not mark "initial exit" or the next open will flip to
@@ -519,7 +602,7 @@ struct RecapBlogPageView: View {
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
         bodyContentBase(screenHeight: screenHeight)
-            .sheet(isPresented: $showAuth, onDismiss: {
+            .fullScreenCover(isPresented: $showAuth, onDismiss: {
                 if pendingEarlyAccessAfterAuth {
                     earlyAccessSheetPresented = false
                 }
@@ -532,9 +615,8 @@ struct RecapBlogPageView: View {
                         if pendingSecondSaveCommitAfterAuth {
                             pendingSecondSaveCommitAfterAuth = false
                             showAuth = false
-                            if saveDraft() {
-                                performDismiss()
-                            }
+                            // Stay on this blog after sign-in; saving must not pop the recap.
+                            _ = saveDraft(suppressPostSaveOnboarding: true)
                         } else if pendingEarlyAccessAfterAuth {
                             // Immediately return to the blog with the confirmation pull-up; register via API in the background.
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -559,18 +641,6 @@ struct RecapBlogPageView: View {
                             pendingWebLinkAfterAuth = false
                             showAuth = false
                             handleShareWebLinkTap()
-                        } else if pendingExportAfterAuth {
-                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                            Task { @MainActor in
-                                try? await Task.sleep(nanoseconds: 350_000_000)
-                                // Reset keyboard state before revealing the blog so the day filter
-                                // doesn't animate in from the bottom (distracting flash).
-                                isKeyboardVisible = false
-                                showAuth = false
-                                try? await Task.sleep(nanoseconds: 500_000_000)
-                                pendingExportAfterAuth = false
-                                showPDFExportOptions = true
-                            }
                         } else {
                             showAuth = false
                         }
@@ -581,8 +651,6 @@ struct RecapBlogPageView: View {
                     hostControlsDismiss: true
                 )
                 .environmentObject(authService)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showPDFPreview) {
                 if let url = pdfExportURL {
@@ -721,6 +789,16 @@ struct RecapBlogPageView: View {
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showFirstSaveBanner)
             .overlay(alignment: .top) { uploadSuccessBannerOverlay }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showUploadSuccessBanner)
+            .fullScreenCover(isPresented: $showCameraCaptureFromRecap) {
+                NavigationStack {
+                    CameraCaptureView(
+                        tripsViewModel: TripsViewModel(createdRecapStore: createdRecapStore),
+                        postDismissToast: nil,
+                        forcedTargetBlogId: blogId
+                    )
+                    .environmentObject(createdRecapStore)
+                }
+            }
             .fullScreenCover(isPresented: $showUploadingFullScreen) {
                 UploadingBlogView(
                     uploadProgress: $uploadProgress,
@@ -750,18 +828,6 @@ struct RecapBlogPageView: View {
                 Button("No", role: .cancel) { }
             } message: {
                 Text("This blog needs to be uploaded to the cloud before you can share a link. Would you like to upload it now?")
-            }
-            .alert("Sign in to Export", isPresented: $showExportSignInAlert) {
-                Button("Sign in") {
-                    showExportSignInAlert = false
-                    pendingExportAfterAuth = true
-                    showAuth = true
-                }
-                Button("Cancel", role: .cancel) {
-                    showExportSignInAlert = false
-                }
-            } message: {
-                Text("Create an account or sign in to export your blog as PDF.")
             }
             .sheet(isPresented: $showGuestCloudUploadModal) {
                 guestCloudUploadModalContent
@@ -835,6 +901,16 @@ struct RecapBlogPageView: View {
                         .animation(.easeInOut(duration: 0.2), value: showBloggoQRSheet)
                         .zIndex(1000)
                 }
+                if showSocialPostStudio {
+                    SocialPostStudioSheet(
+                        blog: draft,
+                        opensInEditMode: true,
+                        onDismissFromParent: { showSocialPostStudio = false }
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
+                    .zIndex(1002)
+                }
             }
             .onReceive(createdRecapStore.objectWillChange) {
                 // Default `isEditMode` is true, so we must still merge background work (rate-limited geocoding per day)
@@ -894,8 +970,11 @@ struct RecapBlogPageView: View {
     private var shouldHideRecapNavigationBar: Bool {
         showStoryMode ||
         showPanorama ||
+        showSocialPostStudio ||
+        fullScreenMapDay != nil ||
         placeCaptionEditItem != nil ||
         dayCaptionEditItem != nil ||
+        showTripNarrativeEdit ||
         (placePhotoModalItem != nil && !revealRecapNavigationDuringPhotoDismiss) ||
         photoCaptionEditItem != nil
     }
@@ -937,9 +1016,11 @@ struct RecapBlogPageView: View {
                     selectedDayIndex: $selectedDayIndex,
                     blogKey: currentBlogKey,
                     onSave: { saveDraft() },
-                    onEditMode: {
-                        showBlogSettings = false
-                        isEditMode = true
+                    onBlogPhotosUpdated: {
+                        if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
+                            draft = updated
+                            draftSnapshot = updated
+                        }
                     },
                     onAddNewMoments: newMomentsPlaceCount == 0 ? nil : {
                         showBlogSettings = false
@@ -1034,6 +1115,7 @@ struct RecapBlogPageView: View {
     private func applySecondarySheetModifiers<Content: View>(to content: Content) -> some View {
         content
             .sheet(item: $overflowStop) { item in
+                let mergeCandidatesForStop = mergeCandidates(dayId: item.dayId, sourceStopId: item.stop.id)
                 let displayablePhotoCount = item.stop.photos.filter(\.hasDisplayableLocalBacking).count
                 PlaceStopActionSheet(
                     placeTitle: item.stop.placeTitle,
@@ -1042,17 +1124,41 @@ struct RecapBlogPageView: View {
                         AppAnalytics.track(.blogPlaceChangeName(blogId: blogId.uuidString, placeId: item.stop.id.uuidString))
                         showEditNameForStop = item.stop
                     },
-                    onManagePhotos: { openManagePhotos(dayId: item.dayId, stopId: item.stop.id) },
+                    onManagePhotos: {
+                        AppAnalytics.track(.blogPlaceManagePhoto(blogId: blogId.uuidString, placeId: item.stop.id.uuidString))
+                        openManagePhotos(dayId: item.dayId, stopId: item.stop.id)
+                    },
                     onEditCaption: {
                         placeCaptionEditItem = PlaceCaptionEditItem(dayId: item.dayId, stopId: item.stop.id)
                     },
-                    onMergePlaces: mergeCandidates(dayId: item.dayId, sourceStopId: item.stop.id).isEmpty ? nil : {
+                    onMergePlaces: isEditMode && !mergeCandidatesForStop.isEmpty ? {
                         mergeSelectionItem = MergeSelectionItem(dayId: item.dayId, sourceStopId: item.stop.id)
-                    },
+                    } : nil,
                     onSplit: displayablePhotoCount > 1 ? {
                         presentSplitPlaceStopSheet(dayId: item.dayId, stop: item.stop)
                     } : nil,
+                    onSetTransportMode: nextStop(dayId: item.dayId, stopId: item.stop.id) != nil ? {
+                        transportModePickerItem = item
+                    } : nil,
+                    currentTransportMode: item.stop.transportModeToNextStop,
                     onRemoveFromBlog: { removePlaceStop(dayId: item.dayId, stopId: item.stop.id) }
+                )
+            }
+            .sheet(item: $transportModePickerItem) { item in
+                let next = nextStop(dayId: item.dayId, stopId: item.stop.id)
+                let autoMode: TravelMode? = {
+                    guard let a = item.stop.representativeLocation?.clCoordinate,
+                          let b = next?.representativeLocation?.clCoordinate else { return nil }
+                    return TravelMode.detect(from: a, to: b)
+                }()
+                TransportModePickerSheet(
+                    fromPlaceTitle: item.stop.placeTitle,
+                    toPlaceTitle: next?.placeTitle ?? "Next Stop",
+                    autoDetectedMode: autoMode,
+                    currentMode: item.stop.transportModeToNextStop,
+                    onSelect: { mode in
+                        setTransportMode(mode, dayId: item.dayId, stopId: item.stop.id)
+                    }
                 )
             }
             .sheet(item: $mergeSelectionItem) { item in
@@ -1077,7 +1183,7 @@ struct RecapBlogPageView: View {
                     }
                 )
             }
-            .sheet(item: $showEditNameForStop) { stop in
+            .fullScreenCover(item: $showEditNameForStop) { stop in
                 EditPlaceStopNameSheet(
                     placeTitle: bindingForPlaceTitle(stopId: stop.id),
                     initialPlaceSubtitle: stop.placeSubtitle,
@@ -1086,6 +1192,9 @@ struct RecapBlogPageView: View {
                     photos: stop.includedPhotos,
                     onSave: { newTitle, newCoordinate, newCategory, subtitleLine in
                         updatePlaceTitle(stopId: stop.id, to: newTitle, category: newCategory, coordinate: newCoordinate, placeSubtitleLine: subtitleLine)
+                    },
+                    onAutoResolve: { resolvedTitle in
+                        silentlyUpdatePlaceName(stopId: stop.id, to: resolvedTitle)
                     }
                 )
             }
@@ -1107,7 +1216,12 @@ struct RecapBlogPageView: View {
                         guard let stop = placeStop(dayId: pair.dayId, stopId: pair.stopId) else { return }
                         presentSplitPlaceStopSheet(dayId: pair.dayId, stop: stop)
                     },
-                    onAddFromLibrary: { showLibraryImportForManageStop = true }
+                    onAddFromLibrary: { showLibraryImportForManageStop = true },
+                    onAddFromBloggoGallery: { showBloggoGalleryImportForManageStop = true },
+                    isLimitedPhotoLibraryAccess: photoAuth.status == .limited,
+                    onExpandSharedPhotoLibrary: {
+                        presentLimitedLibraryPickerForManageStopImport(dayId: pair.dayId, stopId: pair.stopId)
+                    }
                 )
             }
             .sheet(isPresented: $showLibraryImportForManageStop) {
@@ -1119,37 +1233,28 @@ struct RecapBlogPageView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showBloggoGalleryImportForManageStop) {
+                let alreadyAdded: Set<String> = {
+                    guard let pair = showManagePhotosForStop,
+                          let stop = placeStop(dayId: pair.dayId, stopId: pair.stopId) else { return [] }
+                    return Set(stop.photos.compactMap(\.localIdentifier))
+                }()
+                AppCaptureGalleryView(
+                    onPickerComplete: { captureIds in
+                        showBloggoGalleryImportForManageStop = false
+                        guard let pair = showManagePhotosForStop, !captureIds.isEmpty else { return }
+                        importBloggoPhotosIntoStop(captureIds: captureIds, dayId: pair.dayId, stopId: pair.stopId)
+                    },
+                    excludedIdentifiers: alreadyAdded
+                )
+            }
             .onChange(of: showManagePhotosForStop) { old, new in
                 guard old != nil, new == nil else { return }
                 // Equivalent of onDismiss: save and sync after user navigates back.
+                skipDefaultDayPageScrollOnNextAppear = true
                 print("📸 [ManagePhotos] dismissed — editInfo=\(managePhotosEditInfo != nil ? "set(stopId=\(managePhotosEditInfo!.stopId))" : "nil")")
                 persistRecapBlogDetail()
                 syncPhotoChangesWithCloud()
-            }
-            .fullScreenCover(isPresented: $showEditPhotoFlow, onDismiss: {
-                persistRecapBlogDetail()
-            }) {
-                EditBlogPhotoFlowView(blogId: blogId, onDismiss: { showEditPhotoFlow = false })
-                    .environmentObject(createdRecapStore)
-            }
-            .fullScreenCover(item: $fullScreenMapDay) { day in
-                FullScreenMapView(day: day, onDismiss: {
-                    fullScreenMapDay = nil
-                    fullScreenMapFocusedPlaceId = nil
-                }, onCaptionSaved: { stopId, photoId, newCaption in
-                    // Write the edited caption back into the draft and persist it
-                    bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
-                    persistRecapBlogDetail()
-                    syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
-                }, onPlaceNameSaved: { stopId, name, category, coordinate, subtitleLine in
-                    updatePlaceTitle(
-                        stopId: stopId,
-                        to: name,
-                        category: category,
-                        coordinate: coordinate,
-                        placeSubtitleLine: subtitleLine
-                    )
-                }, initialFocusedPlaceId: fullScreenMapFocusedPlaceId)
             }
             .sheet(isPresented: $showRestorePlaces) {
                 RemovedPlacesSheet(draft: $draft, selectedDayIndex: $selectedDayIndex) {
@@ -1178,7 +1283,8 @@ struct RecapBlogPageView: View {
                             id: id,
                             caption: photo.caption,
                             placeName: stop.placeTitle,
-                            timestamp: photo.timestamp
+                            timestamp: photo.timestamp,
+                            location: photo.location
                         )
                     }
                 return entries.isEmpty ? nil : entries
@@ -1186,7 +1292,7 @@ struct RecapBlogPageView: View {
         // Fall back to cover photo when no included photos exist.
         let photoGroups = groups.isEmpty
             ? draft.selectedCoverPhotoIdentifier.map {
-                [[PanoramaPhotoEntry(id: $0, caption: nil, placeName: nil, timestamp: nil)]]
+                [[PanoramaPhotoEntry(id: $0, caption: nil, placeName: nil, timestamp: nil, location: nil)]]
             } ?? []
             : groups
         if !photoGroups.isEmpty {
@@ -1194,6 +1300,7 @@ struct RecapBlogPageView: View {
                 photoGroups: photoGroups,
                 blogId: blogId,
                 blogTitle: draft.title,
+                startInGallery: false,
                 onDismiss: { showPanorama = false },
                 onAppCaptureDeletedFromSlideshow: { identifier in
                     removeAppCapturePhotoFromSlideshow(identifier: identifier)
@@ -1248,10 +1355,16 @@ struct RecapBlogPageView: View {
             }
             .modifier(coreContentAlertsAndLifecycleModifier())
             .alert("Save as Draft?", isPresented: $showNewBlogExitConfirmation) {
-                Button("Save as Draft") {
-                    createdRecapStore.saveBlogDetail(draft, asDraft: true)
-                    createdRecapStore.showDraftSavedToast = true
-                    performDismiss()
+                if isDraft {
+                    Button("Exit Draft", role: .destructive) {
+                        performDismiss()
+                    }
+                } else {
+                    Button("Save as Draft") {
+                        createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                        createdRecapStore.showDraftSavedToast = true
+                        performDismiss()
+                    }
                 }
                 Button("Exit", role: .destructive) {
                     createdRecapStore.removeLocalCopy(sourceTripId: blogId)
@@ -1259,13 +1372,23 @@ struct RecapBlogPageView: View {
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("Would you like to save this blog as a draft and finish it later?")
+                if isDraft {
+                    Text("This blog is already a draft. Exit now?")
+                } else {
+                    Text("Would you like to save this blog as a draft and finish it later?")
+                }
             }
             .alert("Save as Draft?", isPresented: $showOverlayDraftExitConfirmation) {
-                Button("Save as Draft") {
-                    createdRecapStore.saveBlogDetail(draft, asDraft: true)
-                    createdRecapStore.showDraftSavedToast = true
-                    performDismiss()
+                if isDraft {
+                    Button("Exit Draft", role: .destructive) {
+                        performDismiss()
+                    }
+                } else {
+                    Button("Save as Draft") {
+                        createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                        createdRecapStore.showDraftSavedToast = true
+                        performDismiss()
+                    }
                 }
                 Button("Discard changes", role: .destructive) {
                     if let snapshot = draftSnapshot {
@@ -1276,7 +1399,11 @@ struct RecapBlogPageView: View {
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("You have unsaved changes. Save as a draft or discard changes before going back.")
+                if isDraft {
+                    Text("This blog is already a draft. Exit now or discard unsaved changes before going back.")
+                } else {
+                    Text("You have unsaved changes. Save as a draft or discard changes before going back.")
+                }
             }
     }
 
@@ -1290,11 +1417,12 @@ struct RecapBlogPageView: View {
             isKeyboardVisible: $isKeyboardVisible,
             isEditMode: $isEditMode,
             draft: $draft,
-            saveDraft: { saveDraft() },
+            saveDraft: { saveDraft(suppressPostSaveOnboarding: $0) },
             loadDraftIfNeeded: loadDraftIfNeeded,
             checkFirstTimeTip: checkFirstTimeTip,
             createdRecapStore: createdRecapStore,
-            dismiss: dismiss
+            needsCommittedRecapToolbarSave: { needsCommittedRecapToolbarSave },
+            performRecapDismiss: performDismiss
         )
     }
 
@@ -1347,8 +1475,7 @@ struct RecapBlogPageView: View {
                 emptyDayPage(screenHeight: screenHeight)
             } else {
                 if let day = day(at: selectedDayIndex) {
-                    GeometryReader { geo in
-                        let w = geo.size.width
+                    GeometryReader { _ in
                         dayPageView(
                             blogDay: day,
                             index: selectedDayIndex,
@@ -1423,6 +1550,15 @@ struct RecapBlogPageView: View {
             if !isKeyboardVisible {
                 dayFilterSection
                     .zIndex(1)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            if shouldShowRecapCameraQuickCapture && !isKeyboardVisible {
+                recapCameraQuickCaptureButton
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, Self.dayFilterApproxHeight + 14)
+                    .zIndex(21)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -1535,13 +1671,6 @@ struct RecapBlogPageView: View {
                 }
 
                 if index == 0 {
-                    if isEditMode && !draft.removedPlaceStops.isEmpty {
-                        restoreRemovedPlacesCard
-                            .padding(.horizontal, 16)
-                            .padding(.top, 8)
-                            .padding(.bottom, 12)
-                    }
-
                     if newMomentsPlaceCount > 0 {
                         newMomentsCard
                             .padding(.horizontal, 16)
@@ -1551,12 +1680,19 @@ struct RecapBlogPageView: View {
                 }
 
                 tripNarrativeCard
-                    .padding(.bottom, 12)
             }
 
             // Read-only: map on every day. Edit: map from Day 2+ (Day 1 keeps edit chrome uncluttered).
             if !isEditMode || index > 0 {
                 mapCard(for: blogDay)
+            }
+
+            // Restore hidden places: shown in edit mode below the map so it's visible at the default scroll position on every day.
+            if isEditMode && !draft.removedPlaceStops.isEmpty {
+                restoreRemovedPlacesCard
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 12)
             }
 
             VStack(alignment: .leading, spacing: 16) {
@@ -1693,6 +1829,13 @@ struct RecapBlogPageView: View {
             }
         }
         .onAppear {
+            if skipDefaultDayPageScrollOnNextAppear {
+                skipDefaultDayPageScrollOnNextAppear = false
+                withAnimation(.easeOut(duration: 0.16)) {
+                    scrollCoverMaskActive.wrappedValue = false
+                }
+                return
+            }
             guard index > 0 else { return }
             if pendingDeepLinkStopScrollId != nil {
                 scrollCoverMaskActive.wrappedValue = false
@@ -1742,7 +1885,7 @@ struct RecapBlogPageView: View {
                 } else {
                     blogTitleView
                 }
-                tripNarrativeCard.padding(.bottom, 12)
+                tripNarrativeCard
                 if hasFinishedInitialLoad {
                     Text("All places are hidden.")
                         .font(.headline)
@@ -1830,6 +1973,12 @@ struct RecapBlogPageView: View {
         !draft.days.allSatisfy(\.isPlaceNamesResolved)
     }
 
+    /// Vertical offset so the hero title’s midpoint sits at the cover image’s vertical center (until measured, uses a stable estimate).
+    private func coverHeroTitleTopInset(heroHeight: CGFloat, measuredTitleHeight: CGFloat) -> CGFloat {
+        let titleH = measuredTitleHeight > 0 ? measuredTitleHeight : 72
+        return max(0, heroHeight * 0.5 - titleH * 0.5)
+    }
+
     private func coverPhotoHero(screenHeight: CGFloat) -> some View {
         let displayCoverId = cyclingCoverPhotoId ?? draft.selectedCoverPhotoIdentifier
         let resolvedBaseHeight = coverHeroBaseScreenHeight ?? screenHeight
@@ -1861,135 +2010,173 @@ struct RecapBlogPageView: View {
                 }
 
                 // Title is pinned to a stable position (center of hero).
-                // Edit/view-only controls render below with a fixed offset so tapping Save
-                // cannot shift the title (or briefly overlap differing layouts).
+                // Edit mode: VStack layout so title box and Change Cover button
+                // never overlap regardless of title length or Dynamic Type size.
+                // View mode: VStack title + trip metadata so 2-line titles never overlap dates.
                 ZStack {
-                    // Title layer (always centered, always same font/position).
-                    Group {
-                        if isEditMode {
-                            HStack {
-                                Spacer(minLength: 0)
-                                Button { showTitleChange = true } label: {
-                                    let heroTitleBoxRadius: CGFloat = 16
-                                    let heroTitleMaxWidth = max(120, geo.size.width - 120)
-                                    let heroTitleEditIconOutset: CGFloat = 22
-                                    Text(draft.title)
-                                        .font(.blog(selectedBlogFont, size: 30, bold: true))
-                                        .foregroundColor(.white)
-                                        .lineLimit(3)
-                                        .multilineTextAlignment(.center)
-                                        .minimumScaleFactor(0.88)
-                                        .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
-                                        .padding(.horizontal, 18)
-                                        .padding(.vertical, 14)
-                                        .padding(.top, 6)
-                                        .frame(maxWidth: heroTitleMaxWidth)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: heroTitleBoxRadius, style: .continuous)
-                                                .fill(Color.black.opacity(0.22))
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: heroTitleBoxRadius, style: .continuous)
-                                                .strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
-                                        )
-                                        .overlay(alignment: .topTrailing) {
-                                            ZStack {
-                                                Circle()
-                                                    .fill(Color.white.opacity(0.28))
-                                                Image(systemName: "pencil")
-                                                    .font(.system(size: 13, weight: .semibold))
-                                                    .foregroundStyle(.white)
+                    let titleTopInset = coverHeroTitleTopInset(
+                        heroHeight: geo.size.height,
+                        measuredTitleHeight: coverHeroMeasuredTitleHeight
+                    )
+                    let viewModeLift: CGFloat = 12
+
+                    if isEditMode {
+                        // Edit mode: vertically center the title on the cover; keep 20pt before Change Cover.
+                        VStack(spacing: 0) {
+                            Spacer()
+                                .frame(height: max(0, titleTopInset - viewModeLift))
+                            VStack(spacing: 20) {
+                                HStack {
+                                    Spacer(minLength: 0)
+                                    Button { showTitleChange = true } label: {
+                                        let heroTitleBoxRadius: CGFloat = 16
+                                        let heroTitleMaxWidth = max(120, geo.size.width - 120)
+                                        let heroTitleEditIconOutset: CGFloat = 22
+                                        Text(draft.title)
+                                            .font(.blog(selectedBlogFont, size: 30, bold: true))
+                                            .foregroundColor(.white)
+                                            .lineLimit(3)
+                                            .multilineTextAlignment(.center)
+                                            .minimumScaleFactor(0.88)
+                                            .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
+                                            .padding(.horizontal, 18)
+                                            .padding(.vertical, 14)
+                                            .padding(.top, 6)
+                                            .frame(maxWidth: heroTitleMaxWidth)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: heroTitleBoxRadius, style: .continuous)
+                                                    .fill(Color.black.opacity(0.22))
+                                            )
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: heroTitleBoxRadius, style: .continuous)
+                                                    .strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
+                                            )
+                                            .overlay(alignment: .topTrailing) {
+                                                ZStack {
+                                                    Circle()
+                                                        .fill(Color.white.opacity(0.28))
+                                                    Image(systemName: "pencil")
+                                                        .font(.system(size: 13, weight: .semibold))
+                                                        .foregroundStyle(.white)
+                                                }
+                                                .frame(width: 30, height: 30)
+                                                .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                                                .offset(x: heroTitleEditIconOutset, y: -heroTitleEditIconOutset)
                                             }
-                                            .frame(width: 30, height: 30)
-                                            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-                                            .offset(x: heroTitleEditIconOutset, y: -heroTitleEditIconOutset)
-                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                    Spacer(minLength: 0)
                                 }
-                                .buttonStyle(.plain)
-                                Spacer(minLength: 0)
-                            }
-                        } else {
-                            Text(draft.title)
-                                .font(.blog(selectedBlogFont, size: 30, bold: true))
-                                .foregroundColor(.white)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                                .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
                                 .background(
-                                    GeometryReader { titleGeo in
+                                    GeometryReader { titleRowGeo in
                                         Color.clear.preference(
-                                            key: TitleMinYPreferenceKey.self,
-                                            value: titleGeo.frame(in: .named("scroll")).maxY
+                                            key: CoverHeroTitleHeightPreferenceKey.self,
+                                            value: titleRowGeo.size.height
                                         )
                                     }
                                 )
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .padding(.horizontal, 24)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .offset(y: -18)
-                    .id("hero-title-\(isEditMode ? "edit" : "view")")
 
-                    // Controls layer (fixed offset below center so title never moves).
-                    VStack(spacing: 6) {
-                        if isEditMode {
-                            Button {
-                                coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
-                                showCoverPhotoPicker = true
-                            } label: {
-                                Text("Change Cover")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(.ultraThinMaterial)
-                                    .clipShape(Capsule())
+                                Button {
+                                    coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
+                                    showCoverPhotoPicker = true
+                                } label: {
+                                    Text("Change Cover")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(.ultraThinMaterial)
+                                        .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
                             }
-                            .buttonStyle(.plain)
-                            .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
-                        } else {
-                            if showHeroMetadata {
-                                Text(tripDurationText)
-                                    .font(.callout)
-                                    .foregroundColor(.white.opacity(0.92))
-                                    .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .id("hero-edit-layout")
+                    } else {
+                        // View mode: title vertically centered on the cover; same 14pt / 6pt spacing below the title.
+                        VStack(spacing: 0) {
+                            Spacer()
+                                .frame(height: max(0, titleTopInset - 10))
+                            VStack(spacing: 14) {
+                                Text(draft.title)
+                                    .font(.blog(selectedBlogFont, size: 30, bold: true))
+                                    .foregroundColor(.white)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.center)
+                                    .minimumScaleFactor(0.85)
+                                    .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
+                                    .background(
+                                        GeometryReader { titleGeo in
+                                            Color.clear
+                                                .preference(key: TitleMinYPreferenceKey.self, value: titleGeo.frame(in: .named("scroll")).maxY)
+                                                .preference(key: CoverHeroTitleHeightPreferenceKey.self, value: titleGeo.size.height)
+                                        }
+                                    )
+                                    .frame(maxWidth: .infinity)
+                                    .id("hero-title-view")
 
-                                let placeCount = draft.days.flatMap(\.placeStops).count
-                                if placeCount > 0 {
-                                    Text("\(placeCount) moment\(placeCount == 1 ? "" : "s")")
+                                VStack(spacing: 6) {
+                                    if showHeroMetadata {
+                                        let dayCount = draft.days.count
+                                        let momentCount = draft.days.flatMap(\.placeStops).count
+                                        let photoCount = draft.days
+                                            .flatMap(\.placeStops)
+                                            .flatMap(\.photos)
+                                            .filter(\.isIncluded)
+                                            .count
+
+                                        Text(tripDateText)
+                                            .font(.callout)
+                                            .foregroundColor(.white.opacity(0.92))
+                                            .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+
+                                        HStack(spacing: 8) {
+                                            Text("\(dayCount) Day\(dayCount == 1 ? "" : "s")")
+                                            Text("•")
+                                            Text("\(momentCount) Moment\(momentCount == 1 ? "" : "s")")
+                                            Text("•")
+                                            Text("\(photoCount) Photo\(photoCount == 1 ? "" : "s")")
+                                        }
                                         .font(.callout)
                                         .foregroundColor(.white.opacity(0.92))
                                         .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
-                                }
 
-                                Button {
-                                    showShareYourBlogSheet = true
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "book.pages")
-                                            .font(.system(size: 14, weight: .medium))
-                                        Text("Share Your Blog")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
+                                        Button {
+                                            showShareYourBlogSheet = true
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "book.pages")
+                                                    .font(.system(size: 14, weight: .medium))
+                                                Text("Share Your Blog")
+                                                    .font(.subheadline)
+                                                    .fontWeight(.medium)
+                                            }
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 10)
+                                            .background(Color.white.opacity(0.15).background(.ultraThinMaterial))
+                                            .clipShape(Capsule())
+                                            .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(.top, 4)
+                                        .transition(.opacity)
                                     }
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 10)
-                                    .background(Color.white.opacity(0.15).background(.ultraThinMaterial))
-                                    .clipShape(Capsule())
-                                    .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
                                 }
-                                .buttonStyle(.plain)
-                                .padding(.top, 4)
-                                .transition(.opacity)
+                                .id("hero-controls-view")
                             }
+                            .offset(y: -40)
+                            Spacer(minLength: 0)
                         }
+                        .dynamicTypeSize(.medium)
+                        .padding(.horizontal, 24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     }
-                    .padding(.horizontal, 24)
-                    .offset(y: 78)
-                    .id("hero-controls-\(isEditMode ? "edit" : "view")")
                 }
 
                 // Badge shown while cover selection is still in progress
@@ -2059,6 +2246,14 @@ struct RecapBlogPageView: View {
                 }
             }
         }
+        .onPreferenceChange(CoverHeroTitleHeightPreferenceKey.self) { h in
+            if h > 0 {
+                coverHeroMeasuredTitleHeight = h
+            }
+        }
+        .onChange(of: isEditMode) { _, _ in
+            coverHeroMeasuredTitleHeight = 0
+        }
         .animation(.easeInOut(duration: 0.5), value: isCoverPending)
         .onAppear {
             if coverHeroBaseScreenHeight == nil {
@@ -2092,7 +2287,6 @@ struct RecapBlogPageView: View {
             }
         }
         .frame(height: resolvedBaseHeight * 0.55)
-        .padding(.bottom, 16)
     }
 
     // MARK: - Photo Library Access (Limited users)
@@ -2153,6 +2347,36 @@ struct RecapBlogPageView: View {
         }
     }
 
+    /// Image assets readable with the current Photos authorization (the limited subset when access is `.limited`).
+    private func imageAssetLocalIdentifiersAccessible() -> Set<String> {
+        var set = Set<String>()
+        let result = PHAsset.fetchAssets(with: .image, options: nil)
+        set.reserveCapacity(result.count)
+        result.enumerateObjects { asset, _, _ in
+            set.insert(asset.localIdentifier)
+        }
+        return set
+    }
+
+    /// System limited-library UI (same as Trips / Settings **Select more photos**). Imports any newly shared assets into this place stop.
+    private func presentLimitedLibraryPickerForManageStopImport(dayId: UUID, stopId: UUID) {
+        DispatchQueue.main.async {
+            guard let topVC = topViewControllerForPresentation() else { return }
+            let idsBefore = imageAssetLocalIdentifiersAccessible()
+            PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: topVC) { _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    photoAuth.refreshStatus()
+                    let idsAfter = imageAssetLocalIdentifiersAccessible()
+                    let added = idsAfter.subtracting(idsBefore)
+                    guard !added.isEmpty else { return }
+                    Task { @MainActor in
+                        await importLibraryPhotosIntoStop(assetIdentifiers: Array(added), dayId: dayId, stopId: stopId)
+                    }
+                }
+            }
+        }
+    }
+
     private func topViewControllerForPresentation() -> UIViewController? {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let window = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first
@@ -2179,6 +2403,22 @@ struct RecapBlogPageView: View {
         }
         formatter.dateFormat = "MMM d, yyyy"
         return "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate)) · \(dayCount) day\(dayCount == 1 ? "" : "s")"
+    }
+
+    private var tripDateText: String {
+        guard let firstDate = draft.days.first?.date,
+              let lastDate = draft.days.last?.date else {
+            return ""
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        if Calendar.current.isDate(firstDate, equalTo: lastDate, toGranularity: .year) {
+            let yearFormatter = DateFormatter()
+            yearFormatter.dateFormat = "yyyy"
+            return "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate)), \(yearFormatter.string(from: lastDate))"
+        }
+        formatter.dateFormat = "MMM d, yyyy"
+        return "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
     }
 
     /// Returns a date suitable for passing to `formatDateRange` that matches the calendar
@@ -2250,6 +2490,49 @@ struct RecapBlogPageView: View {
         }
     }
 
+    private var recapCameraQuickCaptureButton: some View {
+        Button {
+            openCameraCaptureFromRecap()
+        } label: {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 52, height: 52)
+                .background(
+                    Circle()
+                        .fill(Color.blue)
+                )
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open In-App Camera")
+    }
+
+    /// Shows quick capture only while the recap is truly "on the go":
+    /// latest included photo was taken within the last 24 hours.
+    private var shouldShowRecapCameraQuickCapture: Bool {
+        isOnTheGoBlogForRescan
+    }
+
+    private func openCameraCaptureFromRecap() {
+        if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == blogId }) {
+            let fallbackEndDate = draft.days.last?.date ?? Date()
+            let endDate = blog.tripEndDate ?? fallbackEndDate
+            OnTheGoTripStore.markTripAsActive(
+                blogId: blogId,
+                title: blog.title,
+                tripEndDate: endDate,
+                country: blog.countryName
+            )
+        }
+        AppAnalytics.track(.appInAppCameraOpen)
+        showCameraCaptureFromRecap = true
+    }
+
     private func dayPill(title: String, index: Int, day: RecapBlogDay, processingIndex: Int?) -> some View {
         let isSelected = selectedDayIndex == index
         let isProcessed = day.isPlaceNamesResolved
@@ -2319,7 +2602,7 @@ struct RecapBlogPageView: View {
             .padding(12)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 16)
         .padding(.bottom, 8)
         .allowsHitTesting(!isDayPagerHorizontalDragActive)
         .id(RecapBlogScrollAnchor.mapForDay(day.id))
@@ -2623,10 +2906,6 @@ struct RecapBlogPageView: View {
                     onKebab: {
                         overflowStop = OverflowItem(dayId: day.id, stop: stop)
                     },
-                    onManagePhotos: {
-                        AppAnalytics.track(.blogPlaceManagePhoto(blogId: blogId.uuidString, placeId: stop.id.uuidString))
-                        openManagePhotos(dayId: day.id, stopId: stop.id)
-                    },
                     onRemovePhoto: { photoId in
                         removePhoto(dayId: day.id, stopId: stop.id, photoId: photoId)
                     },
@@ -2691,24 +2970,93 @@ struct RecapBlogPageView: View {
                         draft.days[dayIdx].placeStops[stopIdx].sentiment = newValue
                         persistRecapBlogDetail()
                         syncSentimentToCloudIfNeeded(dayId: day.id, stopId: stop.id)
+                    },
+                    onManagePhotos: {
+                        AppAnalytics.track(.blogPlaceManagePhoto(blogId: blogId.uuidString, placeId: stop.id.uuidString))
+                        openManagePhotos(dayId: day.id, stopId: stop.id)
                     }
                 )
                 .id(stop.id)
                 
                 if index < day.placeStops.count - 1 {
                     let nextStop = day.placeStops[index + 1]
-                    HStack {
-                        if !isEditMode, let dist = distanceString(from: stop, to: nextStop) {
-                            Image(systemName: "arrow.down")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                    let manualMode = stop.transportModeToNextStop
+                    let effectiveMode: TravelMode? = manualMode ?? {
+                        guard let a = stop.representativeLocation?.clCoordinate,
+                              let b = nextStop.representativeLocation?.clCoordinate,
+                              a.latitude.isFinite, b.latitude.isFinite else { return nil }
+                        return TravelMode.detect(from: a, to: b)
+                    }()
+                    let pillTint: Color = effectiveMode.map { Color(uiColor: $0.tintColor) } ?? .secondary
+                    let isManual = manualMode != nil
+
+                    HStack(alignment: .center, spacing: 10) {
+                        // Route connector: stub lines above/below the pill to imply a path
+                        VStack(spacing: 0) {
+                            Rectangle()
+                                .fill(pillTint.opacity(0.35))
+                                .frame(width: 2, height: 8)
+                            Button {
+                                transportModePickerItem = OverflowItem(dayId: day.id, stop: stop)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: effectiveMode?.sfSymbolName ?? "arrow.down")
+                                        .font(.caption2.weight(.semibold))
+                                    Text(effectiveMode?.displayName ?? "—")
+                                        .font(.caption.weight(.medium))
+                                    if isEditMode {
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.system(size: 8, weight: .semibold))
+                                            .opacity(0.55)
+                                    }
+                                }
+                                .foregroundColor(pillTint.opacity(isManual ? 1.0 : 0.75))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(pillTint.opacity(isManual ? 0.14 : 0.09))
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(pillTint.opacity(isManual ? 0.3 : 0.15), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            Rectangle()
+                                .fill(pillTint.opacity(0.35))
+                                .frame(width: 2, height: 8)
+                        }
+
+                        if let dist = distanceString(from: stop, to: nextStop) {
                             Text(dist)
-                                .font(.caption)
-                                .fontWeight(.semibold)
+                                .font(.caption.weight(.semibold))
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
-                        if isEditMode {
+                        let sameNameDetected = !stop.placeTitle.isEmpty &&
+                            stop.placeTitle.trimmingCharacters(in: .whitespaces).lowercased() ==
+                            nextStop.placeTitle.trimmingCharacters(in: .whitespaces).lowercased()
+                        if isEditMode && sameNameDetected {
+                            Button {
+                                mergePlaceStops(dayId: day.id, firstStopId: stop.id, secondStopId: nextStop.id)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "arrow.triangle.merge")
+                                        .font(.subheadline.weight(.bold))
+                                    Text("Same place? Merge")
+                                        .font(.subheadline.weight(.semibold))
+                                }
+                                .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.15))
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.45), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        } else if isEditMode {
                             Button {
                                 mergePlaceStops(dayId: day.id, firstStopId: stop.id, secondStopId: nextStop.id)
                             } label: {
@@ -2725,7 +3073,7 @@ struct RecapBlogPageView: View {
                     }
                     .padding(.leading, 16)
                     .padding(.trailing, 16)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 2)
                 }
             }
         }
@@ -2769,9 +3117,6 @@ struct RecapBlogPageView: View {
                                 placeSubtitle: placeSubtitle
                             )
                         },
-                        onTranslateCaption: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
-                            await StoryCaptionService.shared.translateText(userText: userText)
-                        } : nil,
                         onAICaptionApplied: { photoId in
                             markPhotoCaptionAI(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
                         },
@@ -2783,6 +3128,9 @@ struct RecapBlogPageView: View {
                         },
                         onSavePlaceName: { name, category, coord, subtitleLine in
                             updatePlaceTitle(stopId: item.stopId, to: name, category: category, coordinate: coord, placeSubtitleLine: subtitleLine)
+                        },
+                        onSavePlaceCategory: { newCategory in
+                            updatePlaceCategory(stopId: item.stopId, category: newCategory)
                         },
                         onCaptionCommitted: { photoId in
                             syncStoryToCloudIfNeeded(stopId: item.stopId, isPlaceNote: false, photoId: photoId)
@@ -2979,7 +3327,7 @@ struct RecapBlogPageView: View {
         guard hasFinishedInitialLoad else { return }
         let blockingChrome = showStoryMode || showPanorama || isExportingPDF || showAuth || showGuestSecondSaveLimitModal
             || placePhotoModalItem != nil || dayCaptionEditItem != nil || placeCaptionEditItem != nil
-            || photoCaptionEditItem != nil || earlyAccessSheetPresented
+            || photoCaptionEditItem != nil || earlyAccessSheetPresented || showTripNarrativeEdit
         if blockingChrome {
             if showMissingPhotosTooltip {
                 withAnimation(.easeInOut(duration: 0.2)) { showMissingPhotosTooltip = false }
@@ -3137,8 +3485,9 @@ struct RecapBlogPageView: View {
     }
 
     private var shareMenuDetentHeight: CGFloat {
-        // 3 rows: storybook PDF, Bloggo, slideshow video → 492
-        492
+        // Primary card (3 rows: Social Post Studio, Slideshow Video, PDF)
+        // + secondary card (1 row: Share with Bloggo) with a gap between them.
+        510
     }
 
     private var shareText: String {
@@ -3150,14 +3499,13 @@ struct RecapBlogPageView: View {
     }
 
     private var shareItems: [Any] {
-        // Put the URL first so iOS "Copy" action copies the link, not the text.
         if blogIsInCloud,
            let blog = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }),
            let key = blog.blogKey {
             let user = AuthService.shared.currentUser
             let username = user?.username ?? user?.displayName ?? user?.email ?? "user"
             if let url = SecureShareToken.shareURL(username: username, blogKey: key) {
-                return [url, shareText]
+                return [LinkCaptionActivityItemSource(url: url, caption: shareText)]
             }
         }
         return [shareText]
@@ -3205,48 +3553,65 @@ struct RecapBlogPageView: View {
                         .font(.title3.weight(.semibold))
                         .foregroundColor(.primary)
                     Text("Choose how you want to share")
-                        .font(.footnote)
+                        .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
             }
             .padding(.top, 12)
             .padding(.bottom, 18)
 
-            VStack(spacing: 0) {
-                shareOptionRow(
-                    title: "Export as PDF",
-                    subtitle: "Create a printable storybook",
-                    icon: "doc.richtext"
-                ) {
-                    showShareYourBlogSheet = false
-                    showStoryModePDFOptions = true
-                }
-                Divider().padding(.leading, 52)
-                shareOptionRow(
-                    title: "Share with Bloggo",
-                    subtitle: "Open instantly in the app",
-                    icon: "qrcode"
-                ) {
-                    if authService.isSignedIn {
-                        pendingBloggoQRSheetAfterShareDismiss = true
+            VStack(spacing: 14) {
+                VStack(spacing: 0) {
+                    shareOptionRow(
+                        title: "Post to Social - Carousel Studio",
+                        subtitle: "Instagram, Facebook, and other apps",
+                        icon: "rectangle.stack",
+                        iconColor: .white,
+                        titleColor: .white
+                    ) {
                         showShareYourBlogSheet = false
-                    } else {
-                        shareYourBlogSheetPhase = .guestBloggoQR
+                        showSocialPostStudio = true
+                    }
+                    Divider().padding(.leading, 52)
+                    shareOptionRow(
+                        title: "Create video",
+                        subtitle: "Turn your blog into a video",
+                        icon: "video.badge.plus"
+                    ) {
+                        showShareYourBlogSheet = false
+                        showVideoExportOptions = true
+                    }
+                    Divider().padding(.leading, 52)
+                    shareOptionRow(
+                        title: "Export as PDF",
+                        subtitle: "Save as a storybook",
+                        icon: "doc.richtext"
+                    ) {
+                        showShareYourBlogSheet = false
+                        showStoryModePDFOptions = true
                     }
                 }
-                .opacity(!authService.isSignedIn ? 0.4 : 1)
-                Divider().padding(.leading, 52)
-                shareOptionRow(
-                    title: "Export Slideshow Video",
-                    subtitle: "Full blog slideshow video",
-                    icon: "video.badge.plus"
-                ) {
-                    showShareYourBlogSheet = false
-                    showVideoExportOptions = true
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .appChromeCornerRadius(14)
+
+                VStack(spacing: 0) {
+                    shareOptionRow(
+                        title: "Share with Bloggo",
+                        subtitle: "Open instantly in the app",
+                        icon: "qrcode"
+                    ) {
+                        if authService.isSignedIn {
+                            pendingBloggoQRSheetAfterShareDismiss = true
+                            showShareYourBlogSheet = false
+                        } else {
+                            shareYourBlogSheetPhase = .guestBloggoQR
+                        }
+                    }
+                    .opacity(!authService.isSignedIn ? 0.4 : 1)
                 }
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .appChromeCornerRadius(14)
             }
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .appChromeCornerRadius(14)
             .padding(.horizontal, 20)
 
             Spacer(minLength: 18)
@@ -3392,22 +3757,25 @@ Your blog remains private unless you choose to share it.
         title: String,
         subtitle: String,
         icon: String,
+        iconColor: Color = .primary,
+        titleColor: Color = .primary,
+        subtitleColor: Color = .secondary,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(iconColor)
                     .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primary)
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(titleColor)
                     Text(subtitle)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.subheadline)
+                        .foregroundColor(subtitleColor)
                 }
                 Spacer()
             }
@@ -3675,8 +4043,14 @@ Your blog remains private unless you choose to share it.
         return createdRecapStore.saveBlogDetail(draft)
     }
 
+    /// Writes `draft` without a toolbar Save (`hasCommittedRecapSave` unchanged). Used when leaving an uncommitted recap via X so we never run the guest second-blog gate or force a double-tap (edit → view → back).
     @discardableResult
-    private func saveDraft() -> Bool {
+    private func persistRecapWithoutToolbarCommit() -> Bool {
+        createdRecapStore.saveBlogDetail(draft, asDraft: true)
+    }
+
+    @discardableResult
+    private func saveDraft(suppressPostSaveOnboarding: Bool = false) -> Bool {
         // Check if this is the first save before saving
         let isFirstSave = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
 
@@ -3692,9 +4066,19 @@ Your blog remains private unless you choose to share it.
             withAnimation {
                 showFirstSaveBanner = true
             }
-            // Guarantee first-time split/merge onboarding appears even when the
-            // initial on-appear sheet presentation is skipped (e.g. camera-first flow).
-            presentPhotoGroupingTipIfNeeded(afterNanoseconds: 800_000_000)
+            let shouldShowSettingsSpotlight = !suppressPostSaveOnboarding
+                && !hasSeenFirstSaveBlogSettingsCoachmark
+            if shouldShowSettingsSpotlight {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        showFirstSaveBlogSettingsSpotlight = true
+                    }
+                }
+            } else {
+                // Guarantee first-time split/merge onboarding appears even when the
+                // initial on-appear sheet presentation is skipped (e.g. camera-first flow).
+                presentPhotoGroupingTipIfNeeded(afterNanoseconds: 800_000_000)
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                 withAnimation {
                     showFirstSaveBanner = false
@@ -4042,13 +4426,42 @@ Your blog remains private unless you choose to share it.
         }
     }
 
+    /// Persists an auto-resolved place name without dismissing the edit sheet.
+    /// Called by EditPlaceStopNameSheet when it resolves "Unknown Place" on appear.
+    private func silentlyUpdatePlaceName(stopId: UUID, to title: String) {
+        for i in draft.days.indices {
+            guard let j = draft.days[i].placeStops.firstIndex(where: { $0.id == stopId }) else { continue }
+            var day = draft.days[i]
+            var stop = day.placeStops[j]
+            stop.placeTitle = title
+            stop.placeTitleIsManual = true
+            day.placeStops[j] = stop
+            draft.days[i] = day
+            break
+        }
+        persistRecapBlogDetail()
+    }
+
     private func updatePlaceTitle(stopId: UUID, to title: String, category: String? = nil, coordinate: CLLocationCoordinate2D? = nil, placeSubtitleLine: String = "") {
         let subTrimmed = placeSubtitleLine.trimmingCharacters(in: .whitespacesAndNewlines)
-        debugPrint("[Category] updatePlaceTitle called: stopId=\(stopId) title='\(title)' category=\(category ?? "nil") coord=\(coordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil") subtitle='\(subTrimmed)'")
+        let targetMomentKey = placeStop(stopId: stopId)?.visitedTimeDigitized
+        debugPrint("[Category] updatePlaceTitle called: stopId=\(stopId) title='\(title)' category=\(category ?? "nil") coord=\(coordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil") subtitle='\(subTrimmed)' momentKey=\(targetMomentKey ?? "nil")")
+
+        var didUpdateAnyStop = false
+        var apiPlaceKey: String? = nil
+        var apiCategories: [String]? = nil
+
         for i in draft.days.indices {
-            if let j = draft.days[i].placeStops.firstIndex(where: { $0.id == stopId }) {
-                var day = draft.days[i]
-                var stop = day.placeStops[j]
+            var day = draft.days[i]
+            var didUpdateDay = false
+
+            for j in day.placeStops.indices {
+                let existing = day.placeStops[j]
+                let matchesTargetStop = existing.id == stopId
+                let matchesMoment = targetMomentKey != nil && existing.visitedTimeDigitized == targetMomentKey
+                guard matchesTargetStop || matchesMoment else { continue }
+
+                var stop = existing
                 stop.placeTitle = title
                 stop.placeTitleIsManual = true
                 stop.placeSubtitle = subTrimmed.isEmpty ? nil : subTrimmed
@@ -4058,18 +4471,28 @@ Your blog remains private unless you choose to share it.
                     stop.representativeLocation = PhotoCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
                 }
                 day.placeStops[j] = stop
-                draft.days[i] = day
-                debugPrint("[Category] updatePlaceTitle stored: placeTitle='\(stop.placeTitle)' placeSubtitle=\(stop.placeSubtitle ?? "nil") placeCategory=\(stop.placeCategory ?? "nil")")
+                didUpdateDay = true
+                didUpdateAnyStop = true
+                debugPrint("[Category] updatePlaceTitle stored: stopId=\(stop.id) placeTitle='\(stop.placeTitle)' placeSubtitle=\(stop.placeSubtitle ?? "nil") placeCategory=\(stop.placeCategory ?? "nil")")
 
-                persistRecapBlogDetail()
-                if let placeKey = stop.visitedTimeDigitized {
-                    let categories = stop.placeCategory.map { [$0] }
-                    Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: title, categories: categories) }
+                if apiPlaceKey == nil {
+                    apiPlaceKey = stop.visitedTimeDigitized
+                    apiCategories = stop.placeCategory.map { [$0] }
                 }
-                // Story generation is now user-initiated via the magic wand (enhance flow).
-                break
+            }
+
+            if didUpdateDay {
+                draft.days[i] = day
             }
         }
+
+        if didUpdateAnyStop {
+            persistRecapBlogDetail()
+            if draft.blogKey != nil, let placeKey = apiPlaceKey {
+                Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: title, categories: apiCategories) }
+            }
+        }
+
         showEditNameForStop = nil
     }
 
@@ -4084,7 +4507,7 @@ Your blog remains private unless you choose to share it.
             draft.days[i] = day
             debugPrint("[Category] updatePlaceCategory stored: placeTitle='\(stop.placeTitle)' placeCategory=\(stop.placeCategory ?? "nil")")
             persistRecapBlogDetail()
-            if let placeKey = stop.visitedTimeDigitized {
+            if draft.blogKey != nil, let placeKey = stop.visitedTimeDigitized {
                 let categories = category.map { [$0] } ?? ["unknown"]
                 Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: stop.placeTitle, categories: categories) }
             }
@@ -4150,6 +4573,22 @@ Your blog remains private unless you choose to share it.
         return nil
     }
 
+    private func setTransportMode(_ mode: TravelMode?, dayId: UUID, stopId: UUID) {
+        guard let dayIndex = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIndex = draft.days[dayIndex].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+        draft.days[dayIndex].placeStops[stopIndex].transportModeToNextStop = mode
+    }
+
+    /// Returns the next PlaceStop after the given stop (same day or first of next day), if any.
+    private func nextStop(dayId: UUID, stopId: UUID) -> PlaceStop? {
+        guard let dayIndex = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIndex = draft.days[dayIndex].placeStops.firstIndex(where: { $0.id == stopId }) else { return nil }
+        let day = draft.days[dayIndex]
+        if stopIndex + 1 < day.placeStops.count { return day.placeStops[stopIndex + 1] }
+        if dayIndex + 1 < draft.days.count { return draft.days[dayIndex + 1].placeStops.first }
+        return nil
+    }
+
     /// Full-screen fade overlay (not a sheet) so the editor does not slide up from the bottom.
     @ViewBuilder
     private func dayCaptionEditLayer(item: DayCaptionEditItem) -> some View {
@@ -4176,10 +4615,33 @@ Your blog remains private unless you choose to share it.
             onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
                 AppAnalytics.track(.blogStoryAIStory(blogId: blogId.uuidString))
                 persistRecapBlogDetail()
-            } : nil,
-            onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
-                await StoryCaptionService.shared.translateText(userText: userText)
             } : nil
+        )
+    }
+
+    @ViewBuilder
+    private func tripNarrativeEditLayer() -> some View {
+        TripNarrativeEditSheet(
+            blogTitle: draft.title,
+            narrative: bindingForTripNarrative(),
+            onSave: {
+                showTripNarrativeEdit = false
+                AppAnalytics.track(.blogStory(blogId: blogId.uuidString))
+                persistRecapBlogDetail()
+            },
+            onCancel: {
+                showTripNarrativeEdit = false
+            }
+        )
+    }
+
+    private func bindingForTripNarrative() -> Binding<String> {
+        Binding(
+            get: { draft.tripNarrative ?? "" },
+            set: { newValue in
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                draft.tripNarrative = trimmed.isEmpty ? nil : newValue
+            }
         )
     }
 
@@ -4189,6 +4651,7 @@ Your blog remains private unless you choose to share it.
         PlaceCaptionEditSheet(
             placeTitle: stop.placeTitle,
             placeSubtitle: stop.placeSubtitle,
+            placeCategory: stop.placeCategory,
             photos: stop.includedPhotos,
             caption: bindingForOverallStory(dayId: item.dayId, stopId: item.stopId),
             photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
@@ -4226,22 +4689,20 @@ Your blog remains private unless you choose to share it.
                 AppAnalytics.track(.blogStoryAIStory(blogId: blogId.uuidString))
                 markOverallStoryAI(dayId: item.dayId, stopId: item.stopId)
             } : nil,
-            onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
-                await StoryCaptionService.shared.translateText(userText: userText)
+            onFunPhotoInsightApplied: LocalLLMStoryCaptionGenerator.isCapable ? { photoId in
+                markPhotoCaptionAI(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
             } : nil,
-            onRequestFullPhotoView: { photoId in
-                placePhotoModalItem = PlacePhotoModalItem(
-                    dayId: item.dayId,
-                    stopId: item.stopId,
-                    initialPhotoId: photoId,
-                    openInCaptionEditor: true,
-                    hideChromeDoneFromCaptionEditorSheet: true
-                )
-            },
-            activePhotoModalToken: placePhotoModalItem?.id,
             onRequestEditPlaceName: {
                 showEditNameForStop = stop
-            }
+            },
+            overallStoryIsManual: stop.overallStoryIsManual,
+            onGeneratePlaceAIShortStory: LocalLLMStoryCaptionGenerator.isCapable
+                ? {
+                    guard let currentStop = placeStop(dayId: item.dayId, stopId: item.stopId),
+                          let dayDate = draft.days.first(where: { $0.id == item.dayId })?.date else { return "" }
+                    return await StoryCaptionService.shared.generatePlaceLevelAIShortStory(stop: currentStop, dayDate: dayDate)
+                }
+                : nil
         )
     }
 
@@ -4250,6 +4711,8 @@ Your blog remains private unless you choose to share it.
             photo: photo,
             placeTitle: stop.placeTitle,
             placeSubtitle: stop.placeSubtitle,
+            placeCategory: stop.placeCategory,
+            captionIsManual: photo.captionIsManual,
             caption: bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: item.photoId),
             onSave: {
                 photoCaptionEditItem = nil
@@ -4271,9 +4734,6 @@ Your blog remains private unless you choose to share it.
             } : nil,
             onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
                 markPhotoCaptionAI(dayId: item.dayId, stopId: item.stopId, photoId: item.photoId)
-            } : nil,
-            onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
-                await StoryCaptionService.shared.translateText(userText: userText)
             } : nil,
             onRequestFullPhotoView: {
                 placePhotoModalItem = PlacePhotoModalItem(
@@ -4312,11 +4772,20 @@ Your blog remains private unless you choose to share it.
     }
 
     /// Overall place story (quick summary from photo captions); shown above/below place and time.
+    /// The getter matches `PlaceStopRowView` / `StoryBookBuilder`: manual `overallStory` wins, then AI `placeNarrative`, else `overallStory`.
+    /// Without that, the full-screen editor bound only to `overallStory` stayed empty when the visible text came from `placeNarrative`.
     private func bindingForOverallStory(dayId: UUID, stopId: UUID) -> Binding<String> {
         Binding(
             get: {
                 guard let day = draft.days.first(where: { $0.id == dayId }),
                       let stop = day.placeStops.first(where: { $0.id == stopId }) else { return "" }
+                let manual = (stop.overallStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if stop.overallStoryIsManual, !manual.isEmpty {
+                    return stop.overallStory ?? ""
+                }
+                if let narrative = stop.placeNarrative?.trimmingCharacters(in: .whitespacesAndNewlines), !narrative.isEmpty {
+                    return stop.placeNarrative ?? ""
+                }
                 return stop.overallStory ?? ""
             },
             set: { newValue in
@@ -4324,7 +4793,13 @@ Your blog remains private unless you choose to share it.
                       let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
                 var day = draft.days[dayIdx]
                 var stop = day.placeStops[stopIdx]
-                stop.overallStory = newValue.isEmpty ? nil : newValue
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    stop.overallStory = nil
+                    stop.placeNarrative = nil
+                } else {
+                    stop.overallStory = newValue.isEmpty ? nil : newValue
+                }
                 day.placeStops[stopIdx] = stop
                 draft.days[dayIdx] = day
             }
@@ -4650,6 +5125,18 @@ Your blog remains private unless you choose to share it.
                         .foregroundColor(recapChromeForeground.opacity(colorScheme == .dark ? 0.9 : 1))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .lineLimit(tripNarrativeExpanded ? nil : 4)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if isEditMode {
+                                showTripNarrativeEdit = true
+                            } else {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    tripNarrativeExpanded.toggle()
+                                }
+                            }
+                        }
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint(isEditMode ? "Opens the trip story editor" : "Shows the full trip story")
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             tripNarrativeExpanded.toggle()
@@ -4668,95 +5155,102 @@ Your blog remains private unless you choose to share it.
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             }
-            if LocalLLMStoryCaptionGenerator.isCapable && isEditMode {
+            if isEditMode {
                 if !hasNarrative {
-                    Text("Your trip story will appear here…")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary.opacity(0.9))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(Color(white: 0.1))
-                        .appChromeCornerRadius(10)
-                        .padding(.horizontal, 16)
+                    Button {
+                        showTripNarrativeEdit = true
+                    } label: {
+                        Text("Your trip story will appear here…")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary.opacity(0.9))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(Color(white: 0.1))
+                            .appChromeCornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 16)
                 }
-                if isGeneratingTripNarrative {
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                            .scaleEffect(0.75)
-                            .tint(.secondary)
-                            .padding(.trailing, 20)
-                            .padding(.top, hasNarrative ? 0 : 8)
-                    }
-                } else if !hasNarrative {
-                    HStack {
-                        Spacer()
-                        Button {
-                            triggerTripNarrative()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "wand.and.sparkles")
-                                    .font(.system(size: 13, weight: .medium))
-                                Text("Generate story")
-                                    .font(.footnote.weight(.medium))
-                            }
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+                if LocalLLMStoryCaptionGenerator.isCapable {
+                    if isGeneratingTripNarrative {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .scaleEffect(0.75)
+                                .tint(.secondary)
+                                .padding(.trailing, 20)
+                                .padding(.top, hasNarrative ? 0 : 8)
+                        }
+                    } else if !hasNarrative {
+                        HStack {
+                            Spacer()
+                            Button {
+                                triggerTripNarrative()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "wand.and.sparkles")
+                                        .font(.system(size: 13, weight: .medium))
+                                    Text("Generate story")
+                                        .font(.footnote.weight(.medium))
+                                }
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
                                 )
-                            )
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.trailing, 16)
-                        .padding(.top, hasNarrative ? 2 : 8)
-                    }
-                } else {
-                    HStack(spacing: 12) {
-                        Spacer()
-                        Button {
-                            draft.tripNarrative = nil
-                            tripNarrativeExpanded = false
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.uturn.backward")
-                                    .font(.caption)
-                                Text("Revert")
-                                    .font(.caption)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
+                                .clipShape(Capsule())
                             }
-                            .foregroundColor(.secondary)
+                            .buttonStyle(.plain)
+                            .padding(.trailing, 16)
+                            .padding(.top, hasNarrative ? 2 : 8)
                         }
-                        .buttonStyle(.plain)
-                        Button {
-                            triggerTripNarrative()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "wand.and.sparkles")
-                                    .font(.system(size: 13, weight: .medium))
-                                Text("Regenerate")
-                                    .font(.footnote.weight(.medium))
+                    } else {
+                        HStack(spacing: 12) {
+                            Spacer()
+                            Button {
+                                draft.tripNarrative = nil
+                                tripNarrativeExpanded = false
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.uturn.backward")
+                                        .font(.caption)
+                                    Text("Revert")
+                                        .font(.caption)
+                                }
+                                .foregroundColor(.secondary)
                             }
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+                            .buttonStyle(.plain)
+                            Button {
+                                triggerTripNarrative()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "wand.and.sparkles")
+                                        .font(.system(size: 13, weight: .medium))
+                                    Text("Regenerate")
+                                        .font(.footnote.weight(.medium))
+                                }
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
                                 )
-                            )
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
-                            .clipShape(Capsule())
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.trailing, 16)
                         }
-                        .buttonStyle(.plain)
-                        .padding(.trailing, 16)
+                        .padding(.top, 2)
                     }
-                    .padding(.top, 2)
                 }
             }
         }
@@ -4930,12 +5424,17 @@ Your blog remains private unless you choose to share it.
         let start = CLLocation(latitude: loc1.latitude, longitude: loc1.longitude)
         let end = CLLocation(latitude: loc2.latitude, longitude: loc2.longitude)
         let distanceInMeters = end.distance(from: start)
-        let distanceInMiles = distanceInMeters / 1609.34
-        
-        // If really close, maybe don't show? Or show 0.1 mi.
-        if distanceInMiles < 0.1 { return nil }
-        
-        return String(format: "%.1f mi", distanceInMiles)
+        let unit = DistanceUnit(rawValue: distanceUnitRaw) ?? .miles
+        switch unit {
+        case .miles:
+            let miles = distanceInMeters / 1609.34
+            if miles < 0.1 { return nil }
+            return String(format: "%.1f mi", miles)
+        case .kilometers:
+            let km = distanceInMeters / 1000.0
+            if km < 0.1 { return nil }
+            return String(format: "%.1f km", km)
+        }
     }
 
     private func checkFirstTimeTip() {
@@ -4969,9 +5468,18 @@ Your blog remains private unless you choose to share it.
         guard !hasSeenPhotoGroupingTip else { return }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: delay)
-            guard !hasSeenPhotoGroupingTip, !showSaveTipAlert else { return }
+            guard !hasSeenPhotoGroupingTip, !showSaveTipAlert, !showFirstSaveBlogSettingsSpotlight else { return }
             showSaveTipAlert = true
         }
+    }
+
+    private func dismissFirstSaveBlogSettingsSpotlight(markedSeen: Bool) {
+        withAnimation(.easeOut(duration: 0.22)) {
+            showFirstSaveBlogSettingsSpotlight = false
+        }
+        guard markedSeen else { return }
+        hasSeenFirstSaveBlogSettingsCoachmark = true
+        presentPhotoGroupingTipIfNeeded(afterNanoseconds: 600_000_000)
     }
 
     // MARK: - Extracted Body Helpers
@@ -5002,13 +5510,30 @@ Your blog remains private unless you choose to share it.
         return draft != snapshot
     }
 
+    /// True until an explicit recap toolbar Save completes (`hasCommittedRecapSave`). Without this, `draftSnapshot` is initialized equal to `draft`, so `hasUnsavedChanges` stays false and Save stays disabled—blocking first saves and the guest second-blog sign-in flow (`guestSecondSaveBlockedSignal`).
+    private var needsCommittedRecapToolbarSave: Bool {
+        guard let r = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) else { return false }
+        return !r.hasCommittedRecapSave
+    }
+
+    private var isToolbarSaveEnabled: Bool {
+        hasUnsavedChanges || needsCommittedRecapToolbarSave
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             Button {
                 if isEditMode {
-                    // X button: exit edit mode. Show discard alert if there are unsaved changes.
-                    if hasUnsavedChanges {
+                    if needsCommittedRecapToolbarSave {
+                        if hasUnsavedChanges {
+                            showUnsavedChangesAlert = true
+                        } else {
+                            // Draft, no edits since snapshot: leave without prompting; keep as on-device draft only.
+                            _ = persistRecapWithoutToolbarCommit()
+                            performDismiss()
+                        }
+                    } else if hasUnsavedChanges {
                         showUnsavedChangesAlert = true
                     } else {
                         isEditMode = false
@@ -5043,6 +5568,16 @@ Your blog remains private unless you choose to share it.
                 .buttonStyle(.plain)
                 .accessibilityLabel("Undo")
                 .disabled(lastUndoAction == nil)
+            } else if !isExportingPDF && !showStoryMode && fullScreenMapDay == nil {
+                Button {
+                    isEditMode = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(recapChromeForeground)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Edit Blog")
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
@@ -5059,11 +5594,11 @@ Your blog remains private unless you choose to share it.
                         .fixedSize()
                         .padding(.horizontal, 20)
                         .padding(.vertical, 7)
-                        .background(hasUnsavedChanges ? Color.blue : Color.gray.opacity(0.5), in: Capsule())
+                        .background(isToolbarSaveEnabled ? Color.blue : Color.gray.opacity(0.5), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(!hasUnsavedChanges)
-            } else if !isExportingPDF && !showStoryMode {
+                .disabled(!isToolbarSaveEnabled)
+            } else if !isExportingPDF && !showStoryMode && fullScreenMapDay == nil {
                 Button {
                     showBlogSettings = true
                 } label: {
@@ -5073,6 +5608,14 @@ Your blog remains private unless you choose to share it.
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Blog Settings")
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: BlogSettingsGearFramePreferenceKey.self,
+                            value: geo.frame(in: .global)
+                        )
+                    }
+                )
             }
         }
     }
@@ -5362,11 +5905,7 @@ Your blog remains private unless you choose to share it.
 
                             Button {
                                 earlyAccessSheetPresented = false
-                                if authService.isSignedIn {
-                                    showPDFExportOptions = true
-                                } else {
-                                    showExportSignInAlert = true
-                                }
+                                showPDFExportOptions = true
                             } label: {
                                 Text("Export as PDF Instead")
                                     .font(.subheadline.weight(.medium))
@@ -5708,9 +6247,9 @@ Your blog remains private unless you choose to share it.
     ) async {
         switch step {
         case .delete(let photo):
-            try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "delete")
+            _ = try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "delete")
         case .addCloud(let photo):
-            try? await APIManager.shared.updatePhoto(
+            _ = try? await APIManager.shared.updatePhoto(
                 placeKey: placeKey,
                 photo: photo,
                 operation: "add",
@@ -5765,22 +6304,49 @@ Your blog remains private unless you choose to share it.
         }
     }
 
+    /// Resolves a library asset after PHPicker returns its local identifier.
+    ///
+    /// With **limited** photo library access, `PHAsset.fetchAssets(withLocalIdentifiers:)` often returns empty on the first
+    /// query while Photos finishes extending the user's authorized asset set. Imports still proceed using place/day fallbacks;
+    /// longer retry schedules help attach richer metadata when the asset appears.
+    private func fetchPHAssetForLibraryImport(localIdentifier id: String) async -> PHAsset? {
+        let isLimited = PHPhotoLibrary.authorizationStatus(for: .readWrite) == .limited
+        let delaysMs: [UInt64] = isLimited
+            ? [0, 50, 120, 250, 500, 900, 1600, 2500, 3500, 5000]
+            : [0, 50, 120, 250, 500, 900, 1600]
+        for delayMs in delaysMs {
+            if delayMs > 0 {
+                try? await Task.sleep(nanoseconds: delayMs * 1_000_000)
+            }
+            let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+            if let asset = assets.firstObject { return asset }
+        }
+        return nil
+    }
+
     /// Appends library picks to the managed place, fills missing metadata from the place/day, and copies pixels into the in-app gallery.
     @MainActor
     private func importLibraryPhotosIntoStop(assetIdentifiers: [String], dayId: UUID, stopId: UUID) async {
+        guard let initDayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let initStop = draft.days[initDayIdx].placeStops.first(where: { $0.id == stopId }) else { return }
+
+        let placeTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: initStop)
+
+        // Re-validate indices after the async pause — other @MainActor work may have run during geocoding.
         guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
               let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
 
-        var stop = draft.days[dayIdx].placeStops[stopIdx]
         let day = draft.days[dayIdx]
+        var stop = draft.days[dayIdx].placeStops[stopIdx]
         var existingIds = Set(stop.photos.compactMap(\.localIdentifier))
-        let placeTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: stop)
+        var photosToCache: [(assetId: String, timestamp: Date)] = []
 
         for rawId in assetIdentifiers {
             let id = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !id.isEmpty, !existingIds.contains(id) else { continue }
-            let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
-            guard let asset = assets.firstObject else { continue }
+            // Under limited library access, `PHAsset.fetchAssets` can stay empty briefly after PHPicker returns.
+            // Still append the pick so it is included in the blog; metadata falls back to place/day when asset is nil.
+            let asset = await fetchPHAssetForLibraryImport(localIdentifier: id)
 
             let coord = PlaceLibraryPhotoImport.resolvedCoordinate(asset: asset, stop: stop)
             let timestamp = PlaceLibraryPhotoImport.resolvedTimestamp(asset: asset, stop: stop, day: day, placeTimeZone: placeTZ)
@@ -5793,10 +6359,46 @@ Your blog remains private unless you choose to share it.
             )
             stop.photos.append(recap)
             existingIds.insert(id)
+            photosToCache.append((assetId: id, timestamp: timestamp))
+        }
 
-            if let img = await ImageLoader.shared.loadImage(assetIdentifier: id, targetSize: CGSize(width: 2048, height: 2048)) {
+        guard !photosToCache.isEmpty else { return }
+
+        // Update draft before image caching so the photo appears in the grid immediately.
+        // In limited access mode photos are not pre-cached, so loadImage can take many seconds;
+        // waiting for it before writing draft causes the photo to never appear during that wait.
+        stop.photos.sort { $0.timestamp < $1.timestamp }
+        draft.days[dayIdx].placeStops[stopIdx] = stop
+        persistRecapBlogDetail()
+
+        for (assetId, timestamp) in photosToCache {
+            if let img = await ImageLoader.shared.loadImage(assetIdentifier: assetId, targetSize: CGSize(width: 2048, height: 2048)) {
                 InAppCameraPhotoStore.shared.addPhoto(image: img, timestamp: timestamp)
             }
+        }
+    }
+
+    private func importBloggoPhotosIntoStop(captureIds: [UUID], dayId: UUID, stopId: UUID) {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+
+        var stop = draft.days[dayIdx].placeStops[stopIdx]
+        var existingIds = Set(stop.photos.compactMap(\.localIdentifier))
+
+        for uuid in captureIds {
+            let identifier = AppCapturePhotoService.identifier(for: uuid)
+            guard !existingIds.contains(identifier),
+                  let info = AppCapturePhotoService.shared.metadata(captureId: uuid) else { continue }
+            let recap = RecapPhoto(
+                timestamp: info.timestamp,
+                location: info.location,
+                imageName: "photo",
+                isIncluded: true,
+                localIdentifier: identifier,
+                caption: info.caption
+            )
+            stop.photos.append(recap)
+            existingIds.insert(identifier)
         }
 
         stop.photos.sort { $0.timestamp < $1.timestamp }
@@ -6140,11 +6742,15 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
     @Binding var isKeyboardVisible: Bool
     @Binding var isEditMode: Bool
     @Binding var draft: RecapBlogDetail
-    var saveDraft: () -> Bool
+    /// Pass `true` to skip first-save spotlight / deferred tips when saving immediately before dismiss.
+    var saveDraft: (_ suppressPostSaveOnboarding: Bool) -> Bool
     var loadDraftIfNeeded: () -> Void
     var checkFirstTimeTip: () -> Void
     var createdRecapStore: CreatedRecapBlogStore
-    var dismiss: DismissAction
+    /// True when this recap has never had a toolbar Save (`hasCommittedRecapSave` is false).
+    var needsCommittedRecapToolbarSave: () -> Bool
+    /// Dismisses the recap (respects overlay `onRequestDismiss` when set).
+    var performRecapDismiss: () -> Void
     @State private var blogGroupingTipPage = 0
 
     func body(content: Content) -> some View {
@@ -6162,15 +6768,25 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
                 Color.clear
                     .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
                         Button("Yes") {
-                            if saveDraft() {
-                                isEditMode = false
+                            let leavingUncommittedDraft = needsCommittedRecapToolbarSave()
+                            if saveDraft(leavingUncommittedDraft) {
+                                if leavingUncommittedDraft {
+                                    performRecapDismiss()
+                                } else {
+                                    isEditMode = false
+                                }
                             }
                         }
                         Button("No", role: .destructive) {
                             if let snapshot = draftSnapshot {
                                 draft = snapshot
                             }
-                            isEditMode = false
+                            if needsCommittedRecapToolbarSave() {
+                                _ = createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                                performRecapDismiss()
+                            } else {
+                                isEditMode = false
+                            }
                         }
                         Button("Cancel", role: .cancel) { }
                     } message: {
@@ -6396,7 +7012,9 @@ private struct RecapMergePlacesSelectionSheet: View {
                 GeometryReader { geo in
                     Color.clear
                         .onAppear { contentHeight = geo.size.height }
-                        .onChange(of: geo.size.height) { contentHeight = $0 }
+                        .onChange(of: geo.size.height) { _, newHeight in
+                            contentHeight = newHeight
+                        }
                 }
             )
             Spacer(minLength: 0)
@@ -6514,57 +7132,6 @@ private struct ManagePhotosEditInfo {
     let stopId: UUID
     /// Inclusion state of each photo at the moment ManagePhotosView was opened.
     let photoInclusionBefore: [UUID: Bool]
-}
-
-/// Presents the photo selection flow (TripDayPickerView) in edit mode, then Title → Cover with "Update". Used when user taps Edit on the Recap Blog page.
-private struct EditBlogPhotoFlowView: View {
-    let blogId: UUID
-    var onDismiss: () -> Void
-    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
-    @State private var trip: TripDraft?
-    @State private var tripToUpdate: TripDraft?
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if let t = trip {
-                    TripDayPickerView(
-                        trip: t,
-                        onStartCreateBlog: { _ in },
-                        isEditMode: true,
-                        onUpdate: { updated in
-                            tripToUpdate = updated
-                        }
-                    )
-                    .fullScreenCover(item: $tripToUpdate) { updatedTrip in
-                    CreateBlogFlowView(
-                        trip: updatedTrip,
-                        existingBlogId: blogId,
-                        onUpdateComplete: {
-                            tripToUpdate = nil
-                            onDismiss()
-                        },
-                        onClose: { _ in }
-                    )
-                    .environmentObject(createdRecapStore)
-                    }
-                } else {
-                    ProgressView("Loading…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onDismiss() }
-                }
-            }
-        }
-        .onAppear {
-            trip = createdRecapStore.tripDraftApplyingBlogSelection(blogId: blogId)
-        }
-        .preferredColorScheme(nil)
-    }
 }
 
 // MARK: - Processing Day Popup
@@ -6808,12 +7375,10 @@ private struct NewMomentsReviewSheet: View {
         let thumbSpacing: CGFloat = 8
         let thumbCorner: CGFloat = 10
         let contentSpacing: CGFloat = 12
-        let displayedPhotos = Array(group.photos.prefix(3))
-        let extraCount = group.photos.count - 3
-        let stripWidth: CGFloat = {
-            guard !displayedPhotos.isEmpty else { return 0 }
-            return CGFloat(displayedPhotos.count) * thumbSize + CGFloat(displayedPhotos.count - 1) * thumbSpacing
-        }()
+        let photoRows = chunkedPhotos(group.photos, chunkSize: 3)
+        let rowCount = max(photoRows.count, 1)
+        let gridHeight = CGFloat(rowCount) * thumbSize + CGFloat(max(rowCount - 1, 0)) * thumbSpacing
+        let gridWidth = thumbSize * 3 + thumbSpacing * 2
         return Button {
             withAnimation(.easeInOut(duration: 0.2)) {
                 if isHidden {
@@ -6824,13 +7389,16 @@ private struct NewMomentsReviewSheet: View {
             }
         } label: {
             HStack(alignment: .top, spacing: contentSpacing) {
-                // Photo strip: fixed row height so 1 vs 3 thumbs share the same top edge and scale.
-                HStack(spacing: thumbSpacing) {
-                    ForEach(displayedPhotos) { photo in
-                        newMomentThumbnail(photo: photo, size: thumbSize, cornerRadius: thumbCorner)
+                VStack(alignment: .leading, spacing: thumbSpacing) {
+                    ForEach(Array(photoRows.enumerated()), id: \.offset) { _, rowPhotos in
+                        HStack(spacing: thumbSpacing) {
+                            ForEach(rowPhotos) { photo in
+                                newMomentThumbnail(photo: photo, size: thumbSize, cornerRadius: thumbCorner)
+                            }
+                        }
                     }
                 }
-                .frame(width: stripWidth, height: thumbSize, alignment: .topLeading)
+                .frame(width: gridWidth, height: gridHeight, alignment: .topLeading)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(group.placeKey)
@@ -6840,14 +7408,9 @@ private struct NewMomentsReviewSheet: View {
                     Text(newMomentsTimeFormatter.string(from: group.earliestTimestamp))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.secondary)
-                    if extraCount > 0 {
-                        Text("+\(extraCount) more")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.secondary)
-                    }
                     Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, minHeight: thumbSize, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: gridHeight, alignment: .topLeading)
 
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
@@ -6856,7 +7419,7 @@ private struct NewMomentsReviewSheet: View {
                         .foregroundColor(isHidden ? .green : .secondary)
                     Spacer(minLength: 0)
                 }
-                .frame(width: 40, height: thumbSize)
+                .frame(width: 40, height: gridHeight)
                 .contentShape(Rectangle())
             }
             .padding(12)
@@ -6872,6 +7435,130 @@ private struct NewMomentsReviewSheet: View {
         }
         .buttonStyle(.plain)
         .opacity(isHidden ? 0.35 : 1.0)
+    }
+
+    private func chunkedPhotos(_ photos: [MockPhoto], chunkSize: Int) -> [[MockPhoto]] {
+        guard chunkSize > 0 else { return [photos] }
+        var rows: [[MockPhoto]] = []
+        var index = 0
+        while index < photos.count {
+            let endIndex = min(index + chunkSize, photos.count)
+            rows.append(Array(photos[index..<endIndex]))
+            index += chunkSize
+        }
+        return rows
+    }
+}
+
+// MARK: - First-save Blog Settings spotlight
+
+/// Dims the recap except a cutout over the Blog Settings (gear) control; dismisses when settings open or via the primary CTA.
+private struct FirstSaveBlogSettingsSpotlightOverlay: View {
+    let holeInGlobal: CGRect
+    let onOpenBlogSettings: () -> Void
+
+    private let dimOverlayOpacity: Double = 0.5
+
+    var body: some View {
+        GeometryReader { proxy in
+            let containerGlobal = proxy.frame(in: .global)
+            let w = proxy.size.width
+            let h = proxy.size.height
+            let hasHole = holeInGlobal.width > 0.5 && holeInGlobal.height > 0.5
+            let paddedHole = holeInGlobal.insetBy(dx: -10, dy: -10)
+            let holeLocal = CGRect(
+                x: paddedHole.minX - containerGlobal.minX,
+                y: paddedHole.minY - containerGlobal.minY,
+                width: paddedHole.width,
+                height: paddedHole.height
+            )
+
+            ZStack {
+                if hasHole {
+                    ZStack(alignment: .topLeading) {
+                        dimStrip
+                            .frame(width: w, height: max(0, holeLocal.minY))
+                        dimStrip
+                            .frame(width: w, height: max(0, h - holeLocal.maxY))
+                            .offset(x: 0, y: holeLocal.maxY)
+                        dimStrip
+                            .frame(width: max(0, holeLocal.minX), height: holeLocal.height)
+                            .offset(x: 0, y: holeLocal.minY)
+                        dimStrip
+                            .frame(width: max(0, w - holeLocal.maxX), height: holeLocal.height)
+                            .offset(x: holeLocal.maxX, y: holeLocal.minY)
+
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.white.opacity(0.42), lineWidth: 2)
+                            .frame(width: holeLocal.width, height: holeLocal.height)
+                            .position(x: holeLocal.midX, y: holeLocal.midY)
+                            .allowsHitTesting(false)
+                    }
+                } else {
+                    dimStrip
+                        .frame(width: w, height: h)
+                }
+
+                tooltipCard
+                    .frame(maxWidth: 300)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 20)
+            }
+            .frame(width: w, height: h)
+        }
+        .ignoresSafeArea()
+    }
+
+    private var dimStrip: some View {
+        Rectangle()
+            .fill(Color.black.opacity(dimOverlayOpacity))
+        .contentShape(Rectangle())
+    }
+
+    private var tooltipCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "gearshape.fill")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text("Blog Settings")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Draft saved")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+
+                (Text("Cover, title, fonts, backups, and more live behind the ") +
+                    Text("gear").fontWeight(.semibold) +
+                    Text("."))
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.92))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button(action: onOpenBlogSettings) {
+                Text("Open Blog Settings")
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.white.opacity(0.2), in: RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .padding(22)
+        .background(
+            RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        )
     }
 }
 

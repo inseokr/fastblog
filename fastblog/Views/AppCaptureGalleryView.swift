@@ -44,12 +44,23 @@ struct AppCaptureItem: Identifiable {
     var location: PhotoCoordinate?
     /// Local file URL of the Vibe audio clip (vibe.m4a), if one was recorded for this capture.
     var localVibeURL: URL?
+    /// Local file URL of the explicit voice memo (voice_memo.m4a), if the user attached one.
+    var localVoiceMemoURL: URL?
 }
 
 // MARK: - Gallery view
 
 struct AppCaptureGalleryView: View {
     @Environment(\.dismiss) private var dismiss
+
+    /// When provided the view works as a photo picker. The callback receives the UUIDs of selected
+    /// captures and the sheet is dismissed automatically. Download/trash actions are hidden.
+    var onPickerComplete: (([UUID]) -> Void)? = nil
+    /// Capture identifiers (bloggo-capture:<uuid>) already present in the destination stop.
+    /// These are hidden from the picker grid so the user only sees photos not yet added.
+    var excludedIdentifiers: Set<String> = []
+
+    private var isPickerMode: Bool { onPickerComplete != nil }
 
     @State private var items: [AppCaptureItem] = []
     @State private var selectedItem: AppCaptureItem?
@@ -94,43 +105,67 @@ struct AppCaptureGalleryView: View {
                     }
                 }
 
-                // Bottom bar in select mode: download (left), "# Photos Selected" (center), trash (right)
+                // Bottom bar in select mode
                 if isSelectMode && !items.isEmpty {
-                    HStack {
+                    if isPickerMode {
+                        // Picker mode: full-width blue primary button
                         Button {
-                            saveSelectedToPhotoLibrary()
+                            let ids = Array(selectedIds)
+                            onPickerComplete?(ids)
+                            dismiss()
                         } label: {
-                            Image(systemName: "square.and.arrow.down")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(selectedIds.isEmpty ? .gray : .white)
-                                .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                            Text(selectedIds.isEmpty ? "Select Photos to Add" : "Add \(selectedIds.count) Photo\(selectedIds.count == 1 ? "" : "s")")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
                         }
+                        .background(
+                            Color.blue.opacity(selectedIds.isEmpty ? 0.35 : 1),
+                            in: RoundedRectangle(appChromeBaseRadius: 12)
+                        )
                         .disabled(selectedIds.isEmpty)
-                        .accessibilityLabel("Save selected to Photos")
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 8)
+                        .accessibilityLabel("Add selected photos to blog")
+                    } else {
+                        // Normal mode: download (left), count (center), trash (right)
+                        HStack {
+                            Button {
+                                saveSelectedToPhotoLibrary()
+                            } label: {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundColor(selectedIds.isEmpty ? .gray : .white)
+                                    .frame(width: 56, height: 56)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                            }
+                            .disabled(selectedIds.isEmpty)
+                            .accessibilityLabel("Save selected to Photos")
 
-                        Spacer()
+                            Spacer()
 
-                        Text("\(selectedIds.count) Photos Selected")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            Text("\(selectedIds.count) Photos Selected")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
 
-                        Spacer()
+                            Spacer()
 
-                        Button {
-                            showRemoveConfirmation = true
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(selectedIds.isEmpty ? .gray : .red)
-                                .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                            Button {
+                                showRemoveConfirmation = true
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundColor(selectedIds.isEmpty ? .gray : .red)
+                                    .frame(width: 56, height: 56)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                            }
+                            .disabled(selectedIds.isEmpty)
+                            .accessibilityLabel("Remove selected from gallery")
                         }
-                        .disabled(selectedIds.isEmpty)
-                        .accessibilityLabel("Remove selected from gallery")
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 8)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
                 }
 
                 VStack(spacing: 12) {
@@ -153,18 +188,33 @@ struct AppCaptureGalleryView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 15, weight: .semibold))
+                    if isPickerMode {
+                        Button("Cancel") {
+                            onPickerComplete?([])
+                            dismiss()
+                        }
+                        .foregroundColor(.white)
+                    } else {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss")
+                    }
+                }
+                ToolbarItem(placement: .principal) {
+                    if isPickerMode {
+                        Text("Bloggo Gallery")
+                            .font(.headline)
                             .foregroundColor(.white)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if !items.isEmpty {
+                    if !items.isEmpty && !isPickerMode {
                         if isSelectMode {
                             Button("Done") {
                                 isSelectMode = false
@@ -192,7 +242,12 @@ struct AppCaptureGalleryView: View {
         .presentationDetents([.fraction(1)])
         .presentationDragIndicator(.visible)
         .preferredColorScheme(.dark)
-        .task { await loadItems() }
+        .task {
+            await loadItems()
+            if isPickerMode && !isSelectMode {
+                isSelectMode = true
+            }
+        }
         .fullScreenCover(item: $selectedItem) { item in
             AppCaptureDetailView(
                 items: $items,
@@ -260,7 +315,8 @@ struct AppCaptureGalleryView: View {
             }
             .padding(.bottom, isSelectMode ? 72 : 88)
         }
-        .scrollDisabled(isSelectMode && !selectedIds.isEmpty)
+        // Keep scrolling available while in select mode; multi-select now happens by taps only.
+        .scrollDisabled(false)
         .background(
             GeometryReader { g in
                 Color.clear
@@ -273,35 +329,6 @@ struct AppCaptureGalleryView: View {
         .onPreferenceChange(AppCaptureGalleryCellFramePreferenceKey.self) { frames in
             cellFrames = frames
         }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                .onChanged { value in
-                    guard isSelectMode else { return }
-                    lastDragGlobalLocation = value.location
-                    if dragStartIndex == nil {
-                        let dragDistance = hypot(value.translation.width, value.translation.height)
-                        guard dragDistance > 8 else { return }
-                        if shouldTreatDragAsScrollOnly(translation: value.translation) {
-                            return
-                        }
-                        guard let startIndex = itemIndex(at: value.startLocation) else { return }
-                        beginDragSelection(at: startIndex)
-                        lastDragItemIndex = startIndex
-                    }
-                    if let currentIndex = itemIndex(at: value.location) {
-                        lastDragItemIndex = currentIndex
-                        applyDragSelection(to: currentIndex)
-                    } else if let idx = lastDragItemIndex {
-                        applyDragSelection(to: idx)
-                    }
-                    updateAutoScroll(proxy: proxy, globalY: value.location.y)
-                }
-                .onEnded { _ in
-                    autoScrollInvoker.stop()
-                    endDragSelection()
-                    lastDragItemIndex = nil
-                }
-        )
     }
 
     private var emptyState: some View {
@@ -329,6 +356,10 @@ struct AppCaptureGalleryView: View {
         var loaded: [AppCaptureItem] = []
         let store = CreatedRecapBlogStore.shared
         for uuid in ids {
+            if isPickerMode {
+                let identifier = AppCapturePhotoService.identifier(for: uuid)
+                if excludedIdentifiers.contains(identifier) { continue }
+            }
             let image = service.loadImage(captureId: uuid)
             let info = service.metadata(captureId: uuid)
             let metaCaption = info?.caption?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -350,7 +381,8 @@ struct AppCaptureGalleryView: View {
                 timestamp: info?.timestamp ?? Date(),
                 caption: merged,
                 location: info?.location,
-                localVibeURL: service.vibeFileURL(for: uuid)
+                localVibeURL: service.vibeFileURL(for: uuid),
+                localVoiceMemoURL: service.voiceMemoFileURL(for: uuid)
             ))
         }
         items = loaded
@@ -535,7 +567,7 @@ private struct GalleryCell: View {
                         .opacity(isSelectMode && isSelected ? 0.5 : 1)
                 }
 
-                // Caption indicator (bottom-left, after vibe badge)
+                // Caption indicator (bottom-right).
                 if !isSelectMode, let cap = item.caption, !cap.isEmpty {
                     Image(systemName: "text.bubble.fill")
                         .font(.system(size: 10))
@@ -543,21 +575,36 @@ private struct GalleryCell: View {
                         .padding(5)
                         .background(Color.black.opacity(0.45))
                         .clipShape(Circle())
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                         .padding(5)
                 }
 
-                // Vibe badge — static green waveform in a circle, bottom-left
-                if !isSelectMode, item.localVibeURL != nil {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(
-                            LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                        )
-                        .padding(6)
-                        .background(Color.black.opacity(0.55))
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.green.opacity(0.5), lineWidth: 1))
-                        .padding(5)
+                // Vibe + voice memo badges — bottom-leading column with voice memo above vibe.
+                if !isSelectMode {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if item.localVoiceMemoURL != nil {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(6)
+                                .background(Color.purple.opacity(0.78))
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 1))
+                        }
+                        if item.localVibeURL != nil {
+                            Image(systemName: "waveform")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(
+                                    LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                )
+                                .padding(6)
+                                .background(Color.black.opacity(0.55))
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.green.opacity(0.5), lineWidth: 1))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .padding(5)
                 }
 
                 // Select mode checkmark

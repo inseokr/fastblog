@@ -22,6 +22,8 @@ struct PanoramaPhotoEntry: Equatable {
     let caption: String?
     let placeName: String?
     let timestamp: Date?
+    /// GPS from the recap photo, when available — used for “open in Maps” in slideshow / gallery detail.
+    let location: PhotoCoordinate?
 }
 
 // MARK: - Layout variant (solo or top/bottom diptych only)
@@ -51,11 +53,31 @@ struct PanoramaPlayerView: View {
     let blogId: UUID
     /// Shown centered on the gallery hero (matches recap cover title treatment).
     let blogTitle: String
+    /// When true, present the gallery overlay immediately instead of starting on slideshow playback.
+    var startInGallery: Bool = false
     var onDismiss: () -> Void
     /// When the user deletes an in-app capture (`bloggo-capture:` id) from the slideshow gallery full-screen viewer.
     var onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
+
+    init(
+        photoGroups: [[PanoramaPhotoEntry]],
+        blogId: UUID,
+        blogTitle: String,
+        startInGallery: Bool = false,
+        onDismiss: @escaping () -> Void,
+        onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil
+    ) {
+        self.photoGroups = photoGroups
+        self.blogId = blogId
+        self.blogTitle = blogTitle
+        self.startInGallery = startInGallery
+        self.onDismiss = onDismiss
+        self.onAppCaptureDeletedFromSlideshow = onAppCaptureDeletedFromSlideshow
+        _isPlaying = State(initialValue: !startInGallery)
+        _showGallery = State(initialValue: startInGallery)
+    }
 
     // MARK: - Image cache (keyed by asset identifier)
     @State private var loadedImages: [String: UIImage] = [:]
@@ -89,9 +111,13 @@ struct PanoramaPlayerView: View {
 
     // MARK: - Gallery
     @State private var showGallery: Bool = false
+    /// True only when dismissing gallery via Play; switches transition to fade instead of swipe-down.
+    @State private var useFadeForGalleryTransition = false
     @State private var wasPlayingBeforeGallery: Bool = false
     /// Full-screen photo paging within the gallery overlay (grid tap); `nil` = grid / hero visible.
     @State private var galleryDetailPhotoId: String?
+    /// Toast when saving the current slideshow photo from the paused overlay.
+    @State private var pausedSlideshowDownloadToast: String?
 
     // MARK: - Music
     @State private var showMusicPicker: Bool = false
@@ -128,6 +154,14 @@ struct PanoramaPlayerView: View {
               currentSlideOffset + 1 < currentGroup.count
         else { return nil }
         return currentGroup[currentSlideOffset + 1].id
+    }
+
+    /// Primary visible photo for captions / timestamp / map (top slot, or solo).
+    private var currentPrimaryEntry: PanoramaPhotoEntry? {
+        guard currentGroupIndex < photoGroups.count else { return nil }
+        let group = photoGroups[currentGroupIndex]
+        guard currentSlideOffset < group.count else { return nil }
+        return group[currentSlideOffset]
     }
 
     private var totalPhotos: Int { photoGroups.reduce(0) { $0 + $1.count } }
@@ -218,6 +252,10 @@ struct PanoramaPlayerView: View {
                 VStack(spacing: 10) {
                     progressBar
                         .padding(.horizontal, 24)
+                    if !isPlaying, !showGallery, diptychExpandedHalf == nil, let entry = currentPrimaryEntry {
+                        pausedSlideshowMetadataRow(entry: entry)
+                            .padding(.horizontal, 24)
+                    }
                     bottomControls
                         .padding(.horizontal, 24)
                 }
@@ -231,11 +269,30 @@ struct PanoramaPlayerView: View {
             // Gallery panel — slides up from bottom
             if showGallery {
                 galleryOverlay
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(
+                        useFadeForGalleryTransition
+                            ? .opacity
+                            : .move(edge: .bottom).combined(with: .opacity)
+                    )
                     .zIndex(20)
             }
+
+            if let pausedSlideshowDownloadToast {
+                VStack {
+                    Spacer()
+                    Text(pausedSlideshowDownloadToast)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(.black.opacity(0.7)))
+                        .padding(.bottom, 120)
+                }
+                .transition(.opacity)
+                .allowsHitTesting(false)
+                .zIndex(25)
+            }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showGallery)
         .animation(.easeInOut(duration: 0.28), value: galleryDetailPhotoId)
         .sheet(isPresented: $showMusicPicker) {
             SlideshowBundledTrackPickerSheet(
@@ -514,26 +571,17 @@ struct PanoramaPlayerView: View {
     private var topBar: some View {
         HStack(alignment: .center, spacing: 10) {
 
-            // Close
-            Button {
-                stopTimer()
-                Task { @MainActor in
-                    await slideshowMusic.stopAll()
-                    dismiss()
-                    onDismiss()
-                }
-            } label: {
-                ZStack {
-                    Circle().fill(.black.opacity(0.6))
-                    Circle().strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white)
-                }
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
+            // Dismiss slideshow → blog (gallery uses text “Close” in `galleryOverlay`).
+            Button(action: dismissSlideshowToBlog) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(.black.opacity(0.55)))
+                    .overlay(Circle().strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Close")
 
             Spacer()
 
@@ -622,9 +670,136 @@ struct PanoramaPlayerView: View {
         }
     }
 
+    @ViewBuilder
+    private func pausedSlideshowMetadataRow(entry: PanoramaPhotoEntry) -> some View {
+        let placeTitle: String = {
+            let n = entry.placeName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return n.isEmpty ? "" : n
+        }()
+        let hasText = !placeTitle.isEmpty || entry.timestamp != nil
+            || !(entry.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+        let hasMap = entry.location != nil
+        if hasText || hasMap {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !placeTitle.isEmpty {
+                        Text(placeTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                    }
+                    if let ts = entry.timestamp {
+                        Text(Self.captionTimestampFormatter.string(from: ts))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.88))
+                            .shadow(color: .black.opacity(0.3), radius: 1, y: 1)
+                    }
+                    if let cap = entry.caption?.trimmingCharacters(in: .whitespacesAndNewlines), !cap.isEmpty {
+                        Text(cap)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.78))
+                            .lineLimit(2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(spacing: 10) {
+                    if let coord = entry.location {
+                        Button {
+                            openSlideshowLocationInAppleMaps(coordinate: coord)
+                        } label: {
+                            Image(systemName: "map")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(.black.opacity(0.55), in: Circle())
+                                .overlay(Circle().strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open in Maps")
+                    }
+                    Button {
+                        Task { await downloadSlideshowPhotoFromPausedOverlay(entry: entry) }
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.black.opacity(0.55), in: Circle())
+                            .overlay(Circle().strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Download Photo")
+                }
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(.black.opacity(0.42))
+            )
+        } else {
+            HStack {
+                Spacer()
+                Button {
+                    Task { await downloadSlideshowPhotoFromPausedOverlay(entry: entry) }
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.black.opacity(0.55), in: Circle())
+                        .overlay(Circle().strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Download Photo")
+                Spacer()
+            }
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func openSlideshowLocationInAppleMaps(coordinate: PhotoCoordinate) {
+        let lat = coordinate.latitude
+        let lon = coordinate.longitude
+        guard let url = URL(string: "http://maps.apple.com/?ll=\(lat),\(lon)") else { return }
+        UIApplication.shared.open(url)
+    }
+
+    private func downloadSlideshowPhotoFromPausedOverlay(entry: PanoramaPhotoEntry) async {
+        let screen = UIScreen.main.bounds.size
+        let target = CGSize(width: screen.width * 3, height: screen.height * 3)
+        let image: UIImage?
+        if let cached = loadedImages[entry.id] ?? AppCapturePhotoService.shared.loadImage(identifier: entry.id) {
+            image = cached
+        } else {
+            image = await ImageLoader.shared.loadImage(assetIdentifier: entry.id, targetSize: target)
+        }
+        guard let image else {
+            await MainActor.run {
+                pausedSlideshowDownloadToast = "Could not load photo"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { pausedSlideshowDownloadToast = nil }
+            }
+            return
+        }
+        let success = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            } completionHandler: { ok, _ in
+                DispatchQueue.main.async { cont.resume(returning: ok) }
+            }
+        }
+        await MainActor.run {
+            pausedSlideshowDownloadToast = success ? "1 photo saved to Photos" : "Could not save to Photos"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { pausedSlideshowDownloadToast = nil }
+        }
+    }
+
     // MARK: - Gallery overlay
 
     private func presentSlideshowGallery() {
+        useFadeForGalleryTransition = false
         wasPlayingBeforeGallery = isPlaying
         stopTimer()
         if isPlaying {
@@ -639,6 +814,29 @@ struct PanoramaPlayerView: View {
         galleryDetailPhotoId = nil
         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
             showGallery = false
+        }
+    }
+
+    /// Resume slideshow playback from gallery mode.
+    private func resumePlaybackFromGalleryCover() {
+        useFadeForGalleryTransition = true
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                showGallery = false
+            }
+            isPlaying = true
+            resumeSlideshowTimingIfPlaying()
+            Task { await slideshowMusic.resume() }
+        }
+    }
+
+    /// Leave slideshow entirely and return to the recap blog.
+    private func dismissSlideshowToBlog() {
+        stopTimer()
+        Task { @MainActor in
+            await slideshowMusic.stopAll()
+            dismiss()
+            onDismiss()
         }
     }
 
@@ -657,6 +855,21 @@ struct PanoramaPlayerView: View {
         GeometryReader { geo in
             let coverHeight = geo.size.height * Self.coverHeroHeightFraction
             let allPhotos = photoGroups.flatMap { $0 }
+            let groupedPhotosByPlace: [(placeName: String, photos: [PanoramaPhotoEntry])] = {
+                var orderedGroups: [(placeName: String, photos: [PanoramaPhotoEntry])] = []
+                for entry in allPhotos {
+                    let normalizedPlace = {
+                        let trimmed = entry.placeName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        return trimmed.isEmpty ? "Unknown Place" : trimmed
+                    }()
+                    if let idx = orderedGroups.firstIndex(where: { $0.placeName == normalizedPlace }) {
+                        orderedGroups[idx].photos.append(entry)
+                    } else {
+                        orderedGroups.append((placeName: normalizedPlace, photos: [entry]))
+                    }
+                }
+                return orderedGroups
+            }()
             let heroPhotoId: String? = {
                 guard currentFlatIndex >= 0, currentFlatIndex < allPhotos.count else { return nil }
                 return allPhotos[currentFlatIndex].id
@@ -691,7 +904,7 @@ struct PanoramaPlayerView: View {
                                     Image(uiImage: img)
                                         .resizable()
                                         .scaledToFill()
-                                } else if let heroPhotoId {
+                                } else if heroPhotoId != nil {
                                     Color.gray.opacity(0.25)
                                     ProgressView()
                                         .tint(.white)
@@ -724,10 +937,7 @@ struct PanoramaPlayerView: View {
                                     .padding(.horizontal, 24)
 
                                 Button {
-                                    dismissSlideshowGallery()
-                                    isPlaying = true
-                                    resumeSlideshowTimingIfPlaying()
-                                    Task { await slideshowMusic.resume() }
+                                    resumePlaybackFromGalleryCover()
                                 } label: {
                                     HStack(spacing: 8) {
                                         Image(systemName: "play.fill")
@@ -745,6 +955,10 @@ struct PanoramaPlayerView: View {
                             .frame(width: geo.size.width, height: coverHeight)
                         }
                         .frame(width: geo.size.width, height: coverHeight)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            resumePlaybackFromGalleryCover()
+                        }
                         .task(id: heroPhotoId) {
                             guard let id = heroPhotoId, loadedImages[id] == nil else { return }
                             let target = CGSize(width: geo.size.width * 2, height: coverHeight * 2)
@@ -754,46 +968,50 @@ struct PanoramaPlayerView: View {
                         }
                         .padding(.bottom, 16)
 
-                        Text("All Photos")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 18)
-                            .padding(.bottom, 10)
+                        VStack(alignment: .leading, spacing: 18) {
+                            ForEach(groupedPhotosByPlace, id: \.placeName) { group in
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(group.placeName)
+                                        .font(.headline)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 18)
 
-                        LazyVGrid(columns: Self.galleryGridColumns, spacing: 2) {
-                            ForEach(allPhotos.indices, id: \.self) { idx in
-                                GeometryReader { cellGeo in
-                                    GalleryThumbCell(
-                                        entry: allPhotos[idx],
-                                        loadedImages: loadedImages,
-                                        isCurrentPhoto: idx == currentFlatIndex
-                                    )
-                                    .frame(width: cellGeo.size.width, height: cellGeo.size.width)
-                                    .clipped()
-                                }
-                                .aspectRatio(1, contentMode: .fit)
-                                .onTapGesture {
-                                    galleryDetailPhotoId = allPhotos[idx].id
+                                    LazyVGrid(columns: Self.galleryGridColumns, spacing: 2) {
+                                        ForEach(group.photos, id: \.id) { photo in
+                                            GeometryReader { cellGeo in
+                                                GalleryThumbCell(
+                                                    entry: photo,
+                                                    loadedImages: loadedImages,
+                                                    isCurrentPhoto: photo.id == heroPhotoId
+                                                )
+                                                .frame(width: cellGeo.size.width, height: cellGeo.size.width)
+                                                .clipped()
+                                            }
+                                            .aspectRatio(1, contentMode: .fit)
+                                            .onTapGesture {
+                                                galleryDetailPhotoId = photo.id
+                                            }
+                                        }
+                                    }
+                                    .padding(2)
                                 }
                             }
                         }
-                        .padding(2)
 
                         Color.clear
                             .frame(height: geo.safeAreaInsets.bottom + 16)
                     }
                 }
 
-                // Close gallery — same role as tapping the dimmed area in the old sheet
-                Button {
-                    dismissSlideshowGallery()
-                } label: {
+                // Close gallery and return to slideshow playback.
+                Button(action: resumePlaybackFromGalleryCover) {
                     Text("Close")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.white)
-                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .background(Capsule().fill(Color.black.opacity(0.5)))
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, 20)
@@ -1056,6 +1274,13 @@ struct PanoramaPlayerView: View {
 
 /// Full-screen paging viewer inside the slideshow pull-up grid; matches Bloggo gallery chrome (download; delete only for `bloggo-capture:` assets).
 private struct SlideshowGalleryPhotoDetailView: View {
+    private enum NavigationMapAppPreference: String {
+        case apple
+        case google
+    }
+    private static let navigationChooserSuppressedKey = "placePhotoNavigationChooserSuppressed"
+    private static let navigationChooserPreferredAppKey = "placePhotoNavigationPreferredApp"
+
     let photos: [PanoramaPhotoEntry]
     let initialPhotoId: String
     let cachedImages: [String: UIImage]
@@ -1066,6 +1291,10 @@ private struct SlideshowGalleryPhotoDetailView: View {
     @State private var showControls = true
     @State private var showDeleteConfirm = false
     @State private var downloadToast: String?
+    @State private var showNavigationAppChooser = false
+    @State private var navigationDoNotShowAgain = false
+    @AppStorage(Self.navigationChooserSuppressedKey) private var navigationChooserSuppressed = false
+    @AppStorage(Self.navigationChooserPreferredAppKey) private var navigationChooserPreferredAppRaw = ""
 
     init(
         photos: [PanoramaPhotoEntry],
@@ -1141,6 +1370,12 @@ private struct SlideshowGalleryPhotoDetailView: View {
                     .transition(.opacity)
                     .allowsHitTesting(false)
                 }
+            }
+
+            if showNavigationAppChooser {
+                navigationAppChooserOverlay
+                    .zIndex(30)
+                    .transition(.opacity)
             }
         }
         .preferredColorScheme(.dark)
@@ -1250,6 +1485,19 @@ private struct SlideshowGalleryPhotoDetailView: View {
                     }
                     .accessibilityLabel("Download Photo")
 
+                    if let coord = entry.location {
+                        Button {
+                            handleNavigationTap(for: coord)
+                        } label: {
+                            Image(systemName: "map")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 56, height: 56)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                        }
+                        .accessibilityLabel("Open in Maps")
+                    }
+
                     Spacer()
 
                     if AppCapturePhotoService.uuid(from: entry.id) != nil {
@@ -1320,6 +1568,145 @@ private struct SlideshowGalleryPhotoDetailView: View {
         guard let id = currentEntry?.id, AppCapturePhotoService.uuid(from: id) != nil else { return }
         onAppCaptureDeleted(id)
         showDeleteConfirm = false
+    }
+
+    private var preferredNavigationApp: NavigationMapAppPreference? {
+        NavigationMapAppPreference(rawValue: navigationChooserPreferredAppRaw)
+    }
+
+    private func handleNavigationTap(for coordinate: PhotoCoordinate) {
+        if navigationChooserSuppressed, let preferredNavigationApp {
+            openNavigation(with: preferredNavigationApp, coordinate: coordinate)
+            return
+        }
+        navigationDoNotShowAgain = false
+        showNavigationAppChooser = true
+    }
+
+    private func chooseNavigationApp(_ app: NavigationMapAppPreference) {
+        if navigationDoNotShowAgain {
+            navigationChooserSuppressed = true
+            navigationChooserPreferredAppRaw = app.rawValue
+        } else {
+            navigationChooserSuppressed = false
+        }
+        showNavigationAppChooser = false
+        guard let coord = currentEntry?.location else { return }
+        openNavigation(with: app, coordinate: coord)
+    }
+
+    private func openNavigation(with app: NavigationMapAppPreference, coordinate: PhotoCoordinate) {
+        let lat = coordinate.latitude
+        let lon = coordinate.longitude
+
+        switch app {
+        case .apple:
+            let urlString = "http://maps.apple.com/?daddr=\(lat),\(lon)"
+            if let url = URL(string: urlString) {
+                UIApplication.shared.open(url)
+            }
+        case .google:
+            let nativeURL = URL(string: "comgooglemaps://?daddr=\(lat),\(lon)&directionsmode=driving")
+            if let nativeURL, UIApplication.shared.canOpenURL(nativeURL) {
+                UIApplication.shared.open(nativeURL)
+                return
+            }
+            let webURL = URL(string: "https://www.google.com/maps/dir/?api=1&destination=\(lat),\(lon)")
+            if let webURL {
+                UIApplication.shared.open(webURL)
+            }
+        }
+    }
+
+    private var navigationAppChooserOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    showNavigationAppChooser = false
+                }
+
+            VStack(spacing: 14) {
+                Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
+                    .font(.system(size: 44))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.green)
+                    .padding(.top, 4)
+
+                Text("Navigate")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+
+                Text("Pick your preferred map app to start directions instantly.")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.88))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 6)
+
+                Toggle(isOn: $navigationDoNotShowAgain) {
+                    Text("Do not show again")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                .tint(.green)
+                .padding(.top, 2)
+
+                VStack(spacing: 10) {
+                    Button(action: { chooseNavigationApp(.apple) }) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Apple Maps")
+                                .font(.body.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 13)
+                        .padding(.horizontal, 14)
+                        .background(Color.gray.opacity(0.42), in: RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: { chooseNavigationApp(.google) }) {
+                        HStack(spacing: 10) {
+                            googleMapsLogoBadge
+                            Text("Google Maps")
+                                .font(.body.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 13)
+                        .padding(.horizontal, 14)
+                        .background(Color.gray.opacity(0.42), in: RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 2)
+            }
+            .padding(22)
+            .background(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 12)
+            .padding(.horizontal, 26)
+        }
+    }
+
+    private var googleMapsLogoBadge: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white)
+            Text("G")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(Color(red: 0.26, green: 0.52, blue: 0.96))
+        }
+        .frame(width: 18, height: 18)
     }
 }
 

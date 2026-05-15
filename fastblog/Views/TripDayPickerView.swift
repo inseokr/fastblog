@@ -9,15 +9,17 @@ struct TripDayPickerView: View {
     @StateObject private var viewModel: TripCreationViewModel
     var onStartCreateBlog: (TripDraft) -> Void
     var isEditMode: Bool = false
+    var onCancel: (() -> Void)? = nil
     var onUpdate: ((TripDraft) -> Void)? = nil
 
     @State private var showNoPhotosAlert = false
     @State private var scrollToEdgeAfterDayChange: DayChangeScrollEdge? = nil
 
-    init(trip: TripDraft, initialDayIndex: Int = 0, onStartCreateBlog: @escaping (TripDraft) -> Void = { _ in }, isEditMode: Bool = false, onUpdate: ((TripDraft) -> Void)? = nil) {
+    init(trip: TripDraft, initialDayIndex: Int = 0, onStartCreateBlog: @escaping (TripDraft) -> Void = { _ in }, isEditMode: Bool = false, onCancel: (() -> Void)? = nil, onUpdate: ((TripDraft) -> Void)? = nil) {
         _viewModel = StateObject(wrappedValue: TripCreationViewModel(trip: trip, initialDayIndex: initialDayIndex))
         self.onStartCreateBlog = onStartCreateBlog
         self.isEditMode = isEditMode
+        self.onCancel = onCancel
         self.onUpdate = onUpdate
     }
 
@@ -52,31 +54,43 @@ struct TripDayPickerView: View {
                         }
                     },
                     scrollToEdgeAfterDayChange: $scrollToEdgeAfterDayChange,
-                    embeddedBottomContent: { AnyView(createButton) }
+                    embeddedBottomContent: isEditMode ? nil : { AnyView(createButton) }
                 )
             } else {
                 Color.black
                     .ignoresSafeArea()
             }
-
-            // Day filter toggles at top, overlaying the photo with glass style
-            dayTabsOverlay
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 10)
-                .background(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(appChromeBaseRadius: 20)
-                        .stroke(Color.white.opacity(0.25), lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(appChromeBaseRadius: 20))
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
-        .navigationTitle("Select Photos")
+        .safeAreaInset(edge: .top, spacing: 0) {
+            dayTabStrip
+        }
+        .navigationTitle("Photo Selection")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            if let cancel = onCancel {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(action: cancel) {
+                        Image(systemName: "xmark")
+                            .fontWeight(.medium)
+                    }
+                }
+            }
+            if isEditMode {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Update") {
+                        if viewModel.canCreateBlog {
+                            onUpdate?(viewModel.trip)
+                        } else {
+                            showNoPhotosAlert = true
+                        }
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
         .alert("Select Photos", isPresented: $showNoPhotosAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -117,13 +131,12 @@ struct TripDayPickerView: View {
         .background(viewModel.canCreateBlog ? Color.orange : Color(white: 0.35))
         .appChromeCornerRadius(12)
         .padding(.horizontal, 16)
-        .padding(.bottom, 28)
+        .padding(.bottom, 16)
         .padding(.top, 8)
         .disabled(!viewModel.canCreateBlog)
     }
 
-    /// Day filters stay fixed (no programmatic scroll) so they don't flicker or shift when changing photos or days.
-    private var dayTabsOverlay: some View {
+    private var dayTabStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(Array(viewModel.trip.days.enumerated()), id: \.element.id) { index, day in
@@ -137,8 +150,10 @@ struct TripDayPickerView: View {
                     }
                 }
             }
-            .padding(.vertical, 4)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
+        .background(.ultraThinMaterial)
     }
 }
 

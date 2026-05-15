@@ -36,7 +36,7 @@ struct TermsOfServiceView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 8)
 
-                    Text("Last Updated: April 7, 2026")
+                    Text("Last Updated: May 7, 2026")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -44,7 +44,9 @@ struct TermsOfServiceView: View {
 
                 Group {
                     sectionTitle("1. Acceptance of Terms")
-                    bodyText("The Bloggo mobile application and the features and services available through it (the \"App,\" and our \"Services\") are provided to you by LinkedSpaces LLC (\"LinkedSpaces,\" \"we,\" \"us\") subject to these Terms of Service, including the policies described in our Privacy Policy (together, the \"Terms\"). By downloading, accessing, or using the App, whether as a guest or with a registered account, you agree to follow and be bound by the Terms. We may update the Terms from time to time. The current Terms are available within the App. We and our third party service providers may change features, services, related to the App without notice. Bloggo is a travel journaling app; your blog content and photos are stored locally on your device and are not uploaded to our servers as part of normal app operation, except as described in our Privacy Policy (for example, account information you provide and limited technical or usage data). Certain parts of the Terms may be clarified by additional notices we show in the App. The App is not intended for children under 13 years of age. If you are under 13, do not create an account; you may use limited guest features only as described in these Terms. If you do not agree with the Terms, do not use the App.")
+                    bodyText("The Bloggo mobile application and the features and services available through it (the \"App,\" and our \"Services\") are provided to you by LinkedSpaces LLC (\"LinkedSpaces,\" \"we,\" \"us\") subject to these Terms of Service, including the policies described in our Privacy Policy (together, the \"Terms\"). By downloading, accessing, or using the App, whether as a guest or with a registered account, you agree to follow and be bound by the Terms. We may update the Terms from time to time. The current Terms are available within the App. We and our third party service providers may change features, services, related to the App without notice. Bloggo is a travel journaling app; your blog content and photos stay on your device and are not stored on or synced through our servers. We collect account and limited technical information as described in the Privacy Policy, not your blog manuscripts or photo library.")
+                    bodyText("Certain parts of the Terms may be clarified by additional notices we show in the App.")
+                    bodyText("Bloggo is offered on the Apple App Store with a 4+ age rating. That rating describes the general suitability of the Bloggo app for a wide audience when used as designed. Registering for a Bloggo account is separate: it involves providing personal information and using our authentication and account services. You must be at least 13 years old to create an account (or the minimum age required in your jurisdiction for you to consent to our collection and use of your personal information online, if that age is higher). If you are under that age, you must not register; you may use Bloggo only as a guest, within the limits described in these Terms. Parents and guardians are responsible for deciding whether guest use is appropriate for minors in their care. If you do not agree with the Terms, do not use the App.")
                     bodyText("BY CONTINUING TO USE THE APP, YOU INDICATE YOUR AGREEMENT TO THE TERMS AND ANY REVISIONS WE POST.")
                     bodyText("We may modify or discontinue the App or any part of it, temporarily or permanently, with or without notice. You agree that we are not liable to you or to any third party for any modification, suspension, or discontinuance of the App or any portion of it.")
                 }
@@ -54,23 +56,26 @@ struct TermsOfServiceView: View {
                     bodyText("Bloggo is a travel journaling app that helps you create, edit, and share beautifully formatted blog posts from your travel experiences. Our service includes:")
                     bullet("Blog generation with AI on your device: automatically create blog posts from your travel photos.")
                     bullet("Blog drafts: save and manage multiple blog drafts locally on your device.")
-                    bullet("PDF export: export any blog as a polished PDF to share however you choose.")
-                    bullet("QR code sharing: generate a QR code for any blog to share it in person with another Bloggo user.")
+                    bullet("PDF export: export any blog as a polished PDF (including storybook-style layouts where available) to share however you choose.")
+                    bullet("Video export: create a video version of your blog on your device and save or share it using your device's share options.")
+                    bullet("Carousel and social tooling: tools such as Carousel Studio help you compose images or carousels for third-party apps; sharing those outputs is governed by the platform you use.")
+                    bullet("ZIP (and similar archive) backup: export a blog or your blogs as an archive you keep for backup or moving between devices.")
+                    bullet("QR code sharing: generate a QR code so another Bloggo user can open your blog in the app.")
                 }
 
                 Group {
                     sectionTitle("3. Guest Users and Registered Accounts")
-                    bodyText("Bloggo can be used with or without a registered account:")
+                    bodyText("Bloggo can be used with or without a registered account. The App Store 4+ rating applies to the app overall; account registration is reserved for users who meet the age requirement in Section 4.")
                     bullet("Guest Users: Guests may create and export one (1) blog. Guest data is stored locally on the device and is not associated with any account.")
-                    bullet("Registered Users: Creating a Bloggo account allows you to save and manage unlimited blog drafts and export as many blogs as you like. Registered accounts require a valid email address.")
+                    bullet("Registered Users: Creating a Bloggo account allows you to save and manage unlimited blog drafts and export as many blogs as you like. Registered accounts require a valid email address and that you are at least 13 years old (or the applicable age of digital consent in your jurisdiction, if higher).")
                     bodyText("Account creation takes only a moment. Registered users enjoy the full Bloggo experience with no content restrictions.")
                 }
 
                 Group {
                     sectionTitle("4. User Accounts")
                     bodyText("If you create an account, you are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account. Please notify us immediately of any unauthorized use.")
-                    bullet("You must be at least 13 years old to create a Bloggo account.")
-                    bullet("If you are under 13, you may use Bloggo only as a guest (without creating an account).")
+                    bodyText("Eligibility. You must be at least 13 years of age to create a Bloggo account, or the minimum age required in your country or region for you to agree to our processing of your personal data without parental consent, whichever is greater. By registering, you represent and warrant that you satisfy this requirement. If you do not, you must not create an account and may use Bloggo only as a guest.")
+                    bullet("Users under the applicable minimum age may use Bloggo without an account only, subject to guest limits described elsewhere in these Terms.")
                     bullet("Only one account may be created per email address.")
                     bullet("You must provide accurate and complete information during registration.")
                     bullet("You are responsible for all content created or exported from your account.")
@@ -78,10 +83,13 @@ struct TermsOfServiceView: View {
 
                 Group {
                     sectionTitle("5. Sharing Features")
-                    bodyText("Bloggo supports two sharing methods, both of which are entirely initiated by you:")
-                    bullet("PDF Export: You may export any blog as a PDF and share it through any channel available on your device. Once the PDF leaves your device, it is subject to the terms of whatever platform you use to transmit it.")
-                    bullet("QR Code Sharing: You may generate a QR code for a blog to share it in person with another Bloggo user. QR code sharing is intended for direct, local sharing and does not publish your blog to the internet or create a public link.")
-                    bodyText("Bloggo does not publish your blogs to a public website or make them accessible via a web URL. You remain in full control of your content and how it is shared.")
+                    bodyText("How you share is up to you. Bloggo provides on-device exports and handoffs—you choose Mail, AirDrop, Files, social apps, or other channels your device supports. Typical paths include:")
+                    bullet("PDF export: Export a PDF and share it through Mail, AirDrop, Files, or other apps on your device. Once a file leaves your device, its handling is governed by those services.")
+                    bullet("Video export: Create a video on your device and share or save it the same way. Third-party destinations apply their own terms.")
+                    bullet("ZIP / archive backup: Export archives for personal backup or moving files between devices. If you send those files elsewhere, you choose where they go.")
+                    bullet("Carousel Studio and similar tools: Compose assets intended for networks such as TikTok or Facebook from within the App. Publishing is always through the third-party apps you authorize.")
+                    bullet("QR code (Share with Bloggo): Generate a code so someone nearby can open the blog in Bloggo on their device. Scanning launches the Bloggo client; treat the QR code like any other credential for your content.")
+                    bodyText("Bloggo does not host your blogs on a public website or offer a public browseable profile for your drafts. Blogs reach others only through exports and transfers you deliberately start from your device. Stay within these Terms and platform rules when sharing.")
                 }
 
                 Group {

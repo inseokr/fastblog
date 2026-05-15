@@ -37,7 +37,7 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
     var blogKey: Int?
     /// Places the user has removed from the blog. Preserved so they can be restored later.
     var removedPlaceStops: [RemovedPlaceEntry]
-    /// AI-generated trip opening narrative (5–6 lines). Shown at the top of the blog before Day 1.
+    /// AI-generated trip opening narrative (typically up to 3 short sentences). Shown at the top of the blog before Day 1.
     var tripNarrative: String?
 
     init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil, blogKey: Int? = nil, removedPlaceStops: [RemovedPlaceEntry] = [], tripNarrative: String? = nil) {
@@ -83,7 +83,7 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
     var placeStops: [PlaceStop]
     /// User-written or AI-generated caption for the whole day. Shown right below the day date text.
     var dayCaption: String?
-    /// AI-generated day narrative (4–6 lines). Overrides dayCaption in display when present.
+    /// AI-generated day narrative (typically up to 3 short sentences). Overrides dayCaption in display when present.
     var dayNarrative: String?
     /// True after reverse-geocoding and photo scoring have been applied for this day (used for day-by-day rate-limited processing).
     var isPlaceNamesResolved: Bool
@@ -200,7 +200,7 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     var noteText: String?
     /// Quick summary of this place derived from photo captions (e.g. LLM summary). Shown above/below place and time.
     var overallStory: String?
-    /// AI-generated place narrative (4–6 lines). Overrides overallStory in display when present.
+    /// AI-generated place narrative (typically up to 3 short sentences). Overrides overallStory in display when present.
     var placeNarrative: String?
     /// Server-assigned placeIndex in user.placeVisitHistory. Set after successful blog upload.
     var cloudPlaceIndex: Int?
@@ -209,12 +209,17 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     var visitedTimeDigitized: String?
     /// Raw MKPointOfInterestCategory.rawValue set when user picks from Maps autocomplete (e.g. "MKPOICategoryRestaurant").
     var placeCategory: String?
+    /// IANA timezone identifier (e.g. "America/Los_Angeles") for the place's location.
+    /// Stored during blog creation so video export never needs to re-geocode for timestamps.
+    var timeZoneIdentifier: String?
 
     /// True when the user has manually typed the overall story (disables AI auto-cascade).
     var overallStoryIsManual: Bool
     /// User sentiment for this place visit. 1 = bad, 2 = neutral (default), 3 = good.
     /// Auto-extracted from caption text by local LLM; can also be set manually.
     var sentiment: Int
+    /// User-chosen transport mode to the next stop. nil = auto-detect (distance-based).
+    var transportModeToNextStop: TravelMode?
 
     init(
         id: UUID = UUID(),
@@ -231,7 +236,9 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         cloudPlaceIndex: Int? = nil,
         visitedTimeDigitized: String? = nil,
         placeCategory: String? = nil,
-        sentiment: Int = 2
+        timeZoneIdentifier: String? = nil,
+        sentiment: Int = 2,
+        transportModeToNextStop: TravelMode? = nil
     ) {
         self.id = id
         self.orderIndex = orderIndex
@@ -247,7 +254,9 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         self.cloudPlaceIndex = cloudPlaceIndex
         self.visitedTimeDigitized = visitedTimeDigitized
         self.placeCategory = placeCategory
+        self.timeZoneIdentifier = timeZoneIdentifier
         self.sentiment = sentiment
+        self.transportModeToNextStop = transportModeToNextStop
     }
 
     init(from decoder: Decoder) throws {
@@ -267,12 +276,15 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         visitedTimeDigitized = try c.decodeIfPresent(String.self, forKey: .visitedTimeDigitized)
         placeCategory = try c.decodeIfPresent(String.self, forKey: .placeCategory)
         sentiment = try c.decodeIfPresent(Int.self, forKey: .sentiment) ?? 2
+        timeZoneIdentifier = try c.decodeIfPresent(String.self, forKey: .timeZoneIdentifier)
+        transportModeToNextStop = try c.decodeIfPresent(TravelMode.self, forKey: .transportModeToNextStop)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, orderIndex, placeTitle, placeSubtitle, placeTitleIsManual, representativeLocation
         case photos, noteText, overallStory, placeNarrative, overallStoryIsManual
-        case cloudPlaceIndex, visitedTimeDigitized, placeCategory, sentiment
+        case cloudPlaceIndex, visitedTimeDigitized, placeCategory, timeZoneIdentifier, sentiment
+        case transportModeToNextStop
     }
 
     /// Display-ready place title. Cleans up raw system-generated highway names like
@@ -309,6 +321,55 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     }
 }
 
+extension PlaceStop {
+    /// Infers offset-only capture `TimeZone` from the stop visit digitized string vs each photo capture instant,
+    /// using the same median-offset rounding as ``PlacePhotoModalView`` (keeps thumbnails and fullscreen in sync).
+    static func inferredCaptureTimeZone(visitedDigitized: String?, photoTimestamps: [Date]) -> TimeZone? {
+        guard let trimmed = visitedDigitized?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        let parser = DateFormatter()
+        parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(secondsFromGMT: 0)
+        guard let localAsUTC = parser.date(from: trimmed) else { return nil }
+        let offsets: [Int] = photoTimestamps.map { Int(localAsUTC.timeIntervalSince($0)) }
+        guard !offsets.isEmpty else { return nil }
+        let sorted = offsets.sorted()
+        let medianOffset: Int
+        if sorted.count.isMultiple(of: 2), sorted.count >= 2 {
+            medianOffset = (sorted[sorted.count / 2 - 1] + sorted[sorted.count / 2]) / 2
+        } else {
+            medianOffset = sorted[sorted.count / 2]
+        }
+        let roundedOffset = (medianOffset / 900) * 900
+        if roundedOffset == 0 { return nil }
+        return TimeZone(secondsFromGMT: roundedOffset)
+    }
+
+    /// Time zone for showing each photo’s capture instant on blog thumbnails when `RecapPhoto.digitizedTime` is nil.
+    /// Order: inferred from `visitedTimeDigitized`, then stored IANA identifier, then device.
+    var recapThumbnailTimeZone: TimeZone {
+        Self.inferredCaptureTimeZone(visitedDigitized: visitedTimeDigitized, photoTimestamps: photos.map(\.timestamp))
+            ?? timeZoneIdentifier.flatMap { TimeZone(identifier: $0) }
+            ?? .current
+    }
+}
+
+extension RecapBlogDetail {
+    /// Highlight moments across the whole blog, sorted by score desc then by photo count desc.
+    var highlightMomentsRanked: [PlaceStop] {
+        days.flatMap(\.placeStops)
+            .map { stop in (stop: stop, score: stop.highlightMomentScore) }
+            .sorted { a, b in
+                if a.score != b.score { return a.score > b.score }
+                if a.stop.includedPhotos.count != b.stop.includedPhotos.count {
+                    return a.stop.includedPhotos.count > b.stop.includedPhotos.count
+                }
+                return a.stop.placeTitle.localizedStandardCompare(b.stop.placeTitle) == .orderedAscending
+            }
+            .map(\.stop)
+    }
+}
+
 /// Location stored as lat/lon for Equatable. Convert to CLLocationCoordinate2D for MapKit.
 struct PhotoCoordinate: Equatable, Hashable, Codable, Sendable {
     let latitude: Double
@@ -338,8 +399,11 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
     /// photo's capture-location timezone. Stored so that subsequent updatePhoto calls send the exact same
     /// value the backend recorded — avoids divergence from re-computing with a different TZ fallback.
     var digitizedTime: String?
+    /// True when the underlying PHAsset is marked as a Favorite in the user's photo library.
+    /// Populated during photo quality scoring; always false for in-app camera captures.
+    var isFavorite: Bool
 
-    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil, captionIsManual: Bool = false, sentiment: Int = 2, digitizedTime: String? = nil) {
+    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil, captionIsManual: Bool = false, sentiment: Int = 2, digitizedTime: String? = nil, isFavorite: Bool = false) {
         self.id = id
         self.timestamp = timestamp
         self.location = location
@@ -352,6 +416,7 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
         self.captionIsManual = captionIsManual
         self.sentiment = sentiment
         self.digitizedTime = digitizedTime
+        self.isFavorite = isFavorite
     }
 
     init(from decoder: Decoder) throws {
@@ -368,11 +433,12 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
         captionIsManual = try c.decodeIfPresent(Bool.self, forKey: .captionIsManual) ?? false
         sentiment = try c.decodeIfPresent(Int.self, forKey: .sentiment) ?? 2
         digitizedTime = try c.decodeIfPresent(String.self, forKey: .digitizedTime)
+        isFavorite = try c.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, timestamp, location, imageName, isIncluded, localIdentifier
-        case caption, qualityScore, cloudURL, captionIsManual, sentiment, digitizedTime
+        case caption, qualityScore, cloudURL, captionIsManual, sentiment, digitizedTime, isFavorite
     }
 }
 
@@ -389,5 +455,65 @@ extension String {
             return "Near \(self[routeRange])"
         }
         return self
+    }
+}
+
+// MARK: - Highlight moments (optional ranking)
+
+extension PlaceStop {
+    /// Duration of this stop inferred from included photo timestamps (seconds).
+    /// Returns 0 when there are fewer than 2 included photos.
+    var inferredVisitDurationSeconds: TimeInterval {
+        let ts = includedPhotos.map(\.timestamp).sorted()
+        guard let first = ts.first, let last = ts.last, last > first else { return 0 }
+        return last.timeIntervalSince(first)
+    }
+
+    /// Highlight score (0–100) for ranking moments. Always computed — no eligibility gate.
+    ///
+    struct HighlightScoreComponents {
+        let photo: Double       // weighted points, max 15
+        let duration: Double    // weighted points, max 10
+        let caption: Double     // weighted points, max 30
+        let sentiment: Double   // weighted points, max 45
+        var total: Double { photo + duration + caption + sentiment }
+    }
+
+    /// Scoring formula (normalized then weighted):
+    /// - photoScore (15%): grows from 0 at 3 photos to 1 at 10+ photos
+    /// - durationScore (10%): grows from 0 at 10 mins to 1 at 60+ mins
+    /// - captionScore (30%): 1 when a caption exists (place note or any photo caption)
+    /// - sentimentScore (45%): 0 at negative (1), 0.5 at neutral (2), 1 at positive (3)
+    var highlightScoreComponents: HighlightScoreComponents {
+        let photoCount = includedPhotos.count
+        let minutes = inferredVisitDurationSeconds / 60.0
+        let derivedSentiment = sentiment  // use stored value — same as what the Loved It/Neutral/Terrible pill shows
+
+        let photoScore    = min(1, max(0, (Double(photoCount) - 3.0) / 7.0))
+        let durationScore = min(1, max(0, (minutes - 10.0) / 50.0))
+        let captionScore  = hasAnyCaptionText ? 1.0 : 0.0
+        let sentimentScore = min(1, max(0, (Double(derivedSentiment) - 1.0) / 2.0))
+
+        return HighlightScoreComponents(
+            photo:    photoScore    * 15,
+            duration: durationScore * 10,
+            caption:  captionScore  * 30,
+            sentiment: sentimentScore * 45
+        )
+    }
+
+    var highlightMomentScore: Double {
+        let c = highlightScoreComponents
+        return min(100, max(0, c.total))
+    }
+
+    private var hasAnyCaptionText: Bool {
+        let placeCaptions = [noteText, overallStory, placeNarrative]
+        if placeCaptions.contains(where: { !($0 ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            return true
+        }
+        return includedPhotos.contains { photo in
+            !( photo.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 }

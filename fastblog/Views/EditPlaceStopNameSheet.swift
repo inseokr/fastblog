@@ -18,6 +18,9 @@ struct EditPlaceStopNameSheet: View {
     var photos: [RecapPhoto] = []
     /// Title, coordinate, POI category raw value, trimmed subtitle (empty clears subtitle).
     var onSave: (String, CLLocationCoordinate2D?, String?, String) -> Void
+    /// Called immediately when the sheet auto-resolves an "Unknown Place" name on appear,
+    /// so the blog model persists the name without requiring the user to tap Save.
+    var onAutoResolve: ((String) -> Void)? = nil
     var confirmLabel: String = "Save"
     @Environment(\.dismiss) private var dismiss
 
@@ -42,13 +45,20 @@ struct EditPlaceStopNameSheet: View {
     @State private var showSaveConfirmationAlert = false
     @State private var showMapTapPOIDisambiguation = false
     @State private var mapTapPOIDisambiguationCandidates: [MapTapPOICandidate] = []
+    /// ISO country code for the place's location, resolved on appear. Drives provider selection and map link choice.
+    @State private var placeCountryCode: String = ""
     /// Incremented to request zoom on the embedded `MKMapView` (handled in `TappableMapView.updateUIView`).
     @State private var mapZoomInTrigger = 0
     @State private var mapZoomOutTrigger = 0
+    /// Tracks the in-flight Kakao POI resolution task so a new tap can cancel and replace it.
+    @State private var kakaoResolveTask: Task<Void, Never>?
     @State private var isSavingName = false
     /// One-time coachmark for “tap the map to fill the place name” (shown until dismissed or the user taps the map).
     @AppStorage("blogify.editPlaceMapTapCoachmarkSeen") private var mapTapCoachmarkSeen = false
     @State private var showMapTapCoachmarkSheet = false
+    /// User's preferred map for Korean places. Empty = unset (prompts on first KR visit); "kakao" or "apple".
+    @AppStorage("blogify.koreaMapPreference") private var koreaMapPreference = ""
+    @State private var showKoreaMapPrompt = false
     /// Tapping a strip thumbnail opens a full-screen preview (swipe between included photos).
     @State private var enlargedStripPhoto: RecapPhoto? = nil
     /// Square cell size for the stacked map zoom control (compact, map-style).
@@ -58,132 +68,18 @@ struct EditPlaceStopNameSheet: View {
         photos.filter(\.isIncluded).filter(\.hasDisplayableLocalBacking)
     }
 
+    /// True when this Korean place should render the Kakao Map UI (default for KR unless the user opted out).
+    private var isUsingKakaoMap: Bool {
+        placeCountryCode == "KR" && KakaoLocalService.shared.isAvailable && koreaMapPreference != "apple"
+    }
+
     /// Extra space above the bottom hint so the photo strip does not cover it.
     /// Scales with Dynamic Type so the hint capsule never overlaps photos at large text sizes.
     @ScaledMetric(relativeTo: .caption) private var mapBottomHintClearance: CGFloat = 40
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            NavigationStack {
-            Group {
-                if let coord = location {
-                    TappableMapView(
-                        center: selectedCoordinate ?? coord,
-                        title: selectedCoordinate != nil ? editedTitle : nil,
-                        zoomInTrigger: mapZoomInTrigger,
-                        zoomOutTrigger: mapZoomOutTrigger,
-                        onTap: { tappedCoordinate, mapRegion in
-                            resolvePOI(at: tappedCoordinate, mapRegion: mapRegion)
-                        },
-                        onMapFeatureTap: { feature, mapRegion, endMapSelection in
-                            resolvePOIFromMapFeature(feature, mapRegion: mapRegion, endMapSelection: endMapSelection)
-                        }
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                    .overlay {
-                        if isResolvingPOI {
-                            Color.black.opacity(0.3)
-                                .overlay {
-                                    ProgressView()
-                                        .tint(.white)
-                                }
-                                .allowsHitTesting(true)
-                        }
-                    }
-                } else {
-                    Color(white: 0.08)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .ignoresSafeArea(edges: .bottom)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                VStack(spacing: 0) {
-                    autocompleteBar
-                    // Only when there is no map: subtitle is the second line of place context (not a second “place name” row).
-                    if location == nil {
-                        subtitleField
-                    }
-                    if isFocused, showSuggestions, !searchViewModel.suggestions.isEmpty {
-                        suggestionsListContent
-                    }
-                }
-            }
-            .navigationTitle("Edit Name")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        if hasChanges {
-                            showSaveConfirmationAlert = true
-                        } else {
-                            dismiss()
-                        }
-                    }
-                    .foregroundStyle(.white)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    let canSave = !editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    Button(confirmLabel) {
-                        Task { await saveAndDismissAsync() }
-                    }
-                    .disabled(!canSave || isSavingName)
-                    .foregroundStyle(canSave && !isSavingName ? Color(uiColor: .systemBlue) : Color.white.opacity(0.35))
-                }
-            }
-            .interactiveDismissDisabled(hasChanges)
-            .alert("Save changes?", isPresented: $showSaveConfirmationAlert) {
-                Button("Save") {
-                    Task { await saveAndDismissAsync() }
-                }
-                Button("Discard", role: .destructive) {
-                    dismiss()
-                }
-                Button("Keep Editing", role: .cancel) { }
-            } message: {
-                Text(
-                    location == nil
-                        ? "You have unsaved changes to the place name, city or country, or location. Would you like to save them before leaving?"
-                        : "You have unsaved changes to the place name or location. Would you like to save them before leaving?"
-                )
-            }
-            .sheet(isPresented: $showMapTapPOIDisambiguation) {
-                mapTapPOIDisambiguationSheet
-            }
-            .onAppear {
-                let initialValue = placeTitle.hasPrefix("Near ") ? String(placeTitle.dropFirst(5)) : placeTitle
-                editedTitle = initialValue
-                initialTitle = initialValue
-                let subSeed = initialPlaceSubtitle ?? ""
-                editedSubtitle = subSeed
-                initialSubtitle = subSeed
-                selectedCoordinate = nil
-                initialCoordinate = nil
-                selectedCategory = initialPlaceCategory
-                initialCategory = initialPlaceCategory
-                mapTapResolvedAsPOI = false
-                pickedFromAutocomplete = false
-                searchViewModel.setBiasLocation(location)
-                if location != nil, !mapTapCoachmarkSeen {
-                    showMapTapCoachmarkSheet = true
-                }
-            }
-            .onChange(of: isResolvingPOI) { _, resolving in
-                if resolving { mapTapCoachmarkSeen = true }
-            }
-            .sheet(isPresented: $showMapTapCoachmarkSheet, onDismiss: {
-                mapTapCoachmarkSeen = true
-            }) {
-                mapTapCoachmarkSheetContent
-                    .presentationDetents([.medium])
-                    .presentationDragIndicator(.visible)
-                    .preferredColorScheme(.dark)
-            }
-            .preferredColorScheme(.dark)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
+            navigationLayer
             editPlaceBottomPhotoStripOverlay
             editPlaceBottomMapChromeOverlay
         }
@@ -191,6 +87,231 @@ struct EditPlaceStopNameSheet: View {
         .ignoresSafeArea(edges: .bottom)
         .fullScreenCover(item: $enlargedStripPhoto) { photo in
             EditPlaceStripPhotoFullScreenViewer(photos: stripPhotos, initialPhoto: photo)
+        }
+    }
+
+    private var navigationLayer: some View {
+        NavigationStack {
+            mapLayer
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea(edges: .bottom)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    topInsetContent
+                }
+                .navigationTitle("Edit Name")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { toolbarContent }
+                .interactiveDismissDisabled(hasChanges)
+                .alert("Save changes?", isPresented: $showSaveConfirmationAlert) {
+                    Button("Save") { Task { await saveAndDismissAsync() } }
+                    Button("Discard", role: .destructive) { dismiss() }
+                    Button("Keep Editing", role: .cancel) { }
+                } message: {
+                    Text(
+                        location == nil
+                            ? "You have unsaved changes to the place name, city or country, or location. Would you like to save them before leaving?"
+                            : "You have unsaved changes to the place name or location. Would you like to save them before leaving?"
+                    )
+                }
+                .sheet(isPresented: $showMapTapPOIDisambiguation) {
+                    mapTapPOIDisambiguationSheet
+                }
+                .sheet(isPresented: $showMapTapCoachmarkSheet, onDismiss: {
+                    mapTapCoachmarkSeen = true
+                }) {
+                    mapTapCoachmarkSheetContent
+                        .presentationDetents([.medium])
+                        .presentationDragIndicator(.visible)
+                        .preferredColorScheme(.dark)
+                }
+                .preferredColorScheme(.dark)
+                .confirmationDialog(
+                    "Use Kakao Map for Korea?",
+                    isPresented: $showKoreaMapPrompt,
+                    titleVisibility: .visible
+                ) {
+                    Button("Use Kakao Map") { koreaMapPreference = "kakao" }
+                    Button("Use Apple Maps") { koreaMapPreference = "apple" }
+                    Button("Don't Ask Again", role: .cancel) { koreaMapPreference = "kakao" }
+                } message: {
+                    Text("Kakao Map provides better coverage for Korean locations. You can switch anytime using the button on the map.")
+                }
+                .onAppear { handleOnAppear() }
+                .onChange(of: isResolvingPOI) { _, resolving in
+                    if resolving { mapTapCoachmarkSeen = true }
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var mapLayer: some View {
+        if let coord = location {
+            mapContent(for: coord)
+        } else {
+            Color(white: 0.08)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func mapContent(for coord: CLLocationCoordinate2D) -> some View {
+        ZStack {
+            if isUsingKakaoMap {
+                KakaoTappableMapView(
+                    center: selectedCoordinate ?? coord,
+                    title: selectedCoordinate != nil ? editedTitle : nil,
+                    zoomInTrigger: mapZoomInTrigger,
+                    zoomOutTrigger: mapZoomOutTrigger,
+                    onTap: { tappedCoordinate, kakaoZoomLevel, isDirectPOITap in
+                        resolveKakaoPOI(
+                            at: tappedCoordinate,
+                            kakaoZoomLevel: kakaoZoomLevel,
+                            preferredPOIName: nil,
+                            isDirectPOITap: isDirectPOITap
+                        )
+                    }
+                )
+            } else {
+                TappableMapView(
+                    center: selectedCoordinate ?? coord,
+                    title: selectedCoordinate != nil ? editedTitle : nil,
+                    zoomInTrigger: mapZoomInTrigger,
+                    zoomOutTrigger: mapZoomOutTrigger,
+                    onTap: { tappedCoordinate, mapRegion in
+                        resolvePOI(at: tappedCoordinate, mapRegion: mapRegion)
+                    },
+                    onMapFeatureTap: { feature, mapRegion, endMapSelection in
+                        resolvePOIFromMapFeature(feature, mapRegion: mapRegion, endMapSelection: endMapSelection)
+                    }
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+        .overlay { mapResolvingOverlay }
+        .overlay(alignment: .topTrailing) { mapProviderToggleOverlay }
+    }
+
+    @ViewBuilder
+    private var mapResolvingOverlay: some View {
+        if isResolvingPOI {
+            Color.black.opacity(0.3)
+                .overlay {
+                    ProgressView()
+                        .tint(.white)
+                }
+                .allowsHitTesting(true)
+        }
+    }
+
+    @ViewBuilder
+    private var mapProviderToggleOverlay: some View {
+        if placeCountryCode == "KR",
+           KakaoLocalService.shared.isAvailable,
+           !isResolvingPOI,
+           !isFocused {
+            mapProviderToggleButton
+                .padding(.top, 10)
+                .padding(.trailing, 12)
+        }
+    }
+
+    private var topInsetContent: some View {
+        VStack(spacing: 0) {
+            autocompleteBar
+            // Only when there is no map: subtitle is the second line of place context (not a second “place name” row).
+            if location == nil {
+                subtitleField
+            }
+            if isFocused, showSuggestions, !searchViewModel.suggestions.isEmpty {
+                suggestionsListContent
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Button("Cancel") {
+                if hasChanges {
+                    showSaveConfirmationAlert = true
+                } else {
+                    dismiss()
+                }
+            }
+            .foregroundStyle(.white)
+        }
+        ToolbarItem(placement: .confirmationAction) {
+            let canSave = !editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            Button(confirmLabel) {
+                Task { await saveAndDismissAsync() }
+            }
+            .disabled(!canSave || isSavingName)
+            .foregroundStyle(canSave && !isSavingName ? Color(uiColor: .systemBlue) : Color.white.opacity(0.35))
+        }
+    }
+
+    private func handleOnAppear() {
+        let initialValue = placeTitle.hasPrefix("Near ") ? String(placeTitle.dropFirst(5)) : placeTitle
+        editedTitle = initialValue
+        initialTitle = initialValue
+        let subSeed = initialPlaceSubtitle ?? ""
+        editedSubtitle = subSeed
+        initialSubtitle = subSeed
+        selectedCoordinate = nil
+        initialCoordinate = nil
+        selectedCategory = initialPlaceCategory
+        initialCategory = initialPlaceCategory
+        mapTapResolvedAsPOI = false
+        pickedFromAutocomplete = false
+        searchViewModel.setBiasLocation(location)
+        if location != nil, !mapTapCoachmarkSeen {
+            showMapTapCoachmarkSheet = true
+        }
+        guard let coord = location else { return }
+        guard placeCountryCode.isEmpty else { return }
+
+        Task {
+            let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+            let geocoded = await GeocodingService.shared.place(for: loc, precise: false)
+            var isoCode = geocoded.isoCountryCode
+            var kakaoPreResolvedName: String? = nil
+
+            // When Apple geocoder has no country code (cached failure), try Kakao
+            // as a country detector. Reuse its result for name resolution too.
+            let needsNameResolve = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines) == "Unknown Place"
+                || editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if isoCode.isEmpty, KakaoLocalService.shared.isAvailable {
+                if let doc = await KakaoLocalService.shared.reverseGeocode(coordinate: coord),
+                   !doc.bestPlaceName.isEmpty {
+                    isoCode = "KR"
+                    if needsNameResolve {
+                        kakaoPreResolvedName = doc.bestPlaceName
+                    }
+                }
+            }
+
+            placeCountryCode = isoCode
+            searchViewModel.setProvider(isoCountryCode: isoCode)
+            if isoCode == "KR", koreaMapPreference.isEmpty, KakaoLocalService.shared.isAvailable {
+                showKoreaMapPrompt = true
+            }
+
+            // Auto-resolve unresolved place names; reuse Kakao result already fetched above.
+            if needsNameResolve {
+                let resolved: String
+                if let preResolved = kakaoPreResolvedName {
+                    resolved = preResolved
+                } else {
+                    isResolvingPOI = true
+                    resolved = await searchViewModel.resolveCoordinateName(at: coord)
+                    isResolvingPOI = false
+                }
+                if !resolved.isEmpty && resolved != "Unknown Place" {
+                    editedTitle = resolved
+                    initialTitle = resolved
+                    onAutoResolve?(resolved)
+                }
+            }
         }
     }
 
@@ -250,10 +371,19 @@ struct EditPlaceStopNameSheet: View {
             Group {
                 if selectedCoordinate != nil, mapTapResolvedAsPOI {
                     Button {
-                        let query = editedTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-                        let urlString = "https://www.google.com/maps/search/?api=1&query=\(query)"
-                        if let url = URL(string: urlString) {
-                            UIApplication.shared.open(url)
+                        let encodedQuery = editedTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                        if placeCountryCode == "KR" {
+                            // Try Kakao Map app deep link, fall back to web
+                            if let appUrl = URL(string: "kakaomap://search?q=\(encodedQuery)"),
+                               UIApplication.shared.canOpenURL(appUrl) {
+                                UIApplication.shared.open(appUrl)
+                            } else if let webUrl = URL(string: "https://map.kakao.com/?q=\(encodedQuery)") {
+                                UIApplication.shared.open(webUrl)
+                            }
+                        } else {
+                            if let url = URL(string: "https://www.google.com/maps/search/?api=1&query=\(encodedQuery)") {
+                                UIApplication.shared.open(url)
+                            }
                         }
                     } label: {
                         HStack(spacing: 10) {
@@ -269,7 +399,7 @@ struct EditPlaceStopNameSheet: View {
                                         endPoint: .bottomTrailing
                                     )
                                 )
-                            Text("View on Google Maps")
+                            Text(placeCountryCode == "KR" ? "View on Kakao Map" : "View on Google Maps")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(Color.white.opacity(0.95))
                         }
@@ -290,7 +420,7 @@ struct EditPlaceStopNameSheet: View {
                         .appChromeCornerRadius(24)
                         .shadow(color: .black.opacity(0.45), radius: 12, x: 0, y: 6)
                     }
-                } else if selectedCoordinate == nil {
+                } else if selectedCoordinate == nil, !mapTapCoachmarkSeen {
                     VStack(spacing: 0) {
                         Spacer(minLength: 0)
                         mapTapPlaceNameHint
@@ -471,6 +601,28 @@ struct EditPlaceStopNameSheet: View {
                selectedCategory != initialCategory
     }
 
+    private var mapProviderToggleButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                koreaMapPreference = isUsingKakaoMap ? "apple" : "kakao"
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: isUsingKakaoMap ? "applelogo" : "map.fill")
+                    .font(.caption.weight(.semibold))
+                Text(isUsingKakaoMap ? "Apple Maps" : "Kakao Map")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.white.opacity(0.92))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(.white.opacity(0.15), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .shadow(color: .black.opacity(0.3), radius: 6)
+    }
+
     private var mapZoomControlsColumn: some View {
         VStack(spacing: 0) {
             Button {
@@ -523,7 +675,7 @@ struct EditPlaceStopNameSheet: View {
         let inferred = PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: finalName)
 
         var category: String?
-        if !titleChanged {
+        if !titleChanged || mapTapResolvedAsPOI {
             category = selectedCategory
         }
         if category == nil {
@@ -627,6 +779,78 @@ struct EditPlaceStopNameSheet: View {
         .background(Color(white: 0.12))
     }
 
+    // MARK: - Kakao map tap → nearby POI (Kakao Local category) like MapKit POI, else reverse geocode
+    private func resolveKakaoPOI(
+        at coordinate: CLLocationCoordinate2D,
+        kakaoZoomLevel: Int,
+        preferredPOIName: String?,
+        isDirectPOITap: Bool
+    ) {
+        // Cancel any in-flight resolution so rapid re-taps always reflect the latest tap position.
+        kakaoResolveTask?.cancel()
+        debugPrint("[KakaoMap] resolveKakaoPOI lat=\(coordinate.latitude) lon=\(coordinate.longitude) zoom=\(kakaoZoomLevel) directPOI=\(isDirectPOITap) preferredName=\(preferredPOIName ?? "nil")")
+        // Anchor the marker on the tapped point immediately; ambiguous branches keep this until the user picks from the list.
+        selectedCoordinate = coordinate
+        isResolvingPOI = true
+        isFocused = false
+        showSuggestions = false
+        kakaoResolveTask = Task { @MainActor in
+            defer { isResolvingPOI = false }
+            if let preferred = preferredPOIName?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !preferred.isEmpty {
+                // When Kakao SDK provides the tapped POI label, trust it over proximity search:
+                // our Kakao Local "nearby" categories are intentionally limited and may not include the tapped POI.
+                editedTitle = preferred
+                selectedCoordinate = coordinate
+                mapTapResolvedAsPOI = true
+                if let c = await searchViewModel.fetchCategory(at: coordinate, name: preferred) {
+                    selectedCategory = c
+                }
+                return
+            }
+
+            // For a direct POI tap, the tap coordinate is the icon position which can be offset
+            // 100–250 m from the Kakao Local registered coordinate. Use the wider-radius category
+            // search (AT4/CT1 get 500 m / 400 m) rather than falling back to reverse-geocode —
+            // that would surface a road address instead of the attraction name.
+            let result = await searchViewModel.resolveKakaoMapTapPOI(
+                near: coordinate,
+                kakaoZoomLevel: kakaoZoomLevel,
+                isDirectPOITap: isDirectPOITap
+            )
+            guard !Task.isCancelled else { return }
+            switch result {
+            case .single(let name, let category, let coord):
+                debugPrint("[KakaoMap] resolveKakaoPOI POI single '\(name)'")
+                editedTitle = name
+                selectedCoordinate = coord
+                selectedCategory = category
+                mapTapResolvedAsPOI = true
+                if selectedCategory == nil, let c = await searchViewModel.fetchCategory(at: coord, name: name) {
+                    selectedCategory = c
+                }
+            case .ambiguous(let candidates):
+                debugPrint("[KakaoMap] resolveKakaoPOI ambiguous (\(candidates.count) choices)")
+                selectedCoordinate = coordinate
+                mapTapPOIDisambiguationCandidates = candidates
+                showMapTapPOIDisambiguation = true
+            case .none:
+                let name = await searchViewModel.resolveCoordinateName(at: coordinate)
+                guard !name.isEmpty, name != "Unknown Place" else {
+                    debugPrint("[KakaoMap] resolveKakaoPOI: empty/unknown name, skipping")
+                    return
+                }
+                editedTitle = name
+                selectedCoordinate = coordinate
+                mapTapResolvedAsPOI = false
+                debugPrint("[KakaoMap] resolveKakaoPOI reverse-geocode → '\(name)'")
+                if let category = await searchViewModel.fetchCategory(at: coordinate, name: name) {
+                    selectedCategory = category
+                }
+            }
+        }
+    }
+
     // MARK: - Resolve POI at tapped coordinate (reverse geocode → place name + category)
     // Note: NSCocoaErrorDomain 4099 / PerfPowerTelemetryClientRegistrationService / "Maps SpringfieldUsage"
     // is a known iOS Simulator sandbox warning from MapKit telemetry. It does not affect POI resolution;
@@ -640,12 +864,13 @@ struct EditPlaceStopNameSheet: View {
         isResolvingPOI = true
         isFocused = false
         showSuggestions = false
+        selectedCoordinate = coordinate
         Task { @MainActor in
             defer {
                 isResolvingPOI = false
                 debugPrint("[POI] resolvePOI finished")
             }
-            switch await searchViewModel.resolveMapTapPOI(near: coordinate, mapRegion: mapRegion) {
+            switch await searchViewModel.resolveMapTapForCurrentProvider(near: coordinate, mapRegion: mapRegion) {
             case .single(let name, let category, let coord):
                 debugPrint("[POI] map-tap single: name=\(name), category=\(category ?? "nil")")
                 editedTitle = name
@@ -656,17 +881,15 @@ struct EditPlaceStopNameSheet: View {
                 return
             case .ambiguous(let candidates):
                 debugPrint("[POI] map-tap ambiguous: \(candidates.count) choices")
+                selectedCoordinate = coordinate
                 mapTapPOIDisambiguationCandidates = candidates
                 showMapTapPOIDisambiguation = true
                 return
             case .none:
                 break
             }
-            let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
             debugPrint("[POI] no POI at tap, falling back to reverse geocode...")
-            let place = await GeocodingService.shared.place(for: location, precise: true)
-            debugPrint("[POI] geocode result: title=\(place.title), bestPlaceLabel=\(place.bestPlaceLabel)")
-            let name = !place.title.isEmpty ? place.title : place.bestPlaceLabel
+            let name = await searchViewModel.resolveCoordinateName(at: coordinate)
             if !name.isEmpty, name != "Unknown Place" {
                 editedTitle = name
                 selectedCoordinate = coordinate
@@ -909,10 +1132,11 @@ struct EditPlaceStopNameSheet: View {
                                 editedTitle = suggestion.title
                                 pickedFromAutocomplete = true
                                 searchViewModel.suggestions = []
-                                Task {
-                                    let cat = await searchViewModel.fetchCategory(for: suggestion)
-                                    debugPrint("[Category] autocomplete picked '\(suggestion.title)' → category=\(cat ?? "nil")")
+                                Task { @MainActor in
+                                    let (coord, cat) = await searchViewModel.resolveDetails(for: suggestion)
+                                    if let coord { selectedCoordinate = coord }
                                     selectedCategory = cat
+                                    debugPrint("[Category] autocomplete picked '\(suggestion.title)' → coord=\(coord.map { "\($0.latitude),\($0.longitude)" } ?? "nil") category=\(cat ?? "nil")")
                                 }
                             } label: {
                             VStack(alignment: .leading, spacing: 2) {

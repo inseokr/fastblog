@@ -39,6 +39,7 @@ struct PlacesVisitedStandaloneView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .preferredColorScheme(.dark)
+        .dynamicTypeSize(.large)
     }
 }
 
@@ -57,6 +58,7 @@ struct PlacesVisitedView: View {
     @State private var selectedCategory: String? = nil
 
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
+    @State private var openCategoryPickerWhenPlaceModalOpens: Bool = false
     @State private var revealNavDuringModalDismiss: Bool = false
     @FocusState private var isSearchFocused: Bool
     @State private var isSearchActive: Bool = false
@@ -209,17 +211,24 @@ struct PlacesVisitedView: View {
                                         ForEach(pairs, id: \.first?.id) { pair in
                                             HStack(alignment: .top, spacing: 12) {
                                                 ForEach(Array(pair.enumerated()), id: \.element.id) { _, place in
-                                                    Button {
-                                                        selectedPlaceForModal = place
-                                                    } label: {
-                                                        PlaceVisitedCard(place: place)
-                                                    }
-                                                    .buttonStyle(.plain)
+                                                    PlaceVisitedCard(
+                                                        place: place,
+                                                        onTap: {
+                                                            openCategoryPickerWhenPlaceModalOpens = false
+                                                            selectedPlaceForModal = place
+                                                        },
+                                                        onAddCategoryTap: {
+                                                            openCategoryPickerWhenPlaceModalOpens = true
+                                                            selectedPlaceForModal = place
+                                                        }
+                                                    )
                                                     .frame(maxWidth: .infinity)
                                                 }
                                                 // If odd number in this row, fill the gap
                                                 if pair.count == 1 {
-                                                    Color.clear.frame(maxWidth: .infinity)
+                                                    Color.clear
+                                                        .frame(maxWidth: .infinity)
+                                                        .allowsHitTesting(false)
                                                 }
                                             }
                                             .padding(.bottom, 12)
@@ -232,6 +241,7 @@ struct PlacesVisitedView: View {
                     .padding(.horizontal, horizontalPadding)
                     .padding(.bottom, 140)
                 }
+                .scrollDismissesKeyboard(.immediately)
             }
 
             // Persistent bottom bar (search + map), same design as My Blogs
@@ -263,16 +273,19 @@ struct PlacesVisitedView: View {
             if let place = selectedPlaceForModal {
                 PlaceVisitedPhotoModalWrapper(
                     place: place,
+                    presentCategoryPickerInitially: openCategoryPickerWhenPlaceModalOpens,
                     onDismiss: {
                         selectedPlaceForModal = nil
+                        openCategoryPickerWhenPlaceModalOpens = false
                         revealNavDuringModalDismiss = false
                     },
                     onDismissSlideBegan: { revealNavDuringModalDismiss = true },
                     onViewBlog: {
                         guard let ref = place.relatedBlogs.first,
                               let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == ref.blogId }) else { return }
-                        selectedPlaceForModal = nil
-                        revealNavDuringModalDismiss = false
+                        // Keep the place modal presented under the global recap overlay so dismissing
+                        // the blog returns here instead of leaving only the list/map underneath.
+                        openCategoryPickerWhenPlaceModalOpens = false
                         initialScrollToStopIdForRecap = ref.placeStopId
                         selectedCreatedRecap = recap
                     }
@@ -282,6 +295,12 @@ struct PlacesVisitedView: View {
                 .zIndex(200)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
+            }
+        }
+        .onTapGesture {
+            if isSearchFocused {
+                isSearchFocused = false
+                isSearchActive = false
             }
         }
         .animation(.easeInOut(duration: 0.38), value: selectedPlaceForModal?.id)
@@ -349,6 +368,7 @@ struct PlacesVisitedView: View {
         }
         .toolbar((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
         .toolbarBackground((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
+        .dynamicTypeSize(.large)
         .onChange(of: selectedYear) { _, _ in
             // If the user switches years, drop any category that doesn't exist for the new year.
             if let selectedCategory,
@@ -514,6 +534,7 @@ private struct PlaceVisitedPhotoModalWrapper: View {
     @EnvironmentObject private var store: CreatedRecapBlogStore
 
     let place: VisitedPlaceSummary
+    var presentCategoryPickerInitially: Bool = false
     var onDismiss: () -> Void
     var onDismissSlideBegan: (() -> Void)? = nil
     var onViewBlog: (() -> Void)?
@@ -547,6 +568,7 @@ private struct PlaceVisitedPhotoModalWrapper: View {
                 blogIsEditMode: false,
                 showAssetTimeMetadata: false,
                 presentation: .fullscreen(source: .placesVisited),
+                presentPlaceCategoryPickerOnAppear: presentCategoryPickerInitially,
                 photoCaption: { photoId in
                     Binding(
                         get: { liveCaptions[photoId] ?? photos.first(where: { $0.id == photoId })?.caption ?? "" },
@@ -579,6 +601,9 @@ private struct PlaceVisitedPhotoModalWrapper: View {
                         coordinate: coord,
                         subtitle: subtitleLine
                     )
+                },
+                onSavePlaceCategory: { newCategory in
+                    store.updatePlaceStopCategoryFromPlacesVisited(photoId: initialPhotoId, category: newCategory)
                 }
             )
         } else {
@@ -589,97 +614,92 @@ private struct PlaceVisitedPhotoModalWrapper: View {
 
 private struct PlaceVisitedCard: View {
     let place: VisitedPlaceSummary
+    var onTap: (() -> Void)? = nil
+    var onAddCategoryTap: (() -> Void)? = nil
 
-    private let maxThumbs: Int = 3
-    private let thumbSpacing: CGFloat = 8
-    private let stripPadding: CGFloat = 10
-    /// Preferred thumb size on wide cards; scales down when the grid column is narrower (non‑Max iPhones).
-    private let preferredThumbSize: CGFloat = 44
+    @ViewBuilder
+    private var addCategoryPillLabel: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "tag")
+                .font(.caption2)
+            Text("Add category")
+                .font(.caption2.weight(.medium))
+        }
+        .foregroundStyle(.secondary.opacity(0.72))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.secondary.opacity(0.12))
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Capsule(style: .continuous))
+    }
 
     var body: some View {
-        let heroId = place.heroPhoto?.id
-        let previewThumbs = place.photos
-            .filter { $0.id != heroId }
-            .sorted(by: { $0.timestamp > $1.timestamp })
-            .prefix(maxThumbs)
-
         VStack(alignment: .leading, spacing: 10) {
-            GeometryReader { geo in
-                let availableWidth = geo.size.width
-                let thumbCount = previewThumbs.count
-                let thumbSize: CGFloat = {
-                    guard thumbCount > 0 else { return preferredThumbSize }
-                    let gutters = stripPadding * 2 + CGFloat(thumbCount - 1) * thumbSpacing
-                    let raw = (availableWidth - gutters) / CGFloat(thumbCount)
-                    // No minimum clamp — a floor can make the strip wider than the column on narrow phones.
-                    return min(preferredThumbSize, max(1, raw))
-                }()
-                let backingWidth = CGFloat(thumbCount) * thumbSize
-                    + CGFloat(thumbCount - 1) * thumbSpacing
-                    + stripPadding * 2
-
+            Button { onTap?() } label: {
                 ZStack(alignment: .bottom) {
-                    if let hero = place.heroPhoto {
-                        RecapPhotoThumbnail(photo: hero, cornerRadius: 14, showIcon: false, targetSize: CGSize(width: 900, height: 600))
-                            .frame(height: 150)
-                            .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
-                    } else {
-                        Color.clear
-                            .frame(height: 150)
-                            .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
-                            .overlay {
-                                Image(systemName: "photo")
-                                    .font(.title2)
-                                    .foregroundStyle(.secondary)
-                            }
-                    }
-
-                    VStack {
-                        HStack {
-                            Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(.black.opacity(0.55))
-                                .clipShape(Capsule())
-                            Spacer()
+                    Group {
+                        if let hero = place.heroPhoto {
+                            RecapPhotoThumbnail(photo: hero, cornerRadius: 14, showIcon: false, targetSize: CGSize(width: 900, height: 600))
+                        } else {
+                            RoundedRectangle(appChromeBaseRadius: 14)
+                                .fill(Color.secondary.opacity(0.15))
+                                .overlay {
+                                    Image(systemName: "photo")
+                                        .font(.title2)
+                                        .foregroundStyle(.secondary)
+                                }
                         }
-                        Spacer()
                     }
-                    .padding(10)
-
-                    if !previewThumbs.isEmpty {
-                        HStack(spacing: thumbSpacing) {
-                            ForEach(Array(previewThumbs)) { photo in
-                                RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 200, height: 200))
-                                    .frame(width: thumbSize, height: thumbSize)
-                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
-                                    .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
-                            }
-                        }
-                        .padding(stripPadding)
-                        .frame(width: min(backingWidth, availableWidth))
-                        .background(
-                            RoundedRectangle(appChromeBaseRadius: 14, style: .continuous)
-                                .fill(Color.black.opacity(0.35))
-                                .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 6)
-                        )
-                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 150)
+                .contentShape(Rectangle())
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
+                .overlay(alignment: .topLeading) {
+                    Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.black.opacity(0.55))
+                        .clipShape(Capsule())
+                        .padding(10)
+                        .allowsHitTesting(false)
                 }
             }
-            .frame(height: 150)
+            .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(place.displayName)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                if let onTap {
+                    Button(action: onTap) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(place.displayName)
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
 
-                HStack(spacing: 8) {
+                            Text(place.cityDisplay ?? place.country)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text(place.displayName)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
                     Text(place.cityDisplay ?? place.country)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -689,11 +709,17 @@ private struct PlaceVisitedCard: View {
                 if let raw = place.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
                     PlacePOICategoryBadge(rawCategory: raw)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                } else if let onAddCategoryTap {
+                    Button(action: onAddCategoryTap) {
+                        addCategoryPillLabel
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    addCategoryPillLabel
                 }
             }
         }
         .padding(12)
-        .background(Color.clear)
         .clipShape(RoundedRectangle(appChromeBaseRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
@@ -722,9 +748,13 @@ private struct PlacesVisitedMapView: View {
     )
     @State private var mapViewSize: CGSize = CGSize(width: 400, height: 800)
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
+    @State private var openCategoryPickerWhenPlaceModalOpens: Bool = false
     @State private var revealNavDuringModalDismiss: Bool = false
     @State private var isSearchActive: Bool = false
     @State private var hasTappedLocationButton: Bool = false
+    @State private var selectedMapFeature: MapFeature?
+    @State private var activePOIFeature: MapFeature?
+    @State private var showPOISheet: Bool = false
     @FocusState private var isSearchFocused: Bool
     @StateObject private var locationHelper = PlacesVisitedMapLocationHelper()
 
@@ -908,15 +938,18 @@ private struct PlacesVisitedMapView: View {
     private func handleMarkerTap(_ place: VisitedPlaceSummary) {
         let cluster = placesInScreenCluster(near: place)
         guard cluster.count >= 2 else {
+            openCategoryPickerWhenPlaceModalOpens = false
             selectedPlaceForModal = place
             return
         }
         let minDist = minPairwiseScreenDistance(cluster)
         if minDist >= Self.separationThresholdPixels {
+            openCategoryPickerWhenPlaceModalOpens = false
             selectedPlaceForModal = place
             return
         }
         if isAtMinZoomForOverlapResolution {
+            openCategoryPickerWhenPlaceModalOpens = false
             selectedPlaceForModal = place
             return
         }
@@ -1000,7 +1033,7 @@ private struct PlacesVisitedMapView: View {
     var body: some View {
         ZStack(alignment: .top) {
             GeometryReader { geo in
-                Map(position: $mapPosition) {
+                Map(position: $mapPosition, selection: $selectedMapFeature) {
                     ForEach(clusteredPlaceItems) { cluster in
                         Annotation("", coordinate: cluster.coordinate) {
                             if cluster.isCluster {
@@ -1027,6 +1060,12 @@ private struct PlacesVisitedMapView: View {
                     }
                 }
                 .mapStyle(.standard(elevation: .realistic))
+                .onChange(of: selectedMapFeature) { _, newFeature in
+                    guard let newFeature else { return }
+                    activePOIFeature = newFeature
+                    showPOISheet = true
+                    selectedMapFeature = nil
+                }
                 .onMapCameraChange(frequency: .onEnd) { context in
                     mapRegion = context.region
                 }
@@ -1187,16 +1226,23 @@ private struct PlacesVisitedMapView: View {
                                             ForEach(pairs, id: \.first?.id) { pair in
                                                 HStack(alignment: .top, spacing: 12) {
                                                     ForEach(Array(pair.enumerated()), id: \.element.id) { _, place in
-                                                        Button {
-                                                            selectedPlaceForModal = place
-                                                        } label: {
-                                                            PlaceVisitedCard(place: place)
-                                                        }
-                                                        .buttonStyle(.plain)
+                                                        PlaceVisitedCard(
+                                                            place: place,
+                                                            onTap: {
+                                                                openCategoryPickerWhenPlaceModalOpens = false
+                                                                selectedPlaceForModal = place
+                                                            },
+                                                            onAddCategoryTap: {
+                                                                openCategoryPickerWhenPlaceModalOpens = true
+                                                                selectedPlaceForModal = place
+                                                            }
+                                                        )
                                                         .frame(maxWidth: .infinity)
                                                     }
                                                     if pair.count == 1 {
-                                                        Color.clear.frame(maxWidth: .infinity)
+                                                        Color.clear
+                                                            .frame(maxWidth: .infinity)
+                                                            .allowsHitTesting(false)
                                                     }
                                                 }
                                                 .padding(.bottom, 12)
@@ -1209,6 +1255,7 @@ private struct PlacesVisitedMapView: View {
                         .padding(.horizontal, 16)
                         .padding(.bottom, 32)
                     }
+                    .scrollDismissesKeyboard(.immediately)
                 }
                 .transition(.opacity)
             }
@@ -1217,16 +1264,19 @@ private struct PlacesVisitedMapView: View {
             if let place = selectedPlaceForModal {
                 PlaceVisitedPhotoModalWrapper(
                     place: place,
+                    presentCategoryPickerInitially: openCategoryPickerWhenPlaceModalOpens,
                     onDismiss: {
                         selectedPlaceForModal = nil
+                        openCategoryPickerWhenPlaceModalOpens = false
                         revealNavDuringModalDismiss = false
                     },
                     onDismissSlideBegan: { revealNavDuringModalDismiss = true },
                     onViewBlog: {
                         guard let ref = place.relatedBlogs.first,
                               let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == ref.blogId }) else { return }
-                        selectedPlaceForModal = nil
-                        revealNavDuringModalDismiss = false
+                        // Keep the place modal presented under the global recap overlay so dismissing
+                        // the blog returns here instead of leaving only the list/map underneath.
+                        openCategoryPickerWhenPlaceModalOpens = false
                         initialScrollToStopIdForRecap = ref.placeStopId
                         selectedCreatedRecap = recap
                     }
@@ -1261,6 +1311,11 @@ private struct PlacesVisitedMapView: View {
                     }
                 }
                 .zIndex(90)
+            }
+        }
+        .onTapGesture {
+            if isSearchFocused {
+                isSearchFocused = false
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -1325,6 +1380,14 @@ private struct PlacesVisitedMapView: View {
         }
         .toolbar((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
         .toolbarBackground((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
+        .dynamicTypeSize(.large)
+        .sheet(isPresented: $showPOISheet, onDismiss: {
+            activePOIFeature = nil
+        }) {
+            if let feature = activePOIFeature {
+                POIInfoSheet(feature: feature)
+            }
+        }
     }
 
     private func placesVisitedMapCategoryChip(raw: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
@@ -1477,14 +1540,18 @@ private struct PlacesVisitedClusterMarker: View {
     let cluster: VisitedPlaceCluster
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            // Ghost ring signals "multiple items here"
-            Circle()
-                .fill(Color.blue.opacity(0.25))
-                .frame(width: 60, height: 60)
-                .offset(x: 4, y: -4)
+        VStack(spacing: 4) {
+            // Count pill above the marker
+            Text("\(cluster.count) Places")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.blue))
+                .overlay(Capsule().stroke(Color.white, lineWidth: 1.5))
+                .shadow(color: .black.opacity(0.35), radius: 2)
 
-            // Representative photo circle (slightly larger than individual 46pt)
+            // Representative photo circle
             ZStack {
                 Circle()
                     .fill(Color.blue)
@@ -1504,17 +1571,6 @@ private struct PlacesVisitedClusterMarker: View {
                         .foregroundColor(.white)
                 }
             }
-
-            // Count badge
-            Text("\(cluster.count)")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(.white)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color.blue))
-                .overlay(Capsule().stroke(Color.white, lineWidth: 1.5))
-                .shadow(color: .black.opacity(0.35), radius: 2)
-                .offset(x: 10, y: -8)
         }
     }
 }

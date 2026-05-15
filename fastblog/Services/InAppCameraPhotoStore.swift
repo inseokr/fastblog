@@ -31,7 +31,8 @@ final class InAppCameraPhotoStore: ObservableObject {
     private static let photoSubdir = "InAppCameraPhotos"
 
     static var photoDirectory: URL {
-        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
         return dir.appendingPathComponent(photoSubdir, isDirectory: true)
     }
 

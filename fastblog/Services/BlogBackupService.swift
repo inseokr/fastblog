@@ -260,12 +260,13 @@ enum BlogBackupService {
             let folder = work.appendingPathComponent(id.uuidString, isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let w = weights[index]
+            let progressBase = cumulative
             try await exportSingleBlogTree(
                 sourceTripId: id,
                 intoExistingFolder: folder,
                 store: store,
                 progress: { local in
-                    report((cumulative + w * local) / totalWeight)
+                    report((progressBase + w * local) / totalWeight)
                 }
             )
             cumulative += w
@@ -283,8 +284,9 @@ enum BlogBackupService {
         if FileManager.default.fileExists(atPath: zipURL.path) {
             try FileManager.default.removeItem(at: zipURL)
         }
+        let zipProgressBase = cumulative
         try zipDirectory(contentsOf: work, to: zipURL) { zipFrac in
-            report((cumulative + finalZipWeight * zipFrac) / totalWeight)
+            report((zipProgressBase + finalZipWeight * zipFrac) / totalWeight)
         }
         return zipURL
     }

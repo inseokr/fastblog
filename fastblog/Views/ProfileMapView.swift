@@ -13,13 +13,15 @@ struct ProfileMapView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @StateObject private var viewModel: ProfileMapViewModel
-    @State private var mapPosition: MapCameraPosition = .automatic
-    
+    @State private var mapPosition: MapCameraPosition
+
     @State private var isSearchActive = false
     @FocusState private var isSearchFocused: Bool
 
     init(createdRecapStore: CreatedRecapBlogStore, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
-        _viewModel = StateObject(wrappedValue: ProfileMapViewModel(createdRecapStore: createdRecapStore))
+        let vm = ProfileMapViewModel(createdRecapStore: createdRecapStore)
+        _viewModel = StateObject(wrappedValue: vm)
+        _mapPosition = State(initialValue: .region(vm.mapRegion))
         _selectedCreatedRecap = selectedCreatedRecap
     }
 
@@ -76,9 +78,9 @@ struct ProfileMapView: View {
             // mapPosition is set reactively via onChange(of: mapRegionChangeCounter),
             // but seed it here too so there's no blank frame.
             mapPosition = .region(viewModel.mapRegion)
-            // Seed scroll position synchronously — onChange(of: selectedTripID)
-            // may not fire in the same run loop tick as the view appearing.
-            scrolledTripID = viewModel.visibleTrips.first?.sourceTripId
+            // Use the trip selectedTripID that onAppear() just resolved (first trip
+            // with a coordinate), so the card strip scrolls to match the map center.
+            scrolledTripID = viewModel.selectedTripID ?? viewModel.visibleTrips.first?.sourceTripId
         }
         .onChange(of: viewModel.mapRegionChangeCounter) { _, _ in
             withAnimation {
@@ -99,11 +101,6 @@ struct ProfileMapView: View {
         }
         .ignoresSafeArea(edges: .bottom)
         .ignoresSafeArea(.keyboard)
-        .overlay(alignment: .bottomLeading) {
-            zoomButtons
-                .padding(.leading, 16)
-                .padding(.bottom, 164)
-        }
     }
 
     @MapContentBuilder
@@ -263,9 +260,9 @@ struct ProfileMapView: View {
 
     private var bottomTripList: some View {
         GeometryReader { geo in
-            let cardWidth = min(geo.size.width * 0.80, 340)
-            let cardHeight: CGFloat = 104
-            
+            let cardWidth = min(geo.size.width * 0.90, 384)
+            let cardHeight = ProfileMapCarouselLayout.cardHeight
+
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(viewModel.visibleTrips, id: \.sourceTripId) { trip in
@@ -309,7 +306,7 @@ struct ProfileMapView: View {
                 }
             }
         }
-        .frame(height: 144)
+        .frame(height: ProfileMapCarouselLayout.stripHeight)
         .padding(.bottom, 24)
     }
 
@@ -327,30 +324,14 @@ struct ProfileMapView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Zoom Controls
+}
 
-    private var zoomButtons: some View {
-        VStack(spacing: 0) {
-            Button(action: { withAnimation(.easeInOut(duration: 0.3)) { viewModel.zoomIn() } }) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 42, height: 42)
-            }
-            Rectangle()
-                .fill(Color.white.opacity(0.2))
-                .frame(height: 1)
-            Button(action: { withAnimation(.easeInOut(duration: 0.3)) { viewModel.zoomOut() } }) {
-                Image(systemName: "minus")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 42, height: 42)
-            }
-        }
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
-    }
+// MARK: - Profile map bottom carousel layout
+
+private enum ProfileMapCarouselLayout {
+    static let cardHeight: CGFloat = 126
+    /// Vertical padding inside the horizontal `ScrollView` (10 × 2) plus card height.
+    static let stripHeight: CGFloat = cardHeight + 40
 }
 
 // MARK: - Safe Collection Subscript (shared by map views)
@@ -361,8 +342,30 @@ extension Collection {
     }
 }
 
+// MARK: - Map card location (city / country)
+
+private func profileMapTrimmedLine(_ s: String?) -> String? {
+    guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+    return t
+}
+
+/// City for map cards: from the linked trip draft’s photo-location vote; omits placeholders and duplicates of country.
+private func profileMapCardCityLine(blog: CreatedRecapBlog, trip: TripDraft?) -> String? {
+    guard let trip else { return nil }
+    let raw = trip.cityWithMostPhotosDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !raw.isEmpty else { return nil }
+    let placeholders: Set<String> = ["New Place", "Unknown Place"]
+    if placeholders.contains(raw) { return nil }
+    if let country = profileMapTrimmedLine(blog.countryName),
+       raw.caseInsensitiveCompare(country) == .orderedSame {
+        return nil
+    }
+    return raw
+}
+
 // MARK: - ProfileMapCardView (Bottom List Item)
 private struct ProfileMapCardView: View {
+    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     let blog: CreatedRecapBlog
     let isSelected: Bool
     let onTap: () -> Void
@@ -372,22 +375,21 @@ private struct ProfileMapCardView: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 coverImage
 
                 VStack(alignment: .leading, spacing: 4) {
                     tripInfo
                 }
-                .padding(.vertical, 12)
-
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 10)
 
                 if showsTrailingNavigateButton {
                     chevronButton
                 }
             }
-            .padding(.trailing, 12)
-            .frame(height: 104)
+            .padding(.horizontal, 12)
+            .frame(height: ProfileMapCarouselLayout.cardHeight)
             .background(.ultraThinMaterial)
             .appChromeCornerRadius(20)
             .overlay(
@@ -418,25 +420,44 @@ private struct ProfileMapCardView: View {
                 .foregroundColor(.white)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
-            
-            if let country = blog.countryName {
-                Text(country)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white.opacity(0.85))
+
+            let trip = createdRecapStore.tripDraft(for: blog.sourceTripId)
+            let cityLine = profileMapCardCityLine(blog: blog, trip: trip)
+            let countryLine = profileMapTrimmedLine(blog.countryName)
+
+            Group {
+                if let cityLine, let countryLine, cityLine.caseInsensitiveCompare(countryLine) != .orderedSame {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cityLine)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.88))
+                            .lineLimit(1)
+                        Text(countryLine)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.72))
+                            .lineLimit(1)
+                    }
+                } else if let cityLine {
+                    Text(cityLine)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white.opacity(0.85))
+                        .lineLimit(1)
+                } else if let countryLine {
+                    Text(countryLine)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white.opacity(0.85))
+                        .lineLimit(1)
+                }
             }
 
-            // Trip duration (and places) directly under the country info
             Text("\(blog.totalPlaceVisitCount) Place\(blog.totalPlaceVisitCount == 1 ? "" : "s") • \(blog.tripDurationDays) Day\(blog.tripDurationDays == 1 ? "" : "s")")
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.7))
-
-            if let caption = blog.caption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(caption)
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.6))
-                    .lineLimit(1)
-            }
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.72))
+                .lineLimit(1)
         }
     }
 
@@ -482,7 +503,7 @@ struct TripAnnotationView: View {
                 .foregroundColor(.white)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 80)
+                .frame(maxWidth: 118)
                 .shadow(color: .black.opacity(0.5), radius: 1)
         }
     }
@@ -535,8 +556,13 @@ struct CountryMapView: View {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return sortedBlogs }
         return sortedBlogs.filter { blog in
-            blog.title.lowercased().contains(query)
-                || (blog.countryName?.lowercased().contains(query) ?? false)
+            if blog.title.lowercased().contains(query) { return true }
+            if blog.countryName?.lowercased().contains(query) ?? false { return true }
+            guard let trip = createdRecapStore.tripDraft(for: blog.sourceTripId) else { return false }
+            let city = trip.cityWithMostPhotosDisplayName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let drop: Set<String> = ["", "new place", "unknown place"]
+            guard !drop.contains(city) else { return false }
+            return city.contains(query)
         }
     }
 
@@ -569,12 +595,6 @@ struct CountryMapView: View {
                         mapSpan = context.region.span
                         mapCenter = context.region.center
                     }
-                    .overlay(alignment: .bottomLeading) {
-                        countryZoomButtons
-                            .padding(.leading, 16)
-                            .padding(.bottom, 164)
-                    }
-
                     // Bottom blog card strip
                     if !sortedBlogs.isEmpty {
                         bottomBlogStrip
@@ -630,8 +650,8 @@ struct CountryMapView: View {
 
     private var bottomBlogStrip: some View {
         GeometryReader { geo in
-            let cardWidth = min(geo.size.width * 0.80, 340)
-            let cardHeight: CGFloat = 104
+            let cardWidth = min(geo.size.width * 0.90, 384)
+            let cardHeight = ProfileMapCarouselLayout.cardHeight
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
@@ -680,7 +700,7 @@ struct CountryMapView: View {
                 if let newID { scrolledTripID = newID }
             }
         }
-        .frame(height: 144)
+        .frame(height: ProfileMapCarouselLayout.stripHeight)
         .padding(.bottom, 24)
     }
 
@@ -838,49 +858,6 @@ struct CountryMapView: View {
     }
 
     // MARK: - Zoom Controls (CountryMapView)
-
-    private var countryZoomButtons: some View {
-        VStack(spacing: 0) {
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    mapPosition = .region(MKCoordinateRegion(
-                        center: mapCenter,
-                        span: MKCoordinateSpan(
-                            latitudeDelta: max(0.001, mapSpan.latitudeDelta / 2),
-                            longitudeDelta: max(0.001, mapSpan.longitudeDelta / 2)
-                        )
-                    ))
-                }
-            }) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 42, height: 42)
-            }
-            Rectangle()
-                .fill(Color.white.opacity(0.2))
-                .frame(height: 1)
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    mapPosition = .region(MKCoordinateRegion(
-                        center: mapCenter,
-                        span: MKCoordinateSpan(
-                            latitudeDelta: min(90, mapSpan.latitudeDelta * 2),
-                            longitudeDelta: min(180, mapSpan.longitudeDelta * 2)
-                        )
-                    ))
-                }
-            }) {
-                Image(systemName: "minus")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 42, height: 42)
-            }
-        }
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
-    }
 
     private func displayCountryName(_ name: String) -> String {
         name.isEmpty || name == "Unknown" ? "Other" : name

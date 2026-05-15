@@ -325,6 +325,7 @@ enum TripShareRecapExportError: Error {
 struct TripShareRecapManifestV1: Codable, Equatable, Sendable {
     var schemaVersion: Int
     var tripTitle: String
+    var tripNarrative: String?
     var countryName: String?
     var coverTheme: String
     /// Index into the `photos` array (and thus the sent JPEG resource order list).
@@ -339,6 +340,7 @@ struct TripShareRecapDayV1: Codable, Equatable, Sendable {
     /// `Date.timeIntervalSince1970` for stable decoding across devices.
     var dateUnixSeconds: TimeInterval
     var dayCaption: String?
+    var dayNarrative: String?
     var placeStops: [TripShareRecapPlaceStopV1]
 }
 
@@ -351,6 +353,7 @@ struct TripShareRecapPlaceStopV1: Codable, Equatable, Sendable {
     var noteText: String?
     var overallStory: String?
     var overallStoryIsManual: Bool
+    var placeNarrative: String?
 }
 
 struct TripShareRecapPhotoEntryV1: Codable, Equatable, Sendable {
@@ -402,7 +405,8 @@ enum TripShareRecapExporter {
                         representativeLongitude: stop.representativeLocation?.longitude,
                         noteText: stop.noteText,
                         overallStory: stop.overallStory,
-                        overallStoryIsManual: stop.overallStoryIsManual
+                        overallStoryIsManual: stop.overallStoryIsManual,
+                        placeNarrative: stop.placeNarrative
                     )
                 )
 
@@ -452,6 +456,7 @@ enum TripShareRecapExporter {
                     dayIndex: day.dayIndex,
                     dateUnixSeconds: day.date.timeIntervalSince1970,
                     dayCaption: day.dayCaption,
+                    dayNarrative: day.dayNarrative,
                     placeStops: stopEntries
                 )
             )
@@ -469,6 +474,7 @@ enum TripShareRecapExporter {
         let manifest = TripShareRecapManifestV1(
             schemaVersion: TripShareNearbyConfig.schemaVersion,
             tripTitle: detail.title,
+            tripNarrative: detail.tripNarrative,
             countryName: detail.countryName,
             coverTheme: detail.coverTheme,
             coverPhotoOrder: coverPhotoOrder,
@@ -570,6 +576,7 @@ enum TripShareRecapImporter {
                         photos: stopPhotos,
                         noteText: stop.noteText,
                         overallStory: stop.overallStory,
+                        placeNarrative: stop.placeNarrative,
                         overallStoryIsManual: stop.overallStoryIsManual
                     )
                 )
@@ -583,6 +590,7 @@ enum TripShareRecapImporter {
                     date: dayDate,
                     placeStops: placeStops,
                     dayCaption: day.dayCaption,
+                    dayNarrative: day.dayNarrative,
                     isPlaceNamesResolved: false,
                     weather: nil
                 )
@@ -602,7 +610,8 @@ enum TripShareRecapImporter {
             selectedCoverPhotoIdentifier: coverIdentifier,
             countryName: manifest.countryName,
             blogKey: nil,
-            removedPlaceStops: []
+            removedPlaceStops: [],
+            tripNarrative: manifest.tripNarrative
         )
     }
 }

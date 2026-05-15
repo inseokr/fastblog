@@ -9,7 +9,7 @@ import Photos
 
 /// iOS Photos-style grid view to include/exclude photos for a place stop.
 /// Normal mode: scrollable 3-column grid; tap a photo to view full-screen.
-/// Select mode: drag up/down across the grid to range-select; scroll locks during drag.
+/// Select mode: same scrollable grid; tap a photo to toggle include/exclude (like the iOS camera roll).
 struct ManagePhotosView: View {
     let placeTitle: String
     @Binding var photos: [RecapPhoto]
@@ -17,6 +17,12 @@ struct ManagePhotosView: View {
     var onSplitRequested: (() -> Void)? = nil
     /// Called from the trailing "…" menu when user chooses Add from Library. Nil hides that item.
     var onAddFromLibrary: (() -> Void)? = nil
+    /// Called when user wants to add photos from Bloggo Gallery. Nil hides that option.
+    var onAddFromBloggoGallery: (() -> Void)? = nil
+    /// When Photos access is **limited**, set to `true` so Add can offer the system "select more / deselect" flow via `onExpandSharedPhotoLibrary`.
+    var isLimitedPhotoLibraryAccess: Bool = false
+    /// Presents `PHPhotoLibrary.presentLimitedLibraryPicker` (same UI as Settings / Trips **Select more photos**). Ignored unless `isLimitedPhotoLibraryAccess` and `onAddFromLibrary` are set.
+    var onExpandSharedPhotoLibrary: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var isSelectMode = false
@@ -24,13 +30,14 @@ struct ManagePhotosView: View {
     @State private var cachedAiRanks: [UUID: Int] = [:]
     @State private var didPrimeGridCache = false
     @State private var existingPhotoLibraryAssetIds: Set<String> = []
+    /// Library asset IDs added before `PHAsset.fetchAssets` reflects limited-access picks; keeps the grid showing the new photo immediately.
+    @State private var provisionalLibraryAssetIds: Set<String> = []
     @State private var visiblePhotoCount: Int = 0
+    @State private var existingAssetIdsRefreshTask: Task<Void, Never>? = nil
 
-    // Drag-selection state
-    @State private var cellFrames: [UUID: CGRect] = [:]
-    @State private var dragStartIndex: Int?
-    @State private var dragTargetIsIncluded: Bool?
-    @State private var dragInitialInclusionById: [UUID: Bool] = [:]
+    /// Bottom Split / Add chips — wider “balloon” hit targets.
+    private let cornerActionChipWidth: CGFloat = 84
+    private let cornerActionChipHeight: CGFloat = 64
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -58,7 +65,7 @@ struct ManagePhotosView: View {
                 if lid.hasPrefix(AppCapturePhotoService.prefix) {
                     return AppCapturePhotoService.shared.loadImage(identifier: lid) != nil
                 }
-                return existingPhotoLibraryAssetIds.contains(lid)
+                return existingPhotoLibraryAssetIds.contains(lid) || provisionalLibraryAssetIds.contains(lid)
             }
             .sorted { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }
     }
@@ -94,6 +101,25 @@ struct ManagePhotosView: View {
             set.insert(asset.localIdentifier)
         }
         existingPhotoLibraryAssetIds = set
+        var nextProvisional = provisionalLibraryAssetIds
+        nextProvisional.subtract(set)
+        provisionalLibraryAssetIds = nextProvisional
+    }
+
+    /// After adding photos via PHPicker under limited library access, batched `PHAsset.fetch` can lag behind the binding update.
+    private func scheduleExistingAssetIdRefreshRetriesIfNeeded() {
+        existingAssetIdsRefreshTask?.cancel()
+        let libraryIds = Set(photos.compactMap(\.localIdentifier).filter { !$0.isEmpty && !$0.hasPrefix(AppCapturePhotoService.prefix) })
+        guard !libraryIds.isEmpty, !libraryIds.isSubset(of: existingPhotoLibraryAssetIds) else { return }
+        existingAssetIdsRefreshTask = Task { @MainActor in
+            let backoffMs: [UInt64] = [80, 160, 320, 640, 1200]
+            for delayMs in backoffMs {
+                try? await Task.sleep(nanoseconds: delayMs * 1_000_000)
+                guard !Task.isCancelled else { return }
+                refreshExistingAssetIds()
+                if libraryIds.isSubset(of: existingPhotoLibraryAssetIds) { return }
+            }
+        }
     }
 
     private func ensureInitialBatch() {
@@ -116,9 +142,49 @@ struct ManagePhotosView: View {
         fullScreenPhotoId == nil ? "Manage Photos" : ""
     }
 
-    /// Bottom bar: split (when offered) and/or add-from-library. Split stays visible but disabled with one photo.
+    /// Bottom bar: split (when offered) and/or add-from-library/gallery. Split stays visible but disabled with one photo.
     private var managePhotosOverflowMenuVisible: Bool {
-        onSplitRequested != nil || onAddFromLibrary != nil
+        onSplitRequested != nil || onAddFromLibrary != nil || onAddFromBloggoGallery != nil
+    }
+
+    private var addPhotoButtonVisible: Bool {
+        onAddFromLibrary != nil || onAddFromBloggoGallery != nil
+    }
+
+    /// Multiple disambiguated actions (library + gallery): shown as a `Menu` (wider popover than action sheet).
+    private var needsAddPhotoChoiceDialog: Bool {
+        onAddFromLibrary != nil && onAddFromBloggoGallery != nil
+    }
+
+    /// Limited library: single library action is the system limited picker (no PHPicker).
+    private var addFromLibraryInvokesLimitedPickerOnly: Bool {
+        onAddFromLibrary != nil && onAddFromBloggoGallery == nil && isLimitedPhotoLibraryAccess && onExpandSharedPhotoLibrary != nil
+    }
+
+    /// Shared typography for Bloggo Gallery / Camera Roll menu rows (same size and weight).
+    private func addPhotoMenuRow(_ title: String) -> some View {
+        Text(title)
+            .font(.body.weight(.semibold))
+            .frame(minWidth: addPhotoMenuMinRowWidth, alignment: .leading)
+    }
+
+    private var addPhotoMenuMinRowWidth: CGFloat {
+        let w = UIScreen.main.bounds.width
+        return min(360, max(268, w * 0.82))
+    }
+
+    @ViewBuilder
+    private var addPhotoChipLabel: some View {
+        VStack(spacing: 3) {
+            Image(systemName: "photo.badge.plus")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(.white)
+            Text("Add")
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(.white)
+        }
+        .frame(width: cornerActionChipWidth, height: cornerActionChipHeight)
+        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
     }
 
     var body: some View {
@@ -145,6 +211,7 @@ struct ManagePhotosView: View {
             if let photoId = fullScreenPhotoId {
                 ManagePhotoDetailView(
                     photos: $photos,
+                    gridPhotos: manageGridPhotos,
                     initialPhotoId: photoId,
                     aiRanks: cachedAiRanks,
                     onDismiss: {
@@ -164,6 +231,8 @@ struct ManagePhotosView: View {
                         .foregroundColor(.secondary)
                         .padding(.bottom, 16)
                 }
+                // Spacer fills the stack; don't steal scroll/taps from the grid underneath.
+                .allowsHitTesting(false)
             }
 
             // Bottom-corner action buttons (hidden in select mode and full-screen photo)
@@ -174,11 +243,16 @@ struct ManagePhotosView: View {
                         if let split = onSplitRequested {
                             let canSplit = manageGridPhotos.count > 1
                             Button(action: split) {
-                                Image(systemName: "scissors")
-                                    .font(.system(size: 22, weight: .semibold))
-                                    .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
-                                    .frame(width: 56, height: 56)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                VStack(spacing: 3) {
+                                    Image(systemName: "scissors")
+                                        .font(.system(size: 22, weight: .semibold))
+                                        .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
+                                    Text("Split")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
+                                }
+                                .frame(width: cornerActionChipWidth, height: cornerActionChipHeight)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                             }
                             .buttonStyle(.plain)
                             .disabled(!canSplit)
@@ -190,15 +264,43 @@ struct ManagePhotosView: View {
                             )
                         }
                         Spacer()
-                        if onAddFromLibrary != nil {
-                            Button(action: { onAddFromLibrary?() }) {
-                                Image(systemName: "photo.badge.plus")
-                                    .font(.system(size: 22, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .frame(width: 56, height: 56)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                        if addPhotoButtonVisible {
+                            if needsAddPhotoChoiceDialog {
+                                Menu {
+                                    if let onGallery = onAddFromBloggoGallery {
+                                        Button(action: onGallery) {
+                                            addPhotoMenuRow("Bloggo Gallery")
+                                        }
+                                    }
+                                    if isLimitedPhotoLibraryAccess, let onExpand = onExpandSharedPhotoLibrary {
+                                        Button(action: onExpand) {
+                                            addPhotoMenuRow("Camera Roll")
+                                        }
+                                    } else if let onLibrary = onAddFromLibrary {
+                                        Button(action: onLibrary) {
+                                            addPhotoMenuRow("Camera Roll")
+                                        }
+                                    }
+                                } label: {
+                                    addPhotoChipLabel
+                                }
+                                .menuIndicator(.hidden)
+                                .menuStyle(.automatic)
+                                .accessibilityLabel("Add Photos")
+                            } else {
+                                Button(action: {
+                                    if addFromLibraryInvokesLimitedPickerOnly {
+                                        onExpandSharedPhotoLibrary?()
+                                    } else {
+                                        onAddFromLibrary?()
+                                        onAddFromBloggoGallery?()
+                                    }
+                                }) {
+                                    addPhotoChipLabel
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Add Photos")
                             }
-                            .accessibilityLabel("Add Photos")
                         }
                     }
                     .padding(.horizontal, 20)
@@ -225,6 +327,7 @@ struct ManagePhotosView: View {
                     Button("Save") {
                         dismiss()
                     }
+                    .font(.body.weight(.semibold))
                     .foregroundColor(.blue)
                     .accessibilityLabel("Save and close")
                 }
@@ -233,6 +336,7 @@ struct ManagePhotosView: View {
                     Button("Cancel") {
                         withAnimation(.easeInOut(duration: 0.2)) { isSelectMode = false }
                     }
+                    .font(.body.weight(.semibold))
                     .foregroundColor(.white)
                 }
             } else {
@@ -257,6 +361,7 @@ struct ManagePhotosView: View {
                             withAnimation(.easeInOut(duration: 0.2)) { isSelectMode = true }
                         }
                     }
+                    .font(.body.weight(.semibold))
                     .frame(minWidth: isSelectMode ? 56 : 0, alignment: .center)
                     .foregroundColor(isSelectMode ? .blue : .white)
                 }
@@ -268,6 +373,7 @@ struct ManagePhotosView: View {
         .tint(.white)
         .onAppear {
             refreshExistingAssetIds()
+            scheduleExistingAssetIdRefreshRetriesIfNeeded()
             cachedAiRanks = photos.aiRanksByPhotoId()
             ensureInitialBatch()
             // Match previous behavior (persist AI sort to the binding) without blocking the first navigation frame.
@@ -284,12 +390,34 @@ struct ManagePhotosView: View {
             }
         }
         .onDisappear {
+            existingAssetIdsRefreshTask?.cancel()
+            existingAssetIdsRefreshTask = nil
             if didPrimeGridCache {
                 ImageLoader.shared.stopCachingThumbnails(assetIdentifiers: gridCacheAssetIdentifiers, targetSize: gridThumbnailPixelSize)
             }
         }
-        .onChange(of: photos.map(\.id)) { _, _ in
+        .onChange(of: photos.map(\.id)) { oldIds, newIds in
+            let currentLibraryIds = Set(
+                photos.compactMap { p -> String? in
+                    guard let lid = p.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !lid.isEmpty,
+                          !lid.hasPrefix(AppCapturePhotoService.prefix) else { return nil }
+                    return lid
+                }
+            )
+            var nextProvisional = provisionalLibraryAssetIds.intersection(currentLibraryIds)
+            let oldSet = Set(oldIds)
+            for pid in newIds where !oldSet.contains(pid) {
+                if let photo = photos.first(where: { $0.id == pid }),
+                   let lid = photo.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !lid.isEmpty,
+                   !lid.hasPrefix(AppCapturePhotoService.prefix) {
+                    nextProvisional.insert(lid)
+                }
+            }
+            provisionalLibraryAssetIds = nextProvisional
+
             refreshExistingAssetIds()
+            scheduleExistingAssetIdRefreshRetriesIfNeeded()
             cachedAiRanks = photos.aiRanksByPhotoId()
             // Reset progressive rendering when the photo set changes.
             visiblePhotoCount = min(max(initialBatchSize, visiblePhotoCount), manageGridPhotos.count)
@@ -318,75 +446,10 @@ struct ManagePhotosView: View {
                         }
                     )
                     .onAppear { maybeLoadMoreIfNeeded(currentPhoto: photo) }
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.preference(
-                                key: ManagePhotoGridCellFrameKey.self,
-                                value: [photo.id: geo.frame(in: .named("managePhotoGrid"))]
-                            )
-                        }
-                    )
                 }
             }
             .padding(2)
         }
-        .coordinateSpace(name: "managePhotoGrid")
-        .onPreferenceChange(ManagePhotoGridCellFrameKey.self) { cellFrames = $0 }
-        // Scroll off in select mode so vertical drag is unambiguously for range-select.
-        .scrollDisabled(isSelectMode)
-        // Use .gesture (not simultaneous) so it doesn't compete with ScrollView's pan.
-        // In normal mode the guard returns early, so scroll works freely.
-        .gesture(
-            DragGesture(minimumDistance: 8, coordinateSpace: .named("managePhotoGrid"))
-                .onChanged { value in
-                    guard isSelectMode else { return }
-                    if dragStartIndex == nil {
-                        guard let startIdx = photoIndex(at: value.startLocation) else { return }
-                        beginRangeSelection(at: startIdx)
-                    }
-                    if let currentIdx = photoIndex(at: value.location) {
-                        applyRangeSelection(currentIndex: currentIdx)
-                    }
-                }
-                .onEnded { _ in endRangeSelection() }
-        )
-    }
-
-    // MARK: - Drag selection helpers
-
-    private func photoIndex(at location: CGPoint) -> Int? {
-        for (idx, photo) in manageGridPhotos.enumerated() {
-            if let frame = cellFrames[photo.id], frame.contains(location) { return idx }
-        }
-        return nil
-    }
-
-    private func beginRangeSelection(at index: Int) {
-        guard manageGridPhotos.indices.contains(index) else { return }
-        dragStartIndex = index
-        dragInitialInclusionById = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0.isIncluded) })
-        dragTargetIsIncluded = !manageGridPhotos[index].isIncluded
-        applyRangeSelection(currentIndex: index)
-    }
-
-    private func applyRangeSelection(currentIndex: Int) {
-        guard let start = dragStartIndex,
-              let target = dragTargetIsIncluded,
-              manageGridPhotos.indices.contains(currentIndex) else { return }
-        let lower = min(start, currentIndex)
-        let upper = max(start, currentIndex)
-        let rangeIds = Set(manageGridPhotos[lower...upper].map(\.id))
-        for idx in photos.indices {
-            let id = photos[idx].id
-            let initial = dragInitialInclusionById[id] ?? photos[idx].isIncluded
-            photos[idx].isIncluded = rangeIds.contains(id) ? target : initial
-        }
-    }
-
-    private func endRangeSelection() {
-        dragStartIndex = nil
-        dragTargetIsIncluded = nil
-        dragInitialInclusionById = [:]
     }
 
     private func toggleInclusion(for photo: RecapPhoto) {
@@ -396,13 +459,6 @@ struct ManagePhotosView: View {
 }
 
 // MARK: - Grid Cell
-
-private struct ManagePhotoGridCellFrameKey: PreferenceKey {
-    static var defaultValue: [UUID: CGRect] = [:]
-    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
-    }
-}
 
 private struct ManagePhotoGridCell: View {
     let photo: RecapPhoto
@@ -426,7 +482,7 @@ private struct ManagePhotoGridCell: View {
                 }
                 .aspectRatio(1, contentMode: .fit)
 
-                // AI rank badge
+                // AI rank badge (top-left)
                 if let rank = rank {
                     HStack(spacing: 2) {
                         Image(systemName: "star.fill")
@@ -440,6 +496,16 @@ private struct ManagePhotoGridCell: View {
                     .background(Color.black.opacity(0.72))
                     .appChromeCornerRadius(4)
                     .padding(4)
+                }
+
+                // Favorite badge (top-right)
+                if photo.isFavorite {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.red)
+                        .shadow(color: .black.opacity(0.5), radius: 2)
+                        .padding(6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
 
                 // Dim unselected photos in select mode
@@ -473,6 +539,8 @@ private struct ManagePhotoGridCell: View {
                         .padding(6)
                 }
             }
+            // Full tile is tappable (avoids tiny/incorrect hit regions from nested GeometryReader + overlays).
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -483,6 +551,8 @@ private struct ManagePhotoGridCell: View {
 /// Full-screen photo viewer shown when tapping a grid cell in normal mode.
 private struct ManagePhotoDetailView: View {
     @Binding var photos: [RecapPhoto]
+    /// Matches `manageGridPhotos` so limited-library picks appear before `PHAsset.fetch` catches up (`hasDisplayableLocalBacking` can be false briefly).
+    let gridPhotos: [RecapPhoto]
     let initialPhotoId: UUID
     let aiRanks: [UUID: Int]
     let onDismiss: () -> Void
@@ -491,8 +561,15 @@ private struct ManagePhotoDetailView: View {
     @State private var zoomScale: CGFloat = 1.0
     @State private var baseZoomScale: CGFloat = 1.0
 
-    init(photos: Binding<[RecapPhoto]>, initialPhotoId: UUID, aiRanks: [UUID: Int], onDismiss: @escaping () -> Void) {
+    init(
+        photos: Binding<[RecapPhoto]>,
+        gridPhotos: [RecapPhoto],
+        initialPhotoId: UUID,
+        aiRanks: [UUID: Int],
+        onDismiss: @escaping () -> Void
+    ) {
         _photos = photos
+        self.gridPhotos = gridPhotos
         self.initialPhotoId = initialPhotoId
         self.aiRanks = aiRanks
         self.onDismiss = onDismiss
@@ -500,11 +577,7 @@ private struct ManagePhotoDetailView: View {
     }
 
     /// Same ordering as the grid (`manageGridPhotos`) so swipe order matches thumbnails.
-    private var detailPhotos: [RecapPhoto] {
-        photos
-            .filter(\.hasDisplayableLocalBacking)
-            .sorted { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }
-    }
+    private var detailPhotos: [RecapPhoto] { gridPhotos }
 
     private var detailMainPixelSize: CGSize {
         let b = UIScreen.main.bounds
@@ -535,18 +608,26 @@ private struct ManagePhotoDetailView: View {
                                 showIcon: false,
                                 targetSize: detailMainPixelSize
                             )
-                            .aspectRatio(contentMode: .fit)
+                            .aspectRatio(contentMode: .fill)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
                             .scaleEffect(zoomScale)
 
+                            // Subtle in-blog badge — centered pill
                             if photo.isIncluded {
-                                Color.black.opacity(0.4)
-                                    .allowsHitTesting(false)
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 72))
-                                    .foregroundStyle(.white)
-                                    .shadow(color: .black.opacity(0.4), radius: 6)
-                                    .transaction { $0.animation = nil }
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 10, weight: .bold))
+                                    Text("Photo included in blog")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.blue.opacity(0.85))
+                                .appChromeCornerRadius(12)
+                                .allowsHitTesting(false)
+                                .transaction { $0.animation = nil }
                             }
                         }
                         .contentShape(Rectangle())
@@ -580,20 +661,35 @@ private struct ManagePhotoDetailView: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
 
                 VStack(spacing: 4) {
-                    if let rank = aiRanks[currentPhotoId] {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 11, weight: .bold))
-                            Text("AI rank #\(rank)")
-                                .font(.system(size: 12, weight: .semibold))
+                    HStack(spacing: 6) {
+                        if let rank = aiRanks[currentPhotoId] {
+                            HStack(spacing: 4) {
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text("AI rank #\(rank)")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.6))
+                            .appChromeCornerRadius(6)
                         }
-                        .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.6))
-                        .appChromeCornerRadius(6)
+                        if currentPhoto?.isFavorite == true {
+                            HStack(spacing: 4) {
+                                Image(systemName: "heart.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text("Favorited")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .foregroundColor(.red)
+                            .shadow(color: .black.opacity(0.5), radius: 2)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .appChromeCornerRadius(6)
+                        }
                     }
-                    Text("Tap to \(currentPhoto?.isIncluded == true ? "remove" : "include")")
+                    Text(currentPhoto?.isIncluded == true ? "Tap to hide from blog" : "Tap to add to blog")
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.7))
                 }
@@ -620,6 +716,24 @@ private struct ManagePhotoDetailView: View {
                                         RoundedRectangle(appChromeBaseRadius: 8)
                                             .stroke(isCurrent ? Color.white : Color.clear, lineWidth: 2)
                                     )
+                                    .overlay(alignment: .topTrailing) {
+                                        if photo.isFavorite {
+                                            Image(systemName: "heart.fill")
+                                                .font(.system(size: 8))
+                                                .foregroundColor(.red)
+                                                .shadow(color: .black.opacity(0.5), radius: 2)
+                                                .padding(4)
+                                        }
+                                    }
+                                    .overlay(alignment: .bottomTrailing) {
+                                        if photo.isIncluded {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.system(size: 14))
+                                                .foregroundStyle(Color.white)
+                                                .shadow(color: .black.opacity(0.4), radius: 2)
+                                                .padding(3)
+                                        }
+                                    }
                                     .opacity(photo.isIncluded ? 1.0 : 0.55)
                                 }
                                 .buttonStyle(.plain)

@@ -50,17 +50,18 @@ enum StoryBookBuilder {
     private static func buildDays(_ detail: RecapBlogDetail) async -> [StoryDay] {
         var storyDays: [StoryDay] = []
         for (idx, day) in detail.days.enumerated() {
-            let screenSize = await MainActor.run { UIScreen.main.bounds.size }
+            let (screenPoints, screenScale) = await MainActor.run { (UIScreen.main.bounds.size, UIScreen.main.scale) }
+            let screenPixelSize = pixelTargetSize(for: screenPoints, scale: screenScale, maxLongEdge: 3072)
             let snapshot = await withTimeout(seconds: 10) {
                 await MapSnapshotHelper.generateSnapshot(
                     for: day.placeStops,
-                    size: screenSize,
+                    size: screenPoints,
                     regionPadding: 0.05,
-                    showPlaceNames: false
+                    showPlaceNames: true
                 )
             }
 
-            let places = await buildPlaces(from: day.placeStops, targetPixelSize: screenSize)
+            let places = await buildPlaces(from: day.placeStops, targetPixelSize: screenPixelSize)
 
             storyDays.append(StoryDay(
                 dayNumber: idx + 1,
@@ -144,6 +145,17 @@ enum StoryBookBuilder {
     private static func normalizedLocalID(_ s: String?) -> String? {
         guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
         return t
+    }
+
+    /// Image loaders expect pixel-ish targets (especially PhotoKit); passing point sizes produces soft results on export/zoom.
+    private static func pixelTargetSize(for points: CGSize, scale: CGFloat, maxLongEdge: CGFloat) -> CGSize {
+        let rawW = max(1, points.width * max(1, scale))
+        let rawH = max(1, points.height * max(1, scale))
+        guard max(rawW, rawH) > maxLongEdge else {
+            return CGSize(width: rawW, height: rawH)
+        }
+        let r = maxLongEdge / max(rawW, rawH)
+        return CGSize(width: floor(rawW * r), height: floor(rawH * r))
     }
 
     /// Same resolution order as `PDFExportService.preloadAssets`: app capture → Photo Library (via `ImageLoader`) → signed cloud URL.

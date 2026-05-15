@@ -20,12 +20,9 @@ struct DayCaptionEditSheet: View {
     var onEnhance: ((String) async -> String)? = nil
     /// Called after AI successfully applies a result.
     var onEnhanceApplied: (() -> Void)? = nil
-    /// Pure translation — no AI story generation.
-    var onTranslate: ((String) async -> String)? = nil
 
     @State private var editedText: String = ""
     @State private var isEnhancing = false
-    @State private var isTranslating = false
     @State private var showEnhanceStylePicker = false
     @State private var showWritingStyleSheet = false
     @AppStorage(StoryWritingStyle.presetStorageKey) private var stylePresetId: String = ""
@@ -132,30 +129,6 @@ struct DayCaptionEditSheet: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-
-                    if let translate = onTranslate, !trimmedEditedText.isEmpty {
-                        Button {
-                            runTranslate(translate)
-                        } label: {
-                            if isTranslating {
-                                HStack(spacing: 4) {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle())
-                                        .scaleEffect(0.75)
-                                    Text("Translating…")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                            } else {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "translate")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                        .disabled(isEnhancing || isTranslating)
-                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
@@ -194,19 +167,6 @@ struct DayCaptionEditSheet: View {
                 editedText = result
                 isEnhancing = false
                 onEnhanceApplied?()
-            }
-        }
-    }
-
-    private func runTranslate(_ translate: @escaping (String) async -> String) {
-        if originalDraft == nil { originalDraft = editedText }
-        let textToTranslate = editedText
-        isTranslating = true
-        Task {
-            let result = await translate(textToTranslate)
-            await MainActor.run {
-                editedText = result
-                isTranslating = false
             }
         }
     }

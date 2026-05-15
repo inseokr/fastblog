@@ -8,9 +8,18 @@ import SwiftUI
 private let loadingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
 
 struct LoadingScanView: View {
+    /// Tint layered on top of `Material` when ``isOverlay`` is true. ``modalGrayGlass`` is for in-modal
+    /// loading (e.g. video export); ``tripNavy`` matches the trip scanner overlay.
+    enum OverlayTint {
+        case tripNavy
+        case modalGrayGlass
+    }
+
     var message: String = "Finding your trips…"
     /// When true, renders with a semi-transparent blurred background instead of solid navy.
     var isOverlay: Bool = false
+    /// When ``isOverlay`` is true, controls the color wash on top of ``ultraThinMaterial``.
+    var overlayTint: OverlayTint = .tripNavy
     /// When non-nil, shows a percentage and drives step labels from real progress instead of timer.
     var progress: Double? = nil
     /// When non-nil, shows a gray Cancel button at the bottom.
@@ -66,7 +75,7 @@ struct LoadingScanView: View {
     /// When the slow-scan hint is shown, replaces cycling/progress step text so we do not stack two messages.
     private var displayedSecondaryLabel: String {
         showSlowScanHint
-            ? "Taking a little longer than expected. Please wait…"
+            ? "Please wait, it's taking longer than expected."
             : progressStepLabel
     }
 
@@ -100,12 +109,20 @@ struct LoadingScanView: View {
     var body: some View {
         ZStack {
             if isOverlay {
-                // Blur the content behind, then tint with semi-transparent navy
+                // Blur the content behind, then tint for legibility
                 Rectangle()
                     .fill(.ultraThinMaterial)
                     .ignoresSafeArea()
-                loadingBackground.opacity(0.65)
-                    .ignoresSafeArea()
+                switch overlayTint {
+                case .tripNavy:
+                    loadingBackground.opacity(0.65)
+                        .ignoresSafeArea()
+                case .modalGrayGlass:
+                    Color.black.opacity(0.38)
+                        .ignoresSafeArea()
+                    Color.white.opacity(0.06)
+                        .ignoresSafeArea()
+                }
             } else {
                 (backgroundColorOverride ?? loadingBackground)
                     .ignoresSafeArea()
@@ -115,9 +132,14 @@ struct LoadingScanView: View {
                 if useCenteredLayout {
                     VStack(spacing: dynamicTypeSize >= .xLarge ? 26 : 20) {
                         scanAnimation
-                        messageSection
-                        actionButtons
+                        VStack(spacing: dynamicTypeSize >= .xLarge ? 26 : 20) {
+                            messageSection
+                            actionButtons
+                        }
+                        // ContentView applies broad `.animation(_:value:)` to the root — block layout interpolation on copy/progress.
+                        .transaction { $0.animation = nil }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ZStack {
                         scanAnimation
@@ -126,9 +148,13 @@ struct LoadingScanView: View {
                             messageSection
                             actionButtons
                         }
+                        .frame(maxWidth: .infinity)
+                        .transaction { $0.animation = nil }
                         // Keep the text block below the scan animation; extra drop + lift animation when type is large.
                         .offset(y: 240 + nonCenteredDynamicTypeClearance * 0.58)
                     }
+                    // Without this, the stack can size to the ~260pt-wide rings; text then re-centers when copy wraps.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
@@ -179,45 +205,52 @@ struct LoadingScanView: View {
 
     @ViewBuilder
     private var actionButtons: some View {
-        if let onUseCamera {
-            Button {
-                onUseCamera()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text("Use Camera")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+        let hasCamera = onUseCamera != nil
+        let hasCancel = onCancel != nil
+        if hasCamera || hasCancel {
+            VStack(spacing: 12) {
+                if let onUseCamera {
+                    Button {
+                        onUseCamera()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                            Text("Use Camera")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 11)
+                        .background(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.18, green: 0.40, blue: 0.78),
+                                    Color(red: 0.25, green: 0.35, blue: 0.72)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .appChromeCornerRadius(12)
+                        .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+                    }
                 }
-                .foregroundColor(.white)
-                .padding(.horizontal, 32)
-                .padding(.vertical, 11)
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.18, green: 0.40, blue: 0.78),
-                            Color(red: 0.25, green: 0.35, blue: 0.72)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .appChromeCornerRadius(12)
-                .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
-            }
-        } else if let onCancel {
-            Button {
-                onCancel()
-            } label: {
-                Text("Cancel")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.12))
-                    .appChromeCornerRadius(10)
+                if let onCancel {
+                    Button {
+                        onCancel()
+                    } label: {
+                        Text("Cancel")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(.horizontal, 32)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.12))
+                            .appChromeCornerRadius(10)
+                    }
+                }
             }
         }
     }
@@ -254,6 +287,7 @@ struct LoadingScanView: View {
                 .scaleEffect(pulseScale)
                 .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulseScale)
         }
+        .compositingGroup()
         .frame(width: 260, height: 260)
     }
 
@@ -276,7 +310,8 @@ struct LoadingScanView: View {
             .opacity(visible ? 1 : 0)
             .scaleEffect(visible ? 1 : 0.3)
             .offset(x: x, y: y)
-            .animation(.spring(response: 0.45, dampingFraction: 0.7), value: visible)
+            // Ease-out avoids spring overshoot — orbit icons read as a steady halo, not bouncing pins.
+            .animation(.easeOut(duration: 0.4), value: visible)
     }
 
     // MARK: - Message
@@ -288,30 +323,35 @@ struct LoadingScanView: View {
                 .fontWeight(.bold)
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
+                // Fill the padded width so centering does not jump when intrinsic line breaks change.
+                .frame(maxWidth: .infinity, alignment: .center)
 
             Text(displayedSecondaryLabel)
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.65))
                 .multilineTextAlignment(.center)
-                .contentTransition(.opacity)
-                .animation(.easeInOut(duration: 0.3), value: displayedSecondaryLabel)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity, minHeight: 40, alignment: .center)
 
-            if let progress {
-                Text("\(Int(progress * 100))%")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white.opacity(0.5))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                    .animation(.easeInOut(duration: 0.25), value: Int(progress * 100))
-                    .padding(.top, 4)
-            } else {
-                Text("This may take a moment")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.35))
-                    .padding(.top, 4)
+            Group {
+                if let progress {
+                    Text("\(Int(progress * 100))%")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white.opacity(0.5))
+                        .monospacedDigit()
+                } else {
+                    Text("This may take a moment")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.35))
+                }
             }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, minHeight: 28, alignment: .center)
+            .padding(.top, 4)
         }
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 32)
     }
 
@@ -321,8 +361,8 @@ struct LoadingScanView: View {
         // Dashed outer ring spins continuously
         ringRotation = 360
 
-        // Gentle pulse on central icon
-        pulseScale = 1.12
+        // Subtle pulse — large amplitude + rings reads as the whole mark “swimming”.
+        pulseScale = 1.06
 
         // Orbit nodes pop in one by one
         for index in 0..<3 {
@@ -337,9 +377,7 @@ struct LoadingScanView: View {
             for idx in 1..<timerStepLabels.count {
                 let delay = 1.0 + Double(idx) * 1.4
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        stepLabelIndex = idx
-                    }
+                    stepLabelIndex = idx
                 }
             }
         }
@@ -357,9 +395,7 @@ struct LoadingScanView: View {
             }
 
             await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    showSlowScanHint = true
-                }
+                showSlowScanHint = true
             }
         }
     }
