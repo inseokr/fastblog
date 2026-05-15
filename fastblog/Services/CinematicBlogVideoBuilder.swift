@@ -70,6 +70,113 @@ enum CinematicBlogVideoBuilder {
         return max(12, fromDuration)
     }
 
+    private static var cinematicZoomSegmentEmittedSeconds: Double {
+        Double(cinematicZoomBlendFrameCount) * cinematicZoomFrameDurationSeconds
+    }
+
+    private static var coverToFirstMapCrossfadeSeconds: Double {
+        let frames = max(14, Int((coverToMapTransitionSeconds * coverToMapTransitionFPS).rounded()))
+        return Double(frames) / coverToMapTransitionFPS
+    }
+
+    private static func hasFiniteCoord(_ stop: PlaceStop) -> Bool {
+        guard let c = stop.representativeLocation?.clCoordinate else { return false }
+        return c.latitude.isFinite && c.longitude.isFinite
+    }
+
+    // MARK: - Export duration estimate
+
+    /// Wall-clock timeline matching `buildFrames` pacing (map pan/zoom, dissolves, travel, Ken Burns photo budget).
+    /// Omits `BlogVideoExportService`’s final writer pad — add `1/30` s there to match the encoded file.
+    ///
+    /// Assumes snapshot and photo loads succeed; failed MapKit/photo fetches produce a shorter real export.
+    static func estimatedTimelineSecondsForExportConfiguration(
+        draft: RecapBlogDetail,
+        secondsPerPhoto: Double,
+        maxPhotosPerPlace: Int,
+        includedPlaceIDs: Set<UUID>? = nil
+    ) -> Double {
+        let days: [RecapBlogDay] = draft.days.compactMap { day in
+            let filteredStops: [PlaceStop]
+            if let ids = includedPlaceIDs {
+                filteredStops = day.placeStops.filter { ids.contains($0.id) }
+            } else {
+                filteredStops = day.placeStops
+            }
+            guard !filteredStops.isEmpty else { return nil }
+            var filtered = day
+            filtered.placeStops = filteredStops
+            return filtered
+        }
+
+        var total = 0.0
+        // Cover hold
+        total += 2.0
+
+        if let firstDay = days.first, let firstStop = firstDay.placeStops.first, hasFiniteCoord(firstStop) {
+            total += coverToFirstMapCrossfadeSeconds
+        }
+
+        var handoffSkipsPanAndZoom = false
+
+        for (dayIdx, day) in days.enumerated() {
+            let stops = day.placeStops
+            for (placeIdx, stop) in stops.enumerated() {
+                let skipPanZoom = handoffSkipsPanAndZoom
+                handoffSkipsPanAndZoom = false
+
+                let coordOK = hasFiniteCoord(stop)
+                if coordOK {
+                    if !skipPanZoom {
+                        total += Double(cinematicPanFrameCount) * cinematicPanFrameDurationSeconds
+                        total += cinematicZoomSegmentEmittedSeconds
+                    }
+                    total += cinematicFocusedMapHoldSeconds
+                }
+
+                let photoCount = min(maxPhotosPerPlace, stop.includedPhotos.count)
+                if photoCount > 0 {
+                    for photoIdx in 0..<photoCount {
+                        if photoIdx == 0, coordOK {
+                            total += mapToFirstPhotoTransitionSeconds
+                        }
+                        if photoIdx > 0 {
+                            total += cinematicPhotoToPhotoDissolveDurationSeconds
+                        }
+                        total += secondsPerPhoto
+                    }
+                }
+
+                let isLastPlaceOverall = (dayIdx == days.count - 1) && (placeIdx == stops.count - 1)
+                let isLastPlaceOfDay = placeIdx == stops.count - 1
+                let hasEmittedPhotos = photoCount > 0
+
+                guard !isLastPlaceOverall, hasEmittedPhotos else { continue }
+
+                if isLastPlaceOfDay {
+                    if dayIdx + 1 < days.count,
+                       let nextFirst = days[dayIdx + 1].placeStops.first,
+                       hasFiniteCoord(nextFirst) {
+                        total += lastPhotoToMapFadeSeconds
+                    }
+                } else {
+                    let nextStop = stops[placeIdx + 1]
+                    let nextCoordOK = hasFiniteCoord(nextStop)
+                    if coordOK, nextCoordOK {
+                        let mode = stop.transportModeToNextStop ?? TravelMode.detect(from: stop, to: nextStop)
+                        total += mode.animationSeconds
+                        total += 0.25 + cinematicZoomSegmentEmittedSeconds
+                        handoffSkipsPanAndZoom = true
+                    } else if nextCoordOK {
+                        total += lastPhotoToMapFadeSeconds
+                    }
+                }
+            }
+        }
+
+        return total
+    }
+
     // MARK: - Entry point
 
     /// Generates frames in order and calls `frameHandler(image, duration)` for each.
@@ -821,7 +928,7 @@ enum CinematicBlogVideoBuilder {
         return drawDayHeaderOverlay(on: mapImage, day: day, dayNumber: dayNumber, pixelSize: pixelSize)
     }
 
-    /// Bottom-trailing “Powered by Bloggo” chip on **only** the first map segment of a cinematic export.
+    /// Top-trailing “Powered by Bloggo” chip on **only** the first map segment of a cinematic export.
     private static func applyingPoweredByBloggoWatermarkIfNeeded(
         to mapImage: UIImage,
         pixelSize: CGSize,
@@ -842,6 +949,8 @@ enum CinematicBlogVideoBuilder {
     private static func drawPoweredByBloggoWatermark(in cg: CGContext, pixelSize: CGSize) {
         let w = pixelSize.width, h = pixelSize.height
         let margin = max(32, w * 0.038)
+        // Below typical host top crop; avoids overlapping bottom map/place overlays.
+        let topInset = max(112, round(h * 0.058))
 
         let poweredFont = UIFont.systemFont(ofSize: (w * 0.026).rounded(), weight: .medium)
         let bloggoFont = UIFont.systemFont(ofSize: (w * 0.026).rounded(), weight: .bold)
@@ -876,8 +985,8 @@ enum CinematicBlogVideoBuilder {
         let chipW = chipPadH * 2 + iconBlockW + iconGap + innerTextW
         let chipH = chipPadV * 2 + max(iconSide, textRowH)
         let chipRect = CGRect(
-            x: w - margin - chipW - 95,
-            y: h - margin - chipH,
+            x: w - margin - chipW,
+            y: topInset,
             width: chipW,
             height: chipH
         )

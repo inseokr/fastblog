@@ -941,8 +941,13 @@ class MapSnapshotHelper {
             }
             let lat = fromRegion.center.latitude  + (toRegion.center.latitude  - fromRegion.center.latitude)  * t
             let lon = fromRegion.center.longitude + (toRegion.center.longitude - fromRegion.center.longitude) * t
-            let latΔ = fromRegion.span.latitudeDelta  + (toRegion.span.latitudeDelta  - fromRegion.span.latitudeDelta)  * t
-            let lonΔ = fromRegion.span.longitudeDelta + (toRegion.span.longitudeDelta - fromRegion.span.longitudeDelta) * t
+            // Log-space span interpolation: each frame applies the same *ratio* of zoom change,
+            // giving perceptually uniform speed instead of the acceleration that linear interpolation
+            // produces when zooming from a wide region into a small one.
+            let latΔ = exp(log(max(fromRegion.span.latitudeDelta, 1e-9))
+                + (log(max(toRegion.span.latitudeDelta, 1e-9)) - log(max(fromRegion.span.latitudeDelta, 1e-9))) * t)
+            let lonΔ = exp(log(max(fromRegion.span.longitudeDelta, 1e-9))
+                + (log(max(toRegion.span.longitudeDelta, 1e-9)) - log(max(fromRegion.span.longitudeDelta, 1e-9))) * t)
             let interpRegion = validatedSnapshotRegion(
                 MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
                                    span: MKCoordinateSpan(latitudeDelta: latΔ, longitudeDelta: lonΔ)),
@@ -1274,8 +1279,10 @@ class MapSnapshotHelper {
     }
 
     private static func smoothStep(_ t: Double) -> Double {
+        // Perlin's smootherStep (C2-smooth): zero velocity AND acceleration at both endpoints,
+        // giving more natural deceleration than the classic cubic smoothstep.
         let c = max(0, min(1, t))
-        return c * c * (3 - 2 * c)
+        return c * c * c * (c * (c * 6 - 15) + 10)
     }
 
     /// Small black capsule pill with white text, centred at `point`. Used for per-segment distances.

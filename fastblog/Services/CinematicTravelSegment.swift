@@ -11,7 +11,7 @@ import FoundationModels
 @available(iOS 26, *)
 @Generable
 private struct TransportInference {
-    @Guide(description: "Most likely transport between stops. Exactly one of: walking, driving, flying. Never taxi, bus, train, subway — users pick those manually.")
+    @Guide(description: "Ground transport between stops only: walking or driving. Never airplane — users choose flights manually.")
     var mode: String
 }
 #endif
@@ -19,31 +19,84 @@ private struct TransportInference {
 // MARK: - TravelMode
 
 enum TravelMode: String, Codable, CaseIterable, Equatable {
-    case walking  // < 500 m  →  figure.walk
-    case driving  // 500 m – 50 km  →  car.fill
+    case walking  // Walking / backpacking — see ``detect(from:to:)``.
+    case driving  // Short-hop driving when pace rules out plausible walk.
     case taxi     // manual  →  car.rear.fill
     case bus      // manual  →  bus.fill
     case train    // manual  →  tram.fill
     case subway   // manual  →  tram.tunnel.fill
-    case flying   // > 50 km  →  airplane (Bezier arc)
+    case flying   // Airplane — manual pick only (never auto-assigned).
 
-    /// Distance-only fallback for when LLM is unavailable or returns an unusable mode.
-    /// Finer modes (taxi, bus, train, subway) are never auto-detected — they require an explicit user choice.
+    /// Distance-only fallback when timestamps are unavailable (e.g. map preview with coordinates only).
+    /// Prefer ``detect(from:to:)`` on two ``PlaceStop`` values whenever possible for time-aware walking vs driving.
     static func detect(from a: CLLocationCoordinate2D, to b: CLLocationCoordinate2D) -> TravelMode {
         let meters = CLLocation(latitude: a.latitude, longitude: a.longitude)
             .distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
-        if meters < 500     { return .walking }
-        if meters < 804_672 { return .driving }  // up to 500 miles → driving
-        return .flying
+        if meters < 500 { return .walking }
+        return .driving
     }
 
-    /// Modes the app may assign automatically (distance + optional on-device LLM). Finer modes are user-selected only.
-    private static let autoSelectableModes: Set<TravelMode> = [.walking, .driving, .flying]
+    /// Guesses ground vs flight using distance **and** digitized photo timestamps between visits when present,
+    /// so backpacking / walking-heavy days do not map every >500 m hop to ``driving``.
+    static func detect(from fromStop: PlaceStop, to toStop: PlaceStop) -> TravelMode {
+        guard let coordA = fromStop.representativeLocation?.clCoordinate,
+              let coordB = toStop.representativeLocation?.clCoordinate,
+              coordA.latitude.isFinite, coordA.longitude.isFinite,
+              coordB.latitude.isFinite, coordB.longitude.isFinite else {
+            return .driving
+        }
+
+        let meters = CLLocation(latitude: coordA.latitude, longitude: coordA.longitude)
+            .distance(from: CLLocation(latitude: coordB.latitude, longitude: coordB.longitude))
+
+        // Short hops between nearby POIs remain on foot unless timing proves otherwise.
+        if meters < 500 { return .walking }
+
+        let km = meters / 1000.0
+
+        if let gapMin = timeDifferenceMinutes(a: fromStop, b: toStop), gapMin > 0 {
+            let gap = Double(gapMin)
+
+            // Pace model: slow exploratory walk / backpacking (~3.2 km/h) with sightseeing slack.
+            let slowWalkKmh = 3.2
+            let requiredSlowWalkMin = (km / slowWalkKmh) * 60.0
+            let walkNeedsMin = max(12.0, requiredSlowWalkMin * 0.40)
+
+            // Strong walking signal: traveler had roughly enough elapsed time for a realistic on-foot move.
+            if km <= 42, gap >= walkNeedsMin {
+                return .walking
+            }
+
+            // Motorized signal: elapsed time far too tight for walking this distance briskly (~6–7 km/h).
+            let briskWalkKmh = 6.8
+            let briskMin = max(10.0, (km / briskWalkKmh) * 60.0)
+            let driveClockCap = min(22.0, max(10.0, briskMin * 0.28))
+
+            if km >= 1.2, gap < driveClockCap {
+                return .driving
+            }
+
+            // Moderate hops with ample clock but first rule slack failed — backpacking / roaming on foot only
+            // if implied pace stays within a plausible full-day trekking band.
+            let maxReasonableKm = min(72.0, (gap / 60.0) * 13.2)
+            if gap >= 75, km <= maxReasonableKm {
+                return .walking
+            }
+        }
+
+        // No timestamps: bias toward walking when distance still looks day-hike plausible on foot (~city block hops).
+        if meters < 1_350 {
+            return .walking
+        }
+        return .driving
+    }
+
+    /// Walking + driving only; airplane/transit fine-grained modes require an explicit user choice.
+    private static let autoSelectableModes: Set<TravelMode> = [.walking, .driving]
 
     /// On-device LLM inference using distance, time gap, place names and categories.
-    /// Only `walking`, `driving` (car), or `flying` (airplane) may result; transit subtypes require an explicit user pick.
-    /// Hard physical boundaries apply first; LLM refines the middle range.
-    /// Falls back to `detect()` if the model is unavailable, errors, or returns a non-auto mode.
+    /// Only `walking` or `driving` may result automatically; flight is manual-only.
+    /// Falls back to ``detect(from:to:)`` if the model is unavailable, errors, or returns an unusable mode.
     @available(iOS 26, *)
     static func infer(from a: PlaceStop, to b: PlaceStop) async -> TravelMode {
         guard let coordA = a.representativeLocation?.clCoordinate,
@@ -52,9 +105,8 @@ enum TravelMode: String, Codable, CaseIterable, Equatable {
         let meters = CLLocation(latitude: coordA.latitude, longitude: coordA.longitude)
             .distance(from: CLLocation(latitude: coordB.latitude, longitude: coordB.longitude))
 
-        // Hard boundaries: LLM can't override physics
-        if meters < 300     { return .walking }
-        if meters > 804_672 { return .flying }  // 500 miles
+        // Hard boundaries: LLM can't override physics for short walks.
+        if meters < 300 { return .walking }
 
         #if canImport(FoundationModels)
         let prompt = buildInferencePrompt(distanceMeters: meters, from: a, to: b)
@@ -68,18 +120,17 @@ enum TravelMode: String, Codable, CaseIterable, Equatable {
         } catch { }
         #endif
 
-        return detect(from: coordA, to: coordB)
+        return detect(from: a, to: b)
     }
 
     /// Parses the model string into a `TravelMode` when it names an auto-selectable segment; synonyms map to canonical raw values.
     private static func travelModeParsedFromInferenceAnswer(_ raw: String) -> TravelMode? {
         let s = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !s.isEmpty else { return nil }
-        if let exact = TravelMode(rawValue: s) { return exact }
+        if let exact = TravelMode(rawValue: s), exact != .flying { return exact }
         switch s {
         case "walk": return .walking
         case "car", "road", "drive": return .driving
-        case "airplane", "plane", "flight", "fly", "air": return .flying
         default: return nil
         }
     }
@@ -100,9 +151,10 @@ enum TravelMode: String, Codable, CaseIterable, Equatable {
         if let cat = b.placeCategory { lines.append("To type: \(cat)") }
 
         return """
-        Infer how a traveller most likely moved between two stops using only coarse ground vs air mobility.
-        Reply with exactly one word, one of: walking, driving, flying.
-        Do not reply with taxi, bus, train, or subway — those are never auto-selected; the traveller may correct later in the app.
+        Infer how a traveller most likely moved between two stops using ground transport only.
+        Reply with exactly one word: walking or driving.
+        Never reply flying or airplane — travellers choose flights manually in the app.
+        Do not reply with taxi, bus, train, or subway — those require an explicit user pick.
 
         \(lines.joined(separator: "\n"))
         """
@@ -412,7 +464,7 @@ enum CinematicTravelSegment {
               fromCoord.latitude.isFinite, fromCoord.longitude.isFinite,
               toCoord.latitude.isFinite,   toCoord.longitude.isFinite else { return nil }
 
-        let mode = modeOverride ?? TravelMode.detect(from: fromCoord, to: toCoord)
+        let mode = modeOverride ?? TravelMode.detect(from: fromStop, to: toStop)
         let region = travelRegion(from: fromCoord, to: toCoord, mode: mode)
 
         guard let (baseImage, snapshot) = await MapSnapshotHelper.generateSnapshotForTravel(

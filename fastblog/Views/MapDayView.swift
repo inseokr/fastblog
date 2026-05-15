@@ -124,7 +124,7 @@ struct MapDayView: View {
     private func updateCameraPosition(animated: Bool) {
         let newPosition = MapCameraPosition.region(region)
         if animated {
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.92)) {
                 cameraPosition = newPosition
             }
         } else {
@@ -707,7 +707,7 @@ struct FullScreenMapView: View {
             if let newID,
                let newIndex = filteredStops.firstIndex(where: { $0.id == newID }),
                newIndex != selectedPlaceIndex {
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.92)) {
                     selectedPlaceIndex = newIndex
                 }
             }

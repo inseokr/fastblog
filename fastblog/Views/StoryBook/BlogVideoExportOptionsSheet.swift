@@ -158,7 +158,7 @@ struct BlogVideoExportOptionsSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader("Seconds Per Photo", icon: "timer")
             HStack(spacing: 8) {
-                ForEach([2.0, 3.0, 5.0], id: \.self) { secs in
+                ForEach([1.0, 2.0, 3.0, 5.0], id: \.self) { secs in
                     durationPill(seconds: secs)
                 }
             }
@@ -658,7 +658,8 @@ struct BlogVideoExportOptionsSheet: View {
         let photoCount = stops.reduce(0) { acc, stop in
             acc + min(options.maxPhotosPerPlace, stop.includedPhotos.count)
         }
-        let seconds = Double(photoCount) * options.secondsPerSlide
+        let resolved = effectiveExportOptions()
+        let seconds = BlogVideoExportService.estimatedExportedVideoDurationSeconds(draft: draft, options: resolved)
         return (
             includedPlaceCount: stops.count,
             includedPhotoCount: photoCount,
@@ -767,23 +768,7 @@ struct BlogVideoExportOptionsSheet: View {
     }
 
     private func effectiveExportOptions() -> BlogVideoExportOptions {
-        guard let cats = options.includedPlaceCategoryRaws else { return options }
-        let allowedIDs: Set<UUID> = Set(
-            draft.days.flatMap(\.placeStops).filter { stop in
-                let raw = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines)
-                let key = (raw == nil || raw?.isEmpty == true) ? "Others" : raw!
-                return cats.contains(key)
-            }.map(\.id)
-        )
-        var effective = options
-        effective.includedPlaceIDs = {
-            if let ids = options.includedPlaceIDs {
-                let filtered = ids.intersection(allowedIDs)
-                return filtered.isEmpty ? [] : filtered
-            }
-            return allowedIDs
-        }()
-        return effective
+        options.effectiveForExport(draft: draft)
     }
 
     // MARK: - Shared UI helpers

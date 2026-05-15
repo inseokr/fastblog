@@ -70,11 +70,46 @@ struct BlogVideoExportOptions: Codable, Equatable {
         if musicDisabled { return nil }
         return musicFilename ?? SlideshowMusicPreference.defaultFilename
     }
+
+    /// Options as consumed by export after applying category pills (subset + `includedPlaceIDs` fold-in).
+    func effectiveForExport(draft: RecapBlogDetail) -> BlogVideoExportOptions {
+        guard let cats = includedPlaceCategoryRaws else { return self }
+        let allowedIDs = Set(
+            draft.days.flatMap(\.placeStops).filter { stop in
+                let raw = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let key = (raw == nil || raw?.isEmpty == true) ? "Others" : raw!
+                return cats.contains(key)
+            }.map(\.id)
+        )
+        var resolved = self
+        resolved.includedPlaceIDs = {
+            if let ids = includedPlaceIDs {
+                let filtered = ids.intersection(allowedIDs)
+                return filtered.isEmpty ? [] : filtered
+            }
+            return allowedIDs
+        }()
+        return resolved
+    }
 }
 
 // MARK: - Service
 
 enum BlogVideoExportService {
+    /// Final duplicate frame appended in `exportVideo` so the last sample has non-zero duration.
+    private static let videoWriterEndPadSeconds: Double = 1.0 / 30.0
+
+    /// Exported video timeline length assuming map/photo rendering succeeds as in `CinematicBlogVideoBuilder.buildFrames`
+    /// (same travel mode selection as runtime; thumbnails / snapshots that fail shorten the actual file slightly).
+    static func estimatedExportedVideoDurationSeconds(draft: RecapBlogDetail, options: BlogVideoExportOptions) -> Double {
+        CinematicBlogVideoBuilder.estimatedTimelineSecondsForExportConfiguration(
+            draft: draft,
+            secondsPerPhoto: options.secondsPerSlide,
+            maxPhotosPerPlace: options.maxPhotosPerPlace,
+            includedPlaceIDs: options.includedPlaceIDs
+        ) + videoWriterEndPadSeconds
+    }
+
     /// Small box used to move `AVAssetExportSession` through `@Sendable` closures safely.
     private final class ExportSessionBox: @unchecked Sendable {
         let session: AVAssetExportSession

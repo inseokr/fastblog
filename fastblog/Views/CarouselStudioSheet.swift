@@ -1370,6 +1370,75 @@ private func isSlideHiddenBySiblingPIP(at index: Int, in slides: [CarouselSlide]
     }
 }
 
+/// Flattens Multi (PIP) hero + inset photo order onto sibling `.placeStop` slides for the same
+/// stop (`slides` index order). Call while the primary slide is still `layout == .pip` so swaps
+/// don't leave two singles showing the same `heroPhotoID` after returning to Single layout.
+private func distributeCollapsedPIPHeroesAcrossStopSiblings(slides: inout [CarouselSlide], primaryIndex: Int) {
+    guard slides.indices.contains(primaryIndex),
+          slides[primaryIndex].kind == .placeStop,
+          slides[primaryIndex].layout == .pip else { return }
+    guard let stopID = slides[primaryIndex].placeStop?.id else { return }
+    let donor = slides[primaryIndex]
+    var ordered: [(UUID, UIImage)] = []
+    if let id = donor.heroPhotoID, let img = donor.heroImage {
+        ordered.append((id, img))
+    }
+    let insetImages = donor.effectivePIPImages
+    let insetCount = min(donor.pipPhotoIDs.count, insetImages.count)
+    for i in 0..<insetCount {
+        ordered.append((donor.pipPhotoIDs[i], insetImages[i]))
+    }
+    let stopIndices = slides.indices.filter {
+        slides[$0].kind == .placeStop && slides[$0].placeStop?.id == stopID
+    }.sorted()
+    for (j, si) in stopIndices.enumerated() {
+        if j < ordered.count {
+            slides[si].heroPhotoID = ordered[j].0
+            slides[si].heroImage = ordered[j].1
+        }
+        slides[si].pipImages = []
+        slides[si].pipPhotoIDs = []
+        slides[si].pipThumbnailFramings = []
+        slides[si].pipBackgroundRemoved = false
+        slides[si].pipProcessedImages = []
+        slides[si].pipVisibleCount = 3
+        slides[si].pipOffset = .zero
+        slides[si].pipClusterSizeScale = 1.0
+        slides[si].pipIsUngrouped = false
+        slides[si].pipPhotoOffsets = []
+        slides[si].pipUngroupedZOrder = []
+    }
+}
+
+/// Maps Split top→bottom photo order onto sibling slides when returning to Single so "Swap"
+/// does not revive a stale `heroPhotoID` on another slide at the stop.
+private func distributeCollapsedSplitHeroesAcrossStopSiblings(slides: inout [CarouselSlide], splitIndex: Int) {
+    guard slides.indices.contains(splitIndex),
+          slides[splitIndex].kind == .placeStop,
+          slides[splitIndex].layout == .split else { return }
+    guard let stopID = slides[splitIndex].placeStop?.id else { return }
+    var ordered: [(UUID, UIImage)] = []
+    if let id = slides[splitIndex].heroPhotoID, let img = slides[splitIndex].heroImage {
+        ordered.append((id, img))
+    }
+    if let id = slides[splitIndex].splitBottomPhotoID, let img = slides[splitIndex].splitBottomImage {
+        ordered.append((id, img))
+    }
+    let stopIndices = slides.indices.filter {
+        slides[$0].kind == .placeStop && slides[$0].placeStop?.id == stopID
+    }.sorted()
+    for (j, si) in stopIndices.enumerated() {
+        if j < ordered.count {
+            slides[si].heroPhotoID = ordered[j].0
+            slides[si].heroImage = ordered[j].1
+        }
+        slides[si].splitBottomImage = nil
+        slides[si].splitBottomPhotoID = nil
+        slides[si].splitTopFraming = nil
+        slides[si].splitBottomFraming = nil
+    }
+}
+
 /// Export order matching `SocialPostStudioSheet.orderedExportSlideIndices` — PIP-collapsed siblings
 /// excluded and only `isSelected` slides; Reel / single-slide mode takes the first selected only.
 private func orderedStudioExportSlideIndices(slides: [CarouselSlide], singleSlideExport: Bool) -> [Int] {
@@ -5525,6 +5594,13 @@ struct SlideTextEditorView: View {
         var layoutTxn = Transaction()
         layoutTxn.disablesAnimations = true
         withTransaction(layoutTxn) {
+            if layout == .single {
+                if slides[index].layout == .pip {
+                    distributeCollapsedPIPHeroesAcrossStopSiblings(slides: &slides, primaryIndex: index)
+                } else if slides[index].layout == .split {
+                    distributeCollapsedSplitHeroesAcrossStopSiblings(slides: &slides, splitIndex: index)
+                }
+            }
             slides[index].layout = layout
             if layout == .split {
                 slides[index].splitBottomImage = nil
@@ -5960,14 +6036,8 @@ struct SlideTextEditorView: View {
         guard slides.indices.contains(slideIndex) else { return }
         guard slides[slideIndex].kind == .placeStop else { return }
         let stopID = slides[slideIndex].placeStop?.id
+        distributeCollapsedPIPHeroesAcrossStopSiblings(slides: &slides, primaryIndex: slideIndex)
         slides[slideIndex].layout = .single
-        // Reset the cluster's positional offset so re-enabling PIP later starts clean.
-        slides[slideIndex].pipOffset = .zero
-        slides[slideIndex].pipClusterSizeScale = 1.0
-        slides[slideIndex].pipThumbnailFramings = []
-        slides[slideIndex].pipIsUngrouped = false
-        slides[slideIndex].pipPhotoOffsets = []
-        slides[slideIndex].pipUngroupedZOrder = []
         slides[slideIndex].splitTopFraming = nil
         slides[slideIndex].splitBottomFraming = nil
         invalidatePIPBackgroundRemovalForMutation(at: slideIndex)
@@ -10822,6 +10892,13 @@ struct SocialPostStudioSheet: View {
         var layoutTxn = Transaction()
         layoutTxn.disablesAnimations = true
         withTransaction(layoutTxn) {
+            if layout == .single {
+                if slides[index].layout == .pip {
+                    distributeCollapsedPIPHeroesAcrossStopSiblings(slides: &slides, primaryIndex: index)
+                } else if slides[index].layout == .split {
+                    distributeCollapsedSplitHeroesAcrossStopSiblings(slides: &slides, splitIndex: index)
+                }
+            }
             slides[index].layout = layout
             if layout == .split {
                 slides[index].splitBottomImage = nil

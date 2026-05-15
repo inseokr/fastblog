@@ -1147,9 +1147,8 @@ struct RecapBlogPageView: View {
             .sheet(item: $transportModePickerItem) { item in
                 let next = nextStop(dayId: item.dayId, stopId: item.stop.id)
                 let autoMode: TravelMode? = {
-                    guard let a = item.stop.representativeLocation?.clCoordinate,
-                          let b = next?.representativeLocation?.clCoordinate else { return nil }
-                    return TravelMode.detect(from: a, to: b)
+                    guard let next else { return nil }
+                    return TravelMode.detect(from: item.stop, to: next)
                 }()
                 TransportModePickerSheet(
                     fromPlaceTitle: item.stop.placeTitle,
@@ -2984,8 +2983,9 @@ struct RecapBlogPageView: View {
                     let effectiveMode: TravelMode? = manualMode ?? {
                         guard let a = stop.representativeLocation?.clCoordinate,
                               let b = nextStop.representativeLocation?.clCoordinate,
-                              a.latitude.isFinite, b.latitude.isFinite else { return nil }
-                        return TravelMode.detect(from: a, to: b)
+                              a.latitude.isFinite, a.longitude.isFinite,
+                              b.latitude.isFinite, b.longitude.isFinite else { return nil }
+                        return TravelMode.detect(from: stop, to: nextStop)
                     }()
                     let pillTint: Color = effectiveMode.map { Color(uiColor: $0.tintColor) } ?? .secondary
                     let isManual = manualMode != nil
