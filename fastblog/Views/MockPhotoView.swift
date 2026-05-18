@@ -63,6 +63,19 @@ struct AssetPhotoView: View {
                 return
             }
 
+            if assetIdentifier.hasPrefix(AppCapturePhotoService.prefix) {
+                if displayedIdentifier != assetIdentifier {
+                    image = nil
+                    displayedIdentifier = nil
+                }
+                let loaded = AppCapturePhotoService.shared.loadImage(identifier: assetIdentifier)
+                if !Task.isCancelled {
+                    image = loaded
+                    displayedIdentifier = loaded != nil ? assetIdentifier : nil
+                }
+                return
+            }
+
             // If we have a cached image, show it immediately without flashing the placeholder
             if let cached = ImageLoader.shared.cachedThumbnail(assetIdentifier: assetIdentifier, targetSize: targetSize) {
                 image = cached

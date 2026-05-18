@@ -1445,10 +1445,14 @@ final class PhotoLibraryTripService {
                 for j in 0..<updatedTrips[i].days.count {
                     guard let dayDate = formatter.date(from: updatedTrips[i].days[j].dateText),
                           calendar.isDate(dayDate, inSameDayAs: captureDay) else { continue }
-                    guard !updatedTrips[i].days[j].photos.contains(where: { $0.localIdentifier == identifier }) else {
+                    if let existingIdx = updatedTrips[i].days[j].photos.firstIndex(where: { $0.localIdentifier == identifier }) {
+                        updatedTrips[i].days[j].photos[existingIdx].location = capture.info.location
+                        if let caption = capture.info.caption {
+                            updatedTrips[i].days[j].photos[existingIdx].caption = caption
+                        }
                         injected = true
 #if DEBUG
-                        debugPrint("[BloGGoMerge] ✓ \(capture.id.uuidString.prefix(8)) — already present in trip[\(i)] day[\(j)] \"\(updatedTrips[i].days[j].dateText)\"")
+                        debugPrint("[BloGGoMerge] ✓ \(capture.id.uuidString.prefix(8)) — refreshed in trip[\(i)] day[\(j)] \"\(updatedTrips[i].days[j].dateText)\"")
 #endif
                         break outer
                     }

@@ -7,6 +7,7 @@
 //  Select mode: download (left), "# Photos Selected" (center), trash (right); down arrow to dismiss.
 //
 
+import AVKit
 import CoreLocation
 import SwiftUI
 import Photos
@@ -46,6 +47,8 @@ struct AppCaptureItem: Identifiable {
     var localVibeURL: URL?
     /// Local file URL of the explicit voice memo (voice_memo.m4a), if the user attached one.
     var localVoiceMemoURL: URL?
+    /// Local file URL of the five-second moment video (moment_video.mov), if recorded after capture.
+    var localMomentVideoURL: URL?
 }
 
 // MARK: - Gallery view
@@ -77,6 +80,7 @@ struct AppCaptureGalleryView: View {
     @State private var lastDragItemIndex: Int?
     @State private var galleryViewportFrame: CGRect = .zero
     @StateObject private var autoScrollInvoker = GalleryAutoScrollInvoker()
+    @State private var playingMomentVideoURL: URL?
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -254,13 +258,31 @@ struct AppCaptureGalleryView: View {
                 initialId: item.id,
                 onDelete: { deletedId in
                     items.removeAll { $0.id == deletedId }
+                    if selectedItem?.id == deletedId {
+                        selectedItem = nil
+                    }
                 },
                 onCaptionSaved: { id, caption in
                     if let idx = items.firstIndex(where: { $0.id == id }) {
                         items[idx].caption = caption
                     }
+                },
+                onPlaceSaved: { id in
+                    guard let idx = items.firstIndex(where: { $0.id == id }),
+                          let info = AppCapturePhotoService.shared.metadata(captureId: id) else { return }
+                    items[idx].location = info.location
                 }
             )
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { playingMomentVideoURL != nil },
+            set: { if !$0 { playingMomentVideoURL = nil } }
+        )) {
+            if let url = playingMomentVideoURL {
+                MomentVideoFullScreenPlayer(url: url) {
+                    playingMomentVideoURL = nil
+                }
+            }
         }
     }
 
@@ -289,7 +311,10 @@ struct AppCaptureGalleryView: View {
                     GalleryCell(
                         item: item,
                         isSelectMode: isSelectMode,
-                        isSelected: isSelected
+                        isSelected: isSelected,
+                        onPlayMomentVideo: { url in
+                            playingMomentVideoURL = url
+                        }
                     )
                     .id(item.id)
                     .onTapGesture {
@@ -382,11 +407,23 @@ struct AppCaptureGalleryView: View {
                 caption: merged,
                 location: info?.location,
                 localVibeURL: service.vibeFileURL(for: uuid),
-                localVoiceMemoURL: service.voiceMemoFileURL(for: uuid)
+                localVoiceMemoURL: service.voiceMemoFileURL(for: uuid),
+                localMomentVideoURL: service.momentVideoFileURL(for: uuid)
             ))
         }
         items = loaded
         isLoading = false
+
+        Task {
+            for item in loaded where item.location != nil {
+                let title = CreatedRecapBlogStore.shared.placeTitleForAppCapture(captureId: item.id) ?? ""
+                guard PlacePlaceholderNaming.isResolvablePlaceholder(title) else { continue }
+                await CreatedRecapBlogStore.shared.resolveAppCapturePlaceIfNeeded(
+                    captureId: item.id,
+                    fallbackCoordinate: item.location?.clCoordinate
+                )
+            }
+        }
     }
 
     private func saveSelectedToPhotoLibrary() {
@@ -546,6 +583,7 @@ private struct GalleryCell: View {
     let item: AppCaptureItem
     var isSelectMode: Bool = false
     var isSelected: Bool = false
+    var onPlayMomentVideo: ((URL) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -579,9 +617,24 @@ private struct GalleryCell: View {
                         .padding(5)
                 }
 
-                // Vibe + voice memo badges — bottom-leading column with voice memo above vibe.
+                // Moment video, voice memo, vibe — bottom-leading column.
                 if !isSelectMode {
                     VStack(alignment: .leading, spacing: 4) {
+                        if let videoURL = item.localMomentVideoURL, let onPlayMomentVideo {
+                            Button {
+                                onPlayMomentVideo(videoURL)
+                            } label: {
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(6)
+                                    .background(Color.orange.opacity(0.88))
+                                    .clipShape(Circle())
+                                    .overlay(Circle().stroke(Color.white.opacity(0.4), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Play moment video")
+                        }
                         if item.localVoiceMemoURL != nil {
                             Image(systemName: "mic.fill")
                                 .font(.system(size: 10, weight: .semibold))

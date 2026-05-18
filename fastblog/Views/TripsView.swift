@@ -3,7 +3,9 @@
 //  Capper
 //
 
+import AVFAudio
 import AVFoundation
+import AVKit
 import CoreLocation
 import MapKit
 import Photos
@@ -1602,6 +1604,8 @@ struct CapturedMoment: Identifiable {
     /// Local file URL of the explicit user-recorded voice memo for this moment, if any.
     /// Only set after a successful save from `VoiceMemoRecorderSheet`.
     var voiceMemoURL: URL?
+    /// Local file URL of the 5-second moment video recorded after the still, if any.
+    var momentVideoURL: URL?
     /// When false, this moment was already acknowledged with an inline "added to blog" toast — skip duplicate exit summary.
     var includedInExitAddedToast: Bool = true
 
@@ -1615,6 +1619,7 @@ struct CapturedMoment: Identifiable {
         location: PhotoCoordinate? = nil,
         vibeURL: URL? = nil,
         voiceMemoURL: URL? = nil,
+        momentVideoURL: URL? = nil,
         includedInExitAddedToast: Bool = true
     ) {
         self.id = id
@@ -1626,6 +1631,7 @@ struct CapturedMoment: Identifiable {
         self.location = location
         self.vibeURL = vibeURL
         self.voiceMemoURL = voiceMemoURL
+        self.momentVideoURL = momentVideoURL
         self.includedInExitAddedToast = includedInExitAddedToast
     }
 }
@@ -1633,6 +1639,7 @@ struct CapturedMoment: Identifiable {
 // MARK: - In-app camera still → 16:9 framing
 
 /// Full-sensor captures are typically ~4:3 while the live preview is aspect-filled on a tall screen.
+
 /// Center-crop to 16:9 (landscape) or 9:16 (portrait) so saved photos match widescreen expectations.
 fileprivate extension UIImage {
     func normalizedToUpOrientation() -> UIImage {
@@ -1669,14 +1676,21 @@ fileprivate extension UIImage {
 }
 
 /// Simple AVFoundation camera controller that owns the capture session.
-final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate {
+final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate, AVCaptureFileOutputRecordingDelegate {
     let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "bloggo.camera.session")
     private let photoOutput = AVCapturePhotoOutput()
+    private let movieOutput = AVCaptureMovieFileOutput()
     private let locationManager = CLLocationManager()
     private var videoDevice: AVCaptureDevice?
+    private var hasAudioInput = false
+    private var hasMovieOutput = false
 
     private var captureCompletion: ((UIImage?, String?) -> Void)?
+    private var momentVideoCompletion: ((URL?) -> Void)?
+    private var momentVideoStopWorkItem: DispatchWorkItem?
+    /// Wall-clock length of the post-shutter moment clip (matches UI countdown).
+    static let momentVideoClipDuration: TimeInterval = 5
 
     @Published var isConfigured = false
     @Published var authorizationDenied = false
@@ -1687,6 +1701,8 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     @Published private(set) var position: AVCaptureDevice.Position = .back
     /// Flash mode for next capture.
     @Published var flashMode: AVCaptureDevice.FlashMode = .off
+    /// True while recording the post-shutter moment video clip.
+    @Published private(set) var isRecordingMomentVideo = false
 
     override init() {
         super.init()
@@ -1749,6 +1765,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                 if !self.session.outputs.contains(self.photoOutput), self.session.canAddOutput(self.photoOutput) {
                     self.session.addOutput(self.photoOutput)
                 }
+                self.ensureMovieOutputConfiguredLocked()
                 DispatchQueue.main.async {
                     self.position = position
                 }
@@ -1867,6 +1884,144 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         }
     }
 
+    // MARK: - Moment video (5s clip after still)
+
+    /// Records up to five seconds of video+audio to a temp file. Completion is called on the main queue.
+    func recordMomentVideo(completion: @escaping (URL?) -> Void) {
+        AVAudioApplication.requestRecordPermission { _ in
+            self.recordMomentVideoAfterMicPermission(completion: completion)
+        }
+    }
+
+    private func recordMomentVideoAfterMicPermission(completion: @escaping (URL?) -> Void) {
+        sessionQueue.async {
+            guard self.isConfigured, !self.movieOutput.isRecording else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            guard self.session.isRunning else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            self.ensureMovieOutputConfiguredLocked()
+            guard self.hasMovieOutput else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("moment_video_\(UUID().uuidString).mov")
+            try? FileManager.default.removeItem(at: url)
+
+            self.momentVideoCompletion = completion
+            self.momentVideoStopWorkItem?.cancel()
+            let stopWork = DispatchWorkItem { [weak self] in
+                self?.stopMomentVideoRecordingLocked()
+            }
+            self.momentVideoStopWorkItem = stopWork
+
+            if let connection = self.movieOutput.connection(with: .video),
+               connection.isVideoRotationAngleSupported(90) {
+                connection.videoRotationAngle = 90
+            }
+
+            DispatchQueue.main.async {
+                self.isRecordingMomentVideo = true
+            }
+            self.movieOutput.startRecording(to: url, recordingDelegate: self)
+            self.sessionQueue.asyncAfter(deadline: .now() + Self.momentVideoClipDuration, execute: stopWork)
+        }
+    }
+
+    func cancelMomentVideoRecording() {
+        sessionQueue.async {
+            self.cancelMomentVideoRecordingLocked()
+        }
+    }
+
+    private func ensureMovieOutputConfiguredLocked() {
+        let needsAudio = !hasAudioInput
+        let needsMovie = !hasMovieOutput
+        guard needsAudio || needsMovie else { return }
+
+        session.beginConfiguration()
+        if needsAudio,
+           let audioDevice = AVCaptureDevice.default(for: .audio),
+           let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
+           session.canAddInput(audioInput) {
+            session.addInput(audioInput)
+            hasAudioInput = true
+        }
+        if needsMovie, !session.outputs.contains(movieOutput), session.canAddOutput(movieOutput) {
+            session.addOutput(movieOutput)
+            movieOutput.maxRecordedDuration = CMTime(seconds: Self.momentVideoClipDuration, preferredTimescale: 600)
+            hasMovieOutput = true
+        }
+        if hasMovieOutput, session.canSetSessionPreset(.high) {
+            session.sessionPreset = .high
+        }
+        session.commitConfiguration()
+    }
+
+    /// Stops an in-progress reel clip early (e.g. when the user releases the shutter).
+    func stopMomentVideoRecording() {
+        sessionQueue.async {
+            self.stopMomentVideoRecordingLocked()
+        }
+    }
+
+    private func stopMomentVideoRecordingLocked() {
+        momentVideoStopWorkItem?.cancel()
+        momentVideoStopWorkItem = nil
+        guard movieOutput.isRecording else { return }
+        movieOutput.stopRecording()
+    }
+
+    private func cancelMomentVideoRecordingLocked() {
+        momentVideoStopWorkItem?.cancel()
+        momentVideoStopWorkItem = nil
+        if movieOutput.isRecording {
+            momentVideoCompletion = nil
+            movieOutput.stopRecording()
+        }
+        DispatchQueue.main.async {
+            self.isRecordingMomentVideo = false
+        }
+    }
+
+    // MARK: - AVCaptureFileOutputRecordingDelegate
+
+    func fileOutput(
+        _ output: AVCaptureFileOutput,
+        didFinishRecordingTo outputFileURL: URL,
+        from connections: [AVCaptureConnection],
+        error: Error?
+    ) {
+        momentVideoStopWorkItem?.cancel()
+        momentVideoStopWorkItem = nil
+        let completion = momentVideoCompletion
+        momentVideoCompletion = nil
+
+        DispatchQueue.main.async {
+            self.isRecordingMomentVideo = false
+            if let error = error as NSError? {
+                let finishedOK = error.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool ?? false
+                if !finishedOK {
+                    try? FileManager.default.removeItem(at: outputFileURL)
+                    completion?(nil)
+                    return
+                }
+            }
+            let recorded = (try? outputFileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if recorded < 1024 {
+                try? FileManager.default.removeItem(at: outputFileURL)
+                completion?(nil)
+            } else {
+                completion?(outputFileURL)
+            }
+        }
+    }
+
     // MARK: - AVCapturePhotoCaptureDelegate
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
@@ -1974,6 +2129,23 @@ private func fullScreenCameraPreviewContent(session: AVCaptureSession, size: CGS
     .frame(width: size.width, height: size.height)
 }
 
+/// In-app camera capture mode — selected under the shutter.
+private enum CameraCaptureMode: String, CaseIterable, Identifiable {
+    case photo
+    case vibe
+    case reel
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .photo: return "Photo"
+        case .vibe: return "Vibe"
+        case .reel: return "Reel"
+        }
+    }
+}
+
 /// Camera UI that shows a live preview and session counter. Moment plumbing is added separately.
 struct CameraCaptureView: View {
     @ObservedObject var tripsViewModel: TripsViewModel
@@ -2029,17 +2201,19 @@ struct CameraCaptureView: View {
     @State private var zoomIndicatorTask: Task<Void, Never>? = nil
     // Vibe recording
     @StateObject private var vibeRecorder = VibeRecorder()
-    /// Whether the Vibe ambient audio capture feature is active.
-    /// Persisted so the user's last choice survives across camera sessions.
-    /// Defaults to false — only enabled once the user explicitly toggles it on.
-    @AppStorage("bloggo.camera.vibeEnabled") private var vibeEnabled: Bool = false
+    /// Photo / Vibe / Reel — persisted across camera sessions.
+    @AppStorage("bloggo.camera.captureMode") private var captureModeRaw: String = CameraCaptureMode.photo.rawValue
     /// When enabled, each in-app camera capture is also saved to the user's Photos library.
     @AppStorage("bloggo.camera.saveToPhotosEnabled") private var saveToPhotosEnabled: Bool = false
     @AppStorage("bloggo.camera.hasSeenSaveToPhotosTooltip") private var hasSeenSaveToPhotosTooltip = false
     /// True when the most recently captured photo had a vibe audio clip attached.
     @State private var lastCaptureWasVibe: Bool = false
+    /// True when the most recently captured photo has (or is recording) a moment video clip.
+    @State private var lastCaptureHasMomentVideo: Bool = false
+    @State private var momentVideoSecondsRemaining: Int = 0
     /// Drives the "Capturing Vibe" pill dot pulse animation.
     @State private var vibePulse: Bool = false
+    @State private var reelShutterPressActive = false
     // Vibe first-time tooltip
     @AppStorage("bloggo.hasSeenVibeTooltip") private var hasSeenVibeTooltip = false
     @State private var showVibeTooltip = false
@@ -2074,10 +2248,54 @@ struct CameraCaptureView: View {
     /// Resolved once when the post-capture preview opens — **never** re-hit `FileManager`/disk from SwiftUI `body`
     /// (those checks were stacking every layout pass and could freeze UI for seconds).
     @State private var previewChromeHasVibe = false
+    @State private var previewChromeHasMomentVideo = false
+    @State private var showMomentVideoPreview = false
     @State private var previewChromeHasVoiceMemo = false
 
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
+
+    private var captureMode: CameraCaptureMode {
+        CameraCaptureMode(rawValue: captureModeRaw) ?? .photo
+    }
+
+    private var isVibeCaptureEnabled: Bool { captureMode == .vibe }
+
+    private var isReelCaptureMode: Bool { captureMode == .reel }
+
+    private func migrateLegacyCaptureModeIfNeeded() {
+        guard UserDefaults.standard.object(forKey: "bloggo.camera.captureMode") == nil else { return }
+        if UserDefaults.standard.bool(forKey: "bloggo.camera.momentVideoEnabled") {
+            captureModeRaw = CameraCaptureMode.reel.rawValue
+        } else if UserDefaults.standard.bool(forKey: "bloggo.camera.vibeEnabled") {
+            captureModeRaw = CameraCaptureMode.vibe.rawValue
+        }
+    }
+
+    private func setCaptureMode(_ mode: CameraCaptureMode) {
+        guard mode != captureMode else { return }
+        if mode != .reel {
+            cameraController.cancelMomentVideoRecording()
+        }
+        if mode == .vibe {
+            if hasSeenVibeTooltip {
+                vibeRecorder.start()
+            }
+            AppAnalytics.track(.appInAppCameraVibeON)
+        } else {
+            vibeRecorder.cancelAndDelete()
+        }
+        captureModeRaw = mode.rawValue
+    }
+
+    private func thumbnailImage(fromVideoAt url: URL) -> UIImage? {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        let time = CMTime(seconds: 0, preferredTimescale: 600)
+        guard let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) else { return nil }
+        return UIImage(cgImage: cgImage)
+    }
 
     private func openAppSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
@@ -2159,6 +2377,7 @@ struct CameraCaptureView: View {
 
     private func refreshPreviewChromeAttachmentFlags(for moment: CapturedMoment) {
         previewChromeHasVibe = resolvedVibeURL(for: moment) != nil
+        previewChromeHasMomentVideo = resolvedMomentVideoURL(for: moment) != nil
         previewChromeHasVoiceMemo = resolvedVoiceMemoURL(for: moment) != nil
     }
 
@@ -2192,9 +2411,11 @@ struct CameraCaptureView: View {
         previewCaptionFocused = false
         previewVibePlayer.stop()
         previewVoiceMemoPlayer.stop()
+        showMomentVideoPreview = false
         cameraController.startRunning()
 
         previewChromeHasVibe = false
+        previewChromeHasMomentVideo = false
         previewChromeHasVoiceMemo = false
     }
 
@@ -2479,7 +2700,7 @@ struct CameraCaptureView: View {
                     .padding(.bottom, 24)
             }
             shutterBar
-                .padding(.bottom, 24)
+                .padding(.bottom, 8)
         }
 
         // Zoom level indicator - appears while pinching, fades out
@@ -2500,7 +2721,7 @@ struct CameraCaptureView: View {
         }
 
         // "Capturing Vibe" pill - top-center; tap opens the Vibe explainer sheet
-        if vibeEnabled {
+        if isVibeCaptureEnabled {
             VStack {
                 Button {
                     vibeTooltipPage = 0
@@ -2536,10 +2757,10 @@ struct CameraCaptureView: View {
             }
             .padding(.top, 8)
             .transition(.opacity.combined(with: .move(edge: .top)))
-            .animation(.easeInOut(duration: 0.3), value: vibeEnabled)
+            .animation(.easeInOut(duration: 0.3), value: isVibeCaptureEnabled)
         }
 
-        // Top controls: X (top-left) + Reverse/Flash/Vibe (top-right)
+        // Top controls: X (top-left) + Reverse / Flash / Save to Photos (top-right)
         Button {
             closeCamera()
         } label: {
@@ -2555,7 +2776,6 @@ struct CameraCaptureView: View {
         .padding(.leading, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-        // Right stack: Reverse -> Flash -> Save to Photos -> Vibe
         VStack(spacing: 16) {
             Button {
                 cameraController.flipCamera()
@@ -2601,31 +2821,6 @@ struct CameraCaptureView: View {
                     .overlay(Circle().stroke(saveToPhotosEnabled ? Color.cyan.opacity(0.5) : Color.clear, lineWidth: 1))
             }
             .accessibilityLabel(saveToPhotosEnabled ? "Save to Photos on, tap to disable" : "Save to Photos off, tap to enable")
-
-            Button {
-                vibeEnabled.toggle()
-                if vibeEnabled {
-                    AppAnalytics.track(.appInAppCameraVibeON)
-                    if hasSeenVibeTooltip {
-                        vibeRecorder.start()
-                    }
-                } else {
-                    vibeRecorder.cancelAndDelete()
-                }
-            } label: {
-                AtmosphericWaveformView(isActive: vibeEnabled)
-                    .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial)
-                    .background(vibeEnabled ? Color.cyan.opacity(0.22) : Color.clear)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(vibeEnabled ? Color.cyan.opacity(0.5) : Color.clear, lineWidth: 1))
-            }
-            .accessibilityLabel(vibeEnabled ? "Vibe on, tap to disable" : "Vibe off, tap to enable")
-
-            Text("VIBE")
-                .font(.system(size: 9, weight: .semibold))
-                .tracking(0.8)
-                .foregroundColor(vibeEnabled ? .cyan : Color.white.opacity(0.35))
         }
         .padding(.top, 8)
         .padding(.trailing, 16)
@@ -2696,6 +2891,29 @@ struct CameraCaptureView: View {
 
                 Spacer()
 
+                if previewChromeHasMomentVideo || cameraController.isRecordingMomentVideo,
+                   let moment = captionModeResolvedMoment {
+                    Button {
+                        guard resolvedMomentVideoURL(for: moment) != nil else { return }
+                        previewVibePlayer.stop()
+                        showMomentVideoPreview = true
+                    } label: {
+                        Image(systemName: cameraController.isRecordingMomentVideo ? "video.fill" : "play.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial)
+                            .background(Color.orange.opacity(0.22))
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color.orange.opacity(0.55), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(cameraController.isRecordingMomentVideo && resolvedMomentVideoURL(for: moment) == nil)
+                    .accessibilityLabel(
+                        cameraController.isRecordingMomentVideo ? "Recording video clip" : "Play video clip"
+                    )
+                }
+
                 if previewChromeHasVibe, let moment = captionModeResolvedMoment {
                     let isPlaying = previewVibePlayer.isPlaying
                     VStack(spacing: 10) {
@@ -2765,6 +2983,91 @@ struct CameraCaptureView: View {
         return nil
     }
 
+    /// Resolves the on-disk moment video URL for a captured moment (in-memory or persisted).
+    private func resolvedMomentVideoURL(for moment: CapturedMoment) -> URL? {
+        if let url = moment.momentVideoURL { return url }
+        if let lid = moment.localIdentifier,
+           let captureId = AppCapturePhotoService.uuid(from: lid) {
+            return AppCapturePhotoService.shared.momentVideoFileURL(for: captureId)
+        }
+        return nil
+    }
+
+    private func attachMomentVideo(_ videoURL: URL, toMomentId momentId: UUID) {
+        func persist(into moment: inout CapturedMoment) {
+            if let lid = moment.localIdentifier,
+               let captureId = AppCapturePhotoService.uuid(from: lid) {
+                try? AppCapturePhotoService.shared.saveMomentVideo(captureId: captureId, from: videoURL)
+                try? FileManager.default.removeItem(at: videoURL)
+                moment.momentVideoURL = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId)
+            } else {
+                moment.momentVideoURL = videoURL
+            }
+        }
+
+        if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) {
+            persist(into: &sessionCapturesForDisplay[idx])
+        }
+        if let idx = sessionMoments.firstIndex(where: { $0.id == momentId }) {
+            persist(into: &sessionMoments[idx])
+        }
+
+        if captionModeMomentId == momentId {
+            refreshPreviewChromeAttachmentFlags(for: sessionCapturesForDisplay.first(where: { $0.id == momentId })
+                ?? sessionMoments.first(where: { $0.id == momentId })
+                ?? CapturedMoment(localIdentifier: nil, timestamp: Date()))
+            lastCaptureHasMomentVideo = previewChromeHasMomentVideo
+        }
+        if previewChromeHasMomentVideo {
+            lastCaptureHasMomentVideo = true
+        }
+    }
+
+    /// Hold-to-record reel capture (max 5s). Saves a still thumbnail + video clip, then opens caption preview.
+    private func startStandaloneReelRecording() {
+        guard !cameraController.isRecordingMomentVideo else { return }
+        momentVideoSecondsRemaining = Int(CameraController.momentVideoClipDuration.rounded())
+        cameraController.recordMomentVideo { url in
+            momentVideoSecondsRemaining = 0
+            reelShutterPressActive = false
+            guard let url else {
+                showToast("Couldn't save reel. Try again.")
+                return
+            }
+            let timestamp = Date()
+            let thumbnail = thumbnailImage(fromVideoAt: url) ?? UIImage()
+            guard applyCapturedPhoto(
+                image: thumbnail,
+                timestamp: timestamp,
+                vibeURL: nil,
+                preattachedMomentVideoURL: url
+            ) != nil else { return }
+            enterInPlaceCaptionMode()
+        }
+    }
+
+    private func beginMomentVideoCountdown() {
+        momentVideoSecondsRemaining = Int(CameraController.momentVideoClipDuration.rounded())
+        Task { @MainActor in
+            let lastTick = Int(CameraController.momentVideoClipDuration.rounded()) - 1
+            for remaining in stride(from: lastTick, through: 0, by: -1) {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard cameraController.isRecordingMomentVideo else {
+                    momentVideoSecondsRemaining = 0
+                    return
+                }
+                momentVideoSecondsRemaining = remaining
+            }
+        }
+    }
+
+    private var captionModeCaptionPrompt: String {
+        if previewChromeHasMomentVideo {
+            return "Caption this moment — photo and 5s video clip"
+        }
+        return "Tap to write a story behind this photo"
+    }
+
     private var previewBottomChrome: some View {
         VStack(alignment: .leading, spacing: 10) {
             Spacer()
@@ -2831,13 +3134,27 @@ struct CameraCaptureView: View {
                                 .buttonStyle(.plain)
                                 .accessibilityLabel(previewVoiceMemoPlayer.isPlaying ? "Pause voice memo" : "Play voice memo")
                             }
+                            if previewChromeHasMomentVideo {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "video.fill")
+                                        .font(.system(size: 10, weight: .semibold))
+                                    Text("5s video clip attached")
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.orange.opacity(0.92), in: Capsule())
+                                .shadow(color: .black.opacity(0.22), radius: 2, y: 1)
+                                .accessibilityLabel("Short video clip attached to this moment")
+                            }
                         }
                     }
 
                     TextField(
                         "",
                         text: captionModeCaptionBinding,
-                        prompt: Text("Tap to write a story behind this photo")
+                        prompt: Text(captionModeCaptionPrompt)
                             .foregroundColor(.white.opacity(0.72)),
                         axis: .vertical
                     )
@@ -2926,7 +3243,7 @@ struct CameraCaptureView: View {
                     .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(previewCaptionFocused ? "Done editing caption" : "Save photo to Bloggo Gallery")
+            .accessibilityLabel(previewCaptionFocused ? "Done editing caption" : "Save moment to Bloggo Gallery")
         }
         .padding(.horizontal, 20)
         .padding(.top, 10)
@@ -2979,7 +3296,7 @@ struct CameraCaptureView: View {
                     .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(previewCaptionFocused ? "Done editing caption" : "Save photo to Bloggo Gallery")
+            .accessibilityLabel(previewCaptionFocused ? "Done editing caption" : "Save moment to Bloggo Gallery")
         }
         .frame(maxWidth: .infinity)
     }
@@ -3110,6 +3427,89 @@ struct CameraCaptureView: View {
         }
     }
 
+    private var momentVideoClipProgress: CGFloat {
+        let total = CGFloat(CameraController.momentVideoClipDuration)
+        guard total > 0 else { return 0 }
+        let remaining = CGFloat(max(momentVideoSecondsRemaining, 0))
+        return min(1, max(0, 1 - remaining / total))
+    }
+
+    /// Elapsed seconds while the reel clip is recording (e.g. `0:03`).
+    private var reelRecordingElapsedLabel: String {
+        let total = Int(CameraController.momentVideoClipDuration.rounded())
+        let remaining = max(momentVideoSecondsRemaining, 0)
+        let elapsed = min(total, max(0, total - remaining))
+        return String(format: "0:%02d", elapsed)
+    }
+
+    /// Compact recording status above the shutter — avoids overlapping top chrome.
+    private var reelRecordingIndicator: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 7, height: 7)
+            Text(reelRecordingElapsedLabel)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.25))
+                    Capsule()
+                        .fill(Color.red)
+                        .frame(width: max(4, geo.size.width * momentVideoClipProgress))
+                }
+            }
+            .frame(width: 56, height: 3)
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Recording reel, \(reelRecordingElapsedLabel)")
+        .allowsHitTesting(false)
+    }
+
+    /// Photo / Vibe / Reel segmented control under the shutter — single flat row, full width.
+    private var captureModePicker: some View {
+        HStack(spacing: 0) {
+            ForEach(CameraCaptureMode.allCases) { mode in
+                Button {
+                    if mode == .vibe, !hasSeenVibeTooltip {
+                        showVibeTooltip = true
+                    }
+                    setCaptureMode(mode)
+                } label: {
+                    Text(mode.label)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(captureMode == mode ? .white : .white.opacity(0.5))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background {
+                            if captureMode == mode {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.22))
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(mode.label) mode")
+                .accessibilityAddTraits(captureMode == mode ? .isSelected : [])
+            }
+        }
+        .padding(4)
+        .frame(maxWidth: .infinity)
+        .frame(height: 52)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .disabled(cameraController.isRecordingMomentVideo)
+    }
+
     /// Gestures, bars, flash, and toast — kept separate from sheets/lifecycle to reduce type-check load.
     private var inAppCameraChromeRoot: some View {
         inAppCameraPreviewStack
@@ -3168,7 +3568,8 @@ struct CameraCaptureView: View {
             hasOfferedStartBlogThisSession = false
             pendingBlogStartedAlert = false
             lastCaptureWasVibe = false
-            if vibeEnabled { vibeRecorder.start() }
+            migrateLegacyCaptureModeIfNeeded()
+            if isVibeCaptureEnabled { vibeRecorder.start() }
             isCaptionModeActive = false
             captionModeMomentId = nil
             captionModeFrozenImage = nil
@@ -3191,9 +3592,16 @@ struct CameraCaptureView: View {
             .onChange(of: cameraController.isConfigured) { _, configured in
             if configured {
                 cameraController.startRunning()
-                if vibeEnabled { vibeRecorder.start() }
+                if isVibeCaptureEnabled { vibeRecorder.start() }
                 presentCameraTooltipIfNeeded()
             }
+            }
+            .onChange(of: cameraController.isRecordingMomentVideo) { _, isRecording in
+                if isRecording {
+                    beginMomentVideoCountdown()
+                } else {
+                    momentVideoSecondsRemaining = 0
+                }
             }
             .onChange(of: sessionCapturesForDisplay.count) { _, _ in
             if isCaptionModeActive {
@@ -3260,6 +3668,7 @@ struct CameraCaptureView: View {
             pendingCameraTooltipTask?.cancel()
             pendingCameraTooltipTask = nil
             cameraController.stopRunning()
+            cameraController.cancelMomentVideoRecording()
             vibeRecorder.cancelAndDelete()
             InAppCameraAudioSession.deactivateAfterCamera()
             // Sync any captions typed in the gallery into the blog for real-time injected photos.
@@ -3388,8 +3797,8 @@ struct CameraCaptureView: View {
             .onChange(of: showNearHomeConfirmation) { _, show in
             if show { nearHomeDoNotShowAgain = false }
             }
-            .onChange(of: vibeEnabled) { _, newValue in
-            if newValue && !hasSeenVibeTooltip {
+            .onChange(of: captureModeRaw) { _, _ in
+            if isVibeCaptureEnabled && !hasSeenVibeTooltip {
                 showVibeTooltip = true
             }
             }
@@ -3397,7 +3806,7 @@ struct CameraCaptureView: View {
             hasSeenVibeTooltip = true
             vibeTooltipPage = 0
             // Now that the tooltip is done, request mic permission and begin recording.
-            if vibeEnabled { vibeRecorder.start() }
+            if isVibeCaptureEnabled { vibeRecorder.start() }
         }) {
             vibeTooltipContent
                 .presentationDetents([.medium])
@@ -3440,6 +3849,19 @@ struct CameraCaptureView: View {
             } message: {
                 Text("This removes only the vibe audio and keeps the photo.")
             }
+            .fullScreenCover(isPresented: $showMomentVideoPreview) {
+                momentVideoPreviewSheet
+            }
+    }
+
+    @ViewBuilder
+    private var momentVideoPreviewSheet: some View {
+        if let moment = captionModeResolvedMoment,
+           let url = resolvedMomentVideoURL(for: moment) {
+            MomentVideoFullScreenPlayer(url: url) {
+                showMomentVideoPreview = false
+            }
+        }
     }
 
     var body: some View {
@@ -3648,7 +4070,7 @@ struct CameraCaptureView: View {
                             UserDefaults.standard.set(true, forKey: Self.nearHomeSuppressedPreferKeepKey)
                         }
                         if let pending = pendingNearHomeCapture {
-                            applyCapturedPhoto(image: pending.image, timestamp: pending.timestamp, vibeURL: pending.vibeURL)
+                            _ = applyCapturedPhoto(image: pending.image, timestamp: pending.timestamp, vibeURL: pending.vibeURL)
                             pendingNearHomeCapture = nil
                         }
                         showNearHomeConfirmation = false
@@ -3796,86 +4218,148 @@ struct CameraCaptureView: View {
     }
 
     private var shutterBar: some View {
-        HStack(spacing: 0) {
-            // Left — Gallery icon (Bloggo Photos / all in-app captures)
-            Button {
-                isShowingCapturesGallery = true
-            } label: {
-                shutterBarGalleryIcon
+        VStack(spacing: 10) {
+            if cameraController.isRecordingMomentVideo {
+                reelRecordingIndicator
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-            .frame(maxWidth: .infinity)
 
-            // Center — shutter (photo only; no video/photo segment)
-            Button {
-                // Visual capture flash
-                flashOpacity = 1
-                withAnimation(.easeOut(duration: 0.2)) {
-                    flashOpacity = 0
+            HStack(spacing: 0) {
+                Button {
+                    isShowingCapturesGallery = true
+                } label: {
+                    shutterBarGalleryIcon
                 }
+                .frame(maxWidth: .infinity)
+                .disabled(cameraController.isRecordingMomentVideo)
 
-                // Capture vibe audio only when the feature is enabled; snapshot state at shutter press.
-                let capturedVibeEnabled = vibeEnabled
-                let vibeTask: Task<URL?, Never> = capturedVibeEnabled
-                    ? Task { await vibeRecorder.stopAndTrimLast10Seconds() }
-                    : Task { nil }
-
-                // Capture a real photo
-                cameraController.capturePhoto { image, _ in
-                    let timestamp = Date()
-                    Task { @MainActor in
-                        AppAnalytics.track(.appInAppCameraPhotoTaken)
-                        let vibeURL = await vibeTask.value
-                        // Restart recording immediately so it's ready for the next shot (only if vibe is on)
-                        if capturedVibeEnabled { vibeRecorder.start() }
-                        // Mark whether the captured photo has a vibe clip (drives the aura on the preview)
-                        lastCaptureWasVibe = capturedVibeEnabled && vibeURL != nil
-                        // Lightweight near-home check: same threshold as trip exclusion (Set home region).
-                        if let home = NeighborhoodStore.getNeighborhoodCenter(),
-                           let location = cameraController.currentLocation,
-                           !TripPhotoFilter.shouldIncludeInTrips(
-                               assetLocation: location,
-                               home: home,
-                               minMiles: NeighborhoodStore.effectiveTripMinMilesFromHome
-                           ) {
-                            let suppressed = UserDefaults.standard.bool(forKey: Self.nearHomeAlertSuppressedKey)
-                            if suppressed {
-                                let preferKeep = UserDefaults.standard.bool(forKey: Self.nearHomeSuppressedPreferKeepKey)
-                                if preferKeep {
-                                    applyCapturedPhoto(image: image, timestamp: timestamp, vibeURL: vibeURL)
-                                } else {
-                                    // User chose never to keep near-home; discard vibe
-                                    if let url = vibeURL { try? FileManager.default.removeItem(at: url) }
-                                }
-                                return
-                            }
-                            pendingNearHomeCapture = (image ?? UIImage(), timestamp, vibeURL)
-                            showNearHomeConfirmation = true
-                            return
-                        }
-                        applyCapturedPhoto(image: image, timestamp: timestamp, vibeURL: vibeURL)
+                Group {
+                    if isReelCaptureMode {
+                        reelShutterControl
+                    } else {
+                        photoShutterButton
                     }
                 }
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.2))
-                        .frame(width: 74, height: 74)
-                    Circle()
-                        .fill(Color.white)
-                        .frame(width: 62, height: 62)
-                }
-            }
-            .frame(maxWidth: .infinity)
+                .frame(width: 88)
 
-            // Right — Current Photos icon + counter (opens session gallery with caption input)
-            Button {
-                isShowingSessionGallery = true
-            } label: {
-                shutterBarCurrentPhotosButton
+                Button {
+                    isShowingSessionGallery = true
+                } label: {
+                    shutterBarCurrentPhotosButton
+                }
+                .frame(maxWidth: .infinity)
+                .disabled(cameraController.isRecordingMomentVideo)
             }
-            .frame(maxWidth: .infinity)
+
+            captureModePicker
         }
         .padding(.horizontal, 24)
+        .animation(.easeInOut(duration: 0.2), value: cameraController.isRecordingMomentVideo)
+    }
+
+    private var photoShutterButton: some View {
+        Button {
+            performPhotoCapture()
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.2))
+                    .frame(width: 74, height: 74)
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 62, height: 62)
+            }
+        }
+        .disabled(cameraController.isRecordingMomentVideo)
+        .accessibilityLabel(isVibeCaptureEnabled ? "Take photo with vibe" : "Take photo")
+    }
+
+    /// Red circle shutter for Reel mode (iOS-camera video style).
+    /// Tap to start recording; button morphs to a red rounded square (stop indicator).
+    /// A red arc fills around the ring as the clip progresses.
+    private var reelShutterControl: some View {
+        ZStack {
+            // White outer ring — base track for the progress arc
+            Circle()
+                .stroke(Color.white.opacity(0.35), lineWidth: 4)
+                .frame(width: 74, height: 74)
+
+            // Red progress arc that fills as clip records
+            if cameraController.isRecordingMomentVideo {
+                Circle()
+                    .trim(from: 0, to: momentVideoClipProgress)
+                    .stroke(Color.red, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .frame(width: 74, height: 74)
+                    .rotationEffect(.degrees(-90))
+            }
+
+            // Inner shape: red circle (idle) → red rounded square (stop indicator)
+            RoundedRectangle(
+                cornerRadius: cameraController.isRecordingMomentVideo ? 7 : 29,
+                style: .continuous
+            )
+            .fill(Color.red)
+            .frame(
+                width: cameraController.isRecordingMomentVideo ? 28 : 58,
+                height: cameraController.isRecordingMomentVideo ? 28 : 58
+            )
+            .animation(.spring(response: 0.35, dampingFraction: 0.72), value: cameraController.isRecordingMomentVideo)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if cameraController.isRecordingMomentVideo {
+                cameraController.stopMomentVideoRecording()
+            } else {
+                startStandaloneReelRecording()
+            }
+        }
+        .accessibilityLabel(cameraController.isRecordingMomentVideo ? "Stop recording" : "Record reel")
+        .accessibilityHint("Records up to five seconds of video")
+    }
+
+    private func performPhotoCapture() {
+        guard !cameraController.isRecordingMomentVideo else { return }
+        flashOpacity = 1
+        withAnimation(.easeOut(duration: 0.2)) {
+            flashOpacity = 0
+        }
+
+        let capturedVibeEnabled = isVibeCaptureEnabled
+        let vibeTask: Task<URL?, Never> = capturedVibeEnabled
+            ? Task { await vibeRecorder.stopAndTrimLast10Seconds() }
+            : Task { nil }
+
+        cameraController.capturePhoto { image, _ in
+            let timestamp = Date()
+            Task { @MainActor in
+                AppAnalytics.track(.appInAppCameraPhotoTaken)
+                let vibeURL = await vibeTask.value
+                if capturedVibeEnabled { vibeRecorder.start() }
+                lastCaptureWasVibe = capturedVibeEnabled && vibeURL != nil
+                if let home = NeighborhoodStore.getNeighborhoodCenter(),
+                   let location = cameraController.currentLocation,
+                   !TripPhotoFilter.shouldIncludeInTrips(
+                       assetLocation: location,
+                       home: home,
+                       minMiles: NeighborhoodStore.effectiveTripMinMilesFromHome
+                   ) {
+                    let suppressed = UserDefaults.standard.bool(forKey: Self.nearHomeAlertSuppressedKey)
+                    if suppressed {
+                        let preferKeep = UserDefaults.standard.bool(forKey: Self.nearHomeSuppressedPreferKeepKey)
+                        if preferKeep {
+                            _ = applyCapturedPhoto(image: image, timestamp: timestamp, vibeURL: vibeURL)
+                        } else if let url = vibeURL {
+                            try? FileManager.default.removeItem(at: url)
+                        }
+                        return
+                    }
+                    pendingNearHomeCapture = (image ?? UIImage(), timestamp, vibeURL)
+                    showNearHomeConfirmation = true
+                    return
+                }
+                _ = applyCapturedPhoto(image: image, timestamp: timestamp, vibeURL: vibeURL)
+            }
+        }
     }
 
     /// Loads the most recent app capture as thumbnail for the gallery (left) bar button.
@@ -4037,6 +4521,11 @@ extension CameraCaptureView {
             try? FileManager.default.removeItem(at: url)
         }
         InAppCameraPhotoStore.shared.addPhoto(id: captureId, image: image, timestamp: timestamp)
+        if location != nil {
+            Task {
+                await CreatedRecapBlogStore.shared.resolveAppCapturePlaceIfNeeded(captureId: captureId)
+            }
+        }
         return AppCapturePhotoService.identifier(for: captureId)
     }
 
@@ -4053,7 +4542,13 @@ extension CameraCaptureView {
     /// Adds the captured photo to the session and routes it (active blog, matching blog, camera draft, or start-blog prompt).
     /// Used after capture when not near home, and when user taps "Keep" on the near-home confirmation.
     /// Only adds to sessionMoments and shows "You are capturing a moment" when it's truly a new trip (no existing blog or draft for this capture).
-    private func applyCapturedPhoto(image: UIImage?, timestamp: Date, vibeURL: URL? = nil) {
+    @discardableResult
+    private func applyCapturedPhoto(
+        image: UIImage?,
+        timestamp: Date,
+        vibeURL: URL? = nil,
+        preattachedMomentVideoURL: URL? = nil
+    ) -> UUID? {
         saveCapturedImageToPhotosLibraryIfNeeded(image)
         var persistedLocalId: String?
         var remainingVibeURL = vibeURL
@@ -4105,12 +4600,17 @@ extension CameraCaptureView {
             }
         }
 
-        // Auto-show the post-capture preview overlay so the user can review,
-        // caption, attach a voice memo, and explicitly Save (or Discard).
-        // Defer one tick so the just-appended moment is visible to the overlay.
-        DispatchQueue.main.async {
-            enterInPlaceCaptionMode()
+        if let videoURL = preattachedMomentVideoURL {
+            attachMomentVideo(videoURL, toMomentId: displayMoment.id)
+            lastCaptureHasMomentVideo = true
         }
+
+        if preattachedMomentVideoURL == nil {
+            DispatchQueue.main.async {
+                self.enterInPlaceCaptionMode()
+            }
+        }
+        return displayMoment.id
     }
 
     private func toggleSaveToPhotos() {
@@ -5731,6 +6231,10 @@ struct TripCoverImage: View {
     var body: some View {
         ZStack {
             gradientForTheme(theme)
+            // Theme illustration sits behind a real cover photo — not on top of it (was hiding library/camera covers).
+            if coverAssetIdentifier == nil, coverCloudURL == nil {
+                optionalAssetOverlay
+            }
             if let id = coverAssetIdentifier {
                 AssetPhotoView(assetIdentifier: id, cornerRadius: 0, targetSize: targetSize)
             } else if let cloudURL = coverCloudURL, let url = URL(string: cloudURL) {
@@ -5742,7 +6246,6 @@ struct TripCoverImage: View {
                     }
                 }
             }
-            optionalAssetOverlay
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

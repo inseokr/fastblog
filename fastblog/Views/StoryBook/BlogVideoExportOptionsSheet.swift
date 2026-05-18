@@ -12,13 +12,14 @@ struct BlogVideoExportOptionsSheet: View {
 
     @AppStorage("blogVideoExportOptions") private var optionsData: Data =
         (try? JSONEncoder().encode(BlogVideoExportOptions())) ?? Data()
-    @State private var options      = BlogVideoExportOptions()
-    @State private var isExporting  = false
+    @State private var options       = BlogVideoExportOptions()
+    @State private var isExporting   = false
     @State private var progress: Double = 0
     @State private var exportError: String? = nil
-    @State private var showError = false
+    @State private var showError     = false
     @State private var showMusicPicker = false
     @State private var exportTask: Task<Void, Never>?
+    @State private var carouselSuccessBanner = false
 
     private var selectedTrack: SlideshowBundledTrack? {
         if options.musicDisabled { return nil }
@@ -44,11 +45,15 @@ struct BlogVideoExportOptionsSheet: View {
             NavigationStack {
                 ScrollView {
                     VStack(spacing: 20) {
-                        estimatedPlayTimeSection
-                        photosPerPlaceSection
-                        durationSection
-                        photoCaptionsSection
-                        musicSection
+                        exportModePicker
+                        if options.exportMode == .video {
+                            estimatedPlayTimeSection
+                            photosPerPlaceSection
+                            durationSection
+                            photoCaptionsSection
+                            dayItineraryCardsSection
+                            musicSection
+                        }
                         placesSection
                     }
                     .padding(20)
@@ -101,18 +106,51 @@ struct BlogVideoExportOptionsSheet: View {
 
             if isExporting {
                 LoadingScanView(
-                    message: "Creating Video…",
+                    message: options.exportMode == .carousel ? "Saving Carousel…" : "Creating Video…",
                     isOverlay: true,
                     overlayTint: .modalGrayGlass,
                     progress: progress,
                     onCancel: { cancelExport() },
-                    progressStepLabelOverride: { p in Self.exportProgressSubtitle(progress: p) },
+                    progressStepLabelOverride: { p in
+                        options.exportMode == .carousel
+                            ? Self.carouselProgressSubtitle(progress: p)
+                            : Self.exportProgressSubtitle(progress: p)
+                    },
                     useCenteredLayout: true,
                     showsTopTrailingActions: false
                 )
                 .transition(.opacity.animation(.easeInOut(duration: 0.22)))
                 .allowsHitTesting(true)
                 .zIndex(1)
+            }
+
+            if carouselSuccessBanner {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Saved to Photos")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                            Text("Open the \"Bloggo \u{2013} \(draft.title)\" album to share.")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.72))
+                                .lineLimit(2)
+                        }
+                        Spacer()
+                    }
+                    .padding(16)
+                    .background(Color(white: 0.14).opacity(0.96))
+                    .appChromeCornerRadius(14)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(2)
+                .allowsHitTesting(false)
             }
         }
         .onAppear {
@@ -125,6 +163,77 @@ struct BlogVideoExportOptionsSheet: View {
                     options.includedPlaceIDs = nil
                 }
             }
+        }
+    }
+
+    // MARK: - Export Mode Picker
+
+    private var exportModePicker: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Export Format", icon: "square.and.arrow.up")
+            HStack(spacing: 0) {
+                modeTab(label: "Cinematic Video", icon: "film", mode: .video)
+                modeTab(label: "Carousel Slides", icon: "rectangle.stack.fill", mode: .carousel)
+            }
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .appChromeCornerRadius(12)
+
+            if options.exportMode == .carousel {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("Generates a cover + day cards + an animated video clip per place, saved to a Photos album for TikTok carousel posting.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    private func modeTab(label: String, icon: String, mode: BlogVideoExportOptions.ExportMode) -> some View {
+        let selected = options.exportMode == mode
+        return Button {
+            withAnimation(.easeInOut(duration: 0.18)) { options.exportMode = mode }
+        } label: {
+            VStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(selected ? Color.accentColor : Color.clear)
+            .foregroundColor(selected ? .white : .secondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Day Itinerary Cards Section
+
+    private var dayItineraryCardsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Day Itinerary Cards", icon: "list.bullet.clipboard")
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Show day itinerary before each day")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.primary)
+                    Text("Injects a 2-second card listing all places for each travel day")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $options.showDayItineraryCards)
+                    .labelsHidden()
+            }
+            .padding(14)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .appChromeCornerRadius(12)
         }
     }
 
@@ -551,11 +660,18 @@ struct BlogVideoExportOptionsSheet: View {
         return "Adding music…"
     }
 
+    private static func carouselProgressSubtitle(progress p: Double) -> String {
+        if p < 0.1  { return "Preparing slides…" }
+        if p < 0.50 { return "Loading photos…" }
+        if p < 0.85 { return "Rendering video clips…" }
+        return "Saving to Photos…"
+    }
+
     private var exportButton: some View {
         Button { startExport() } label: {
             HStack(spacing: 8) {
-                Image(systemName: "map.fill")
-                Text("Export & Share")
+                Image(systemName: options.exportMode == .carousel ? "photo.stack" : "map.fill")
+                Text(options.exportMode == .carousel ? "Save Carousel to Photos" : "Export & Share")
                     .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)
@@ -586,6 +702,15 @@ struct BlogVideoExportOptionsSheet: View {
         isExporting = true
         progress = 0.02
 
+        if options.exportMode == .carousel {
+            startCarouselExport()
+        } else {
+            startVideoExport()
+        }
+    }
+
+    @MainActor
+    private func startVideoExport() {
         exportTask = Task { @MainActor in
             defer { exportTask = nil }
             do {
@@ -601,6 +726,35 @@ struct BlogVideoExportOptionsSheet: View {
                 isExporting = false
                 dismiss()
                 onShare(url)
+            } catch is CancellationError {
+                isExporting = false
+                progress = 0
+            } catch {
+                isExporting = false
+                exportError = error.localizedDescription
+                showError = true
+            }
+        }
+    }
+
+    @MainActor
+    private func startCarouselExport() {
+        exportTask = Task { @MainActor in
+            defer { exportTask = nil }
+            do {
+                progress = 0.1
+                let effective = effectiveExportOptions()
+                _ = try await BlogCarouselExportService.exportCarousel(
+                    draft: draft,
+                    options: effective,
+                    progressHandler: { p in progress = 0.1 + p * 0.9 }
+                )
+                isExporting = false
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                    carouselSuccessBanner = true
+                }
+                try? await Task.sleep(for: .seconds(4))
+                withAnimation(.easeOut(duration: 0.3)) { carouselSuccessBanner = false }
             } catch is CancellationError {
                 isExporting = false
                 progress = 0

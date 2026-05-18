@@ -3,6 +3,7 @@
 //  fastblog
 //
 
+import AVKit
 import SwiftUI
 import CoreLocation
 import Photos
@@ -171,6 +172,8 @@ struct PlacePhotoModalView: View {
     // Vibe
     @StateObject private var vibePlayer = VibePlayer()
     @State private var isVibeEnabled: Bool = false
+    @State private var showMomentVideoPlayer = false
+    @State private var momentVideoPlaybackURL: URL?
     /// Drives the cyan dot pulse on the top-center “Playing Vibe” pill (same rhythm as camera “Capturing Vibe”).
     @State private var playingVibePulse: Bool = false
     // Voice memo
@@ -424,6 +427,13 @@ struct PlacePhotoModalView: View {
         guard let id = currentPhoto?.localIdentifier,
               let captureId = AppCapturePhotoService.uuid(from: id) else { return nil }
         return AppCapturePhotoService.shared.voiceMemoFileURL(for: captureId)
+    }
+
+    /// Local moment video URL for the current photo, if recorded after an in-app still capture.
+    private var currentMomentVideoURL: URL? {
+        guard let id = currentPhoto?.localIdentifier,
+              let captureId = AppCapturePhotoService.uuid(from: id) else { return nil }
+        return AppCapturePhotoService.shared.momentVideoFileURL(for: captureId)
     }
 
     private var currentCaption: String {
@@ -748,7 +758,15 @@ struct PlacePhotoModalView: View {
                 onLink: { presentPlaceGoogleSearchSheet() },
                 canOpenWebSearch: canOpenPlaceWebSearch,
                 showDownloadAction: shouldShowManualDownloadAction,
-                onDownload: { saveCurrentInAppCaptureToPhotos() }
+                onDownload: { saveCurrentInAppCaptureToPhotos() },
+                hasMomentVideoClip: currentMomentVideoURL != nil,
+                onPlayMomentVideo: {
+                    vibePlayer.stop()
+                    isVibeEnabled = false
+                    guard let url = currentMomentVideoURL else { return }
+                    momentVideoPlaybackURL = url
+                    showMomentVideoPlayer = true
+                }
             )
             .ignoresSafeArea(.all, edges: presentation.isSheet ? [] : .top)
             // Hide top chrome while zoomed so it doesn’t compete with the full-screen photo overlay.
@@ -797,6 +815,16 @@ struct PlacePhotoModalView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: downloadToast != nil)
+        .fullScreenCover(isPresented: $showMomentVideoPlayer, onDismiss: {
+            momentVideoPlaybackURL = nil
+        }) {
+            if let url = momentVideoPlaybackURL {
+                MomentVideoFullScreenPlayer(url: url) {
+                    showMomentVideoPlayer = false
+                    momentVideoPlaybackURL = nil
+                }
+            }
+        }
     }
 
     var body: some View {
@@ -1737,6 +1765,8 @@ private struct PlaceDetailTopChrome: View {
     let canOpenWebSearch: Bool
     let showDownloadAction: Bool
     let onDownload: () -> Void
+    let hasMomentVideoClip: Bool
+    let onPlayMomentVideo: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -1865,6 +1895,22 @@ private struct PlaceDetailTopChrome: View {
                                     onDownload: onDownload
                                 )
                                 .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
+
+                                if hasMomentVideoClip {
+                                    Button(action: onPlayMomentVideo) {
+                                        Image(systemName: "video.fill")
+                                            .font(.system(size: 18, weight: .semibold))
+                                            .foregroundColor(.white)
+                                            .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
+                                            .background(Color.orange.opacity(0.88))
+                                            .clipShape(Circle())
+                                            .overlay(Circle().stroke(Color.orange.opacity(0.55), lineWidth: 1))
+                                            .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Play clip")
+                                    .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
+                                }
 
                                 if hasVibeClip {
                                     Button(action: onToggleVibe) {

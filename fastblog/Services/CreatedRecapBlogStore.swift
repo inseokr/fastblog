@@ -347,21 +347,18 @@ final class CreatedRecapBlogStore: ObservableObject {
     }
 
     private func persistRecents() {
-        if let data = try? Self.encoder.encode(recents) {
-            try? data.write(to: Self.recentsURL, options: .atomic)
-        }
+        guard let data = try? Self.encoder.encode(recents) else { return }
+        Task.detached(priority: .utility) { try? data.write(to: Self.recentsURL, options: .atomic) }
     }
 
     private func persistTripDrafts() {
-        if let data = try? Self.encoder.encode(tripDraftsBySourceId) {
-            try? data.write(to: Self.tripDraftsURL, options: .atomic)
-        }
+        guard let data = try? Self.encoder.encode(tripDraftsBySourceId) else { return }
+        Task.detached(priority: .utility) { try? data.write(to: Self.tripDraftsURL, options: .atomic) }
     }
 
     private func persistBlogDetails() {
-        if let data = try? Self.encoder.encode(blogDetailsBySourceId) {
-            try? data.write(to: Self.blogDetailsURL, options: .atomic)
-        }
+        guard let data = try? Self.encoder.encode(blogDetailsBySourceId) else { return }
+        Task.detached(priority: .utility) { try? data.write(to: Self.blogDetailsURL, options: .atomic) }
     }
 
     // MARK: - Auth-Aware Migration
@@ -796,7 +793,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                 let recapPhoto = RecapPhoto(
                     id: photo.id,
                     timestamp: photo.timestamp,
-                    location: photo.location,
+                    location: locationForInjectedMockPhoto(photo),
                     imageName: photo.imageName,
                     isIncluded: isInAppCapture,   // camera captures are always shown; library photos scored later
                     localIdentifier: photo.localIdentifier
@@ -869,14 +866,15 @@ final class CreatedRecapBlogStore: ObservableObject {
                         placeTitle = "Stop \(detail.days[di].placeStops.count + 1)"
                     }
                     let newStopIdx = detail.days[di].placeStops.count
-                    let newStop = PlaceStop(
+                    var newStop = PlaceStop(
                         orderIndex: newStopIdx,
                         placeTitle: placeTitle,
                         representativeLocation: repLoc,
                         photos: groupPhotos
                     )
+                    applySavedAppCapturePlaceMetadata(to: &newStop)
                     detail.days[di].placeStops.append(newStop)
-                    if repLoc != nil {
+                    if newStop.representativeLocation != nil, !newStop.placeTitleIsManual {
                         newStopsToGeocode.append((dayIdx: di, stopId: newStop.id))
                     }
                 }
@@ -912,6 +910,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                                 if let cat = resolvedCategory, geocodedDetail.days[di].placeStops[si].placeCategory == nil {
                                     geocodedDetail.days[di].placeStops[si].placeCategory = cat
                                 }
+                                syncAppCaptureMetaFromResolvedStop(geocodedDetail.days[di].placeStops[si])
                             }
                     }
                     saveBlogDetail(geocodedDetail, asDraft: true)
@@ -1176,6 +1175,321 @@ final class CreatedRecapBlogStore: ObservableObject {
         recents[idx].caption = primaryCaption(from: detail)
         recents[idx].lastEditedAt = Date()
         recents[idx].syncStatus = .needsUpload
+    }
+
+    /// First `RecapPhoto.id` in any stored blog whose `localIdentifier` is this Bloggo capture.
+    func recapPhotoIdForAppCapture(captureId: UUID) -> UUID? {
+        let assetId = AppCapturePhotoService.identifier(for: captureId)
+        for (_, detail) in blogDetailsBySourceId {
+            for day in detail.days {
+                for stop in day.placeStops {
+                    if let photo = stop.photos.first(where: { $0.localIdentifier == assetId }) {
+                        return photo.id
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Map pin center for a Bloggo capture: saved `meta.json` coordinates, then blog stop representative location.
+    func mapCenterCoordinateForAppCapture(captureId: UUID) -> CLLocationCoordinate2D? {
+        if let meta = AppCapturePhotoService.shared.metadata(captureId: captureId),
+           let coord = meta.location?.clCoordinate {
+            return coord
+        }
+        let assetId = AppCapturePhotoService.identifier(for: captureId)
+        for (_, detail) in blogDetailsBySourceId {
+            for day in detail.days {
+                for stop in day.placeStops where stop.photos.contains(where: { $0.localIdentifier == assetId }) {
+                    return stop.representativeLocation?.clCoordinate
+                        ?? stop.photos.first(where: { $0.localIdentifier == assetId })?.location?.clCoordinate
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Display name for a Bloggo capture: `meta.json` first, then any saved blog stop (skips `Stop N` placeholders).
+    func placeTitleForAppCapture(captureId: UUID) -> String? {
+        if let metaTitle = AppCapturePhotoService.shared.metadata(captureId: captureId)?.placeTitle?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !metaTitle.isEmpty,
+           !PlacePlaceholderNaming.isResolvablePlaceholder(metaTitle) {
+            return metaTitle
+        }
+        let assetId = AppCapturePhotoService.identifier(for: captureId)
+        for (_, detail) in blogDetailsBySourceId {
+            for day in detail.days {
+                for stop in day.placeStops where stop.photos.contains(where: { $0.localIdentifier == assetId }) {
+                    let title = stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !title.isEmpty, !PlacePlaceholderNaming.isResolvablePlaceholder(title) else { continue }
+                    return title
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Reverse-geocodes a Bloggo capture when its title is still a placeholder (`Stop N`, etc.).
+    /// Uses a safe `Near …` label (neighborhood / area / city) — never auto-picks a specific venue.
+    func resolveAppCapturePlaceIfNeeded(
+        captureId: UUID,
+        fallbackCoordinate: CLLocationCoordinate2D? = nil
+    ) async {
+        let existing = placeTitleForAppCapture(captureId: captureId) ?? ""
+        guard PlacePlaceholderNaming.isResolvablePlaceholder(existing) else { return }
+
+        let meta = AppCapturePhotoService.shared.metadata(captureId: captureId)
+        guard let coord = meta?.location?.clCoordinate ?? fallbackCoordinate else { return }
+
+        let (finalTitle, subtitle) = await GeocodingService.shared.autoCaptureNearPlaceTitle(at: coord)
+        let trimmedTitle = finalTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty,
+              !PlacePlaceholderNaming.isResolvablePlaceholder(trimmedTitle) else { return }
+
+        updatePlaceStopFromAppCapture(
+            captureId: captureId,
+            newName: trimmedTitle,
+            category: nil,
+            coordinate: coord,
+            subtitle: subtitle
+        )
+    }
+
+    /// After blog geocoding resolves a stop, mirror the name onto each `bloggo-capture:` meta file in that stop.
+    /// Skips captures the user already edited in Bloggo Gallery so a rescan/geocode pass cannot revert them.
+    private func syncAppCaptureMetaFromResolvedStop(_ stop: PlaceStop) {
+        let title = stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, !PlacePlaceholderNaming.isResolvablePlaceholder(title) else { return }
+        let subtitle = stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let coord = stop.representativeLocation?.clCoordinate
+        for photo in stop.photos {
+            guard let lid = photo.localIdentifier,
+                  let captureId = AppCapturePhotoService.uuid(from: lid) else { continue }
+            if AppCapturePhotoService.shared.hasUserEditedPlaceMetadata(captureId: captureId) {
+                continue
+            }
+            try? AppCapturePhotoService.shared.updatePlaceMetadata(
+                captureId: captureId,
+                placeTitle: title,
+                placeSubtitle: subtitle?.isEmpty == true ? nil : subtitle,
+                placeCategory: stop.placeCategory,
+                coordinate: coord
+            )
+        }
+    }
+
+    /// Applies saved `meta.json` place fields onto a clustered stop (and its in-app capture photo rows).
+    private func applySavedAppCapturePlaceMetadata(to stop: inout PlaceStop) {
+        let captureService = AppCapturePhotoService.shared
+        var savedMeta: AppCapturePhotoService.CaptureInfo?
+        for photo in stop.photos {
+            guard let lid = photo.localIdentifier,
+                  let captureId = AppCapturePhotoService.uuid(from: lid),
+                  let meta = captureService.metadata(captureId: captureId) else { continue }
+            if let title = meta.placeTitle,
+               !PlacePlaceholderNaming.isResolvablePlaceholder(title) {
+                savedMeta = meta
+                break
+            }
+            if savedMeta == nil { savedMeta = meta }
+        }
+        guard let meta = savedMeta else { return }
+
+        if let title = meta.placeTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !title.isEmpty,
+           !PlacePlaceholderNaming.isResolvablePlaceholder(title) {
+            stop.placeTitle = title
+            stop.placeTitleIsManual = true
+            let sub = meta.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            stop.placeSubtitle = sub.isEmpty ? nil : sub
+            stop.placeCategory = meta.placeCategory
+        }
+
+        guard let savedLoc = meta.location else { return }
+        stop.representativeLocation = savedLoc
+        for photoIdx in stop.photos.indices {
+            guard let lid = stop.photos[photoIdx].localIdentifier,
+                  AppCapturePhotoService.uuid(from: lid) != nil else { continue }
+            stop.photos[photoIdx].location = savedLoc
+        }
+    }
+
+    /// Keeps persisted trip drafts aligned when the user edits a capture in Bloggo Gallery.
+    private func syncTripDraftPhotosForAppCapture(
+        captureId: UUID,
+        coordinate: CLLocationCoordinate2D?,
+        caption: String?
+    ) {
+        let assetId = AppCapturePhotoService.identifier(for: captureId)
+        let photoCoord = coordinate.map { PhotoCoordinate(latitude: $0.latitude, longitude: $0.longitude) }
+        var changed = false
+        for key in tripDraftsBySourceId.keys {
+            guard var trip = tripDraftsBySourceId[key] else { continue }
+            var tripChanged = false
+            for dayIdx in trip.days.indices {
+                for photoIdx in trip.days[dayIdx].photos.indices {
+                    guard trip.days[dayIdx].photos[photoIdx].localIdentifier == assetId else { continue }
+                    if let photoCoord {
+                        trip.days[dayIdx].photos[photoIdx].location = photoCoord
+                    }
+                    if let caption {
+                        let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+                        trip.days[dayIdx].photos[photoIdx].caption = trimmed.isEmpty ? nil : trimmed
+                    }
+                    tripChanged = true
+                }
+            }
+            if tripChanged {
+                tripDraftsBySourceId[key] = trip
+                changed = true
+            }
+        }
+        if changed { persistTripDrafts() }
+    }
+
+    private func locationForInjectedMockPhoto(_ photo: MockPhoto) -> PhotoCoordinate? {
+        guard let lid = photo.localIdentifier,
+              let captureId = AppCapturePhotoService.uuid(from: lid),
+              let metaLoc = AppCapturePhotoService.shared.metadata(captureId: captureId)?.location else {
+            return photo.location
+        }
+        return metaLoc
+    }
+
+    /// City / country subtitle for a Bloggo capture: `meta.json` first, then saved blog stop.
+    func placeSubtitleForAppCapture(captureId: UUID) -> String? {
+        if let metaSub = AppCapturePhotoService.shared.metadata(captureId: captureId)?.placeSubtitle?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !metaSub.isEmpty {
+            return metaSub
+        }
+        let assetId = AppCapturePhotoService.identifier(for: captureId)
+        for (_, detail) in blogDetailsBySourceId {
+            for day in detail.days {
+                for stop in day.placeStops where stop.photos.contains(where: { $0.localIdentifier == assetId }) {
+                    let sub = stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    return sub.isEmpty ? nil : sub
+                }
+            }
+        }
+        return nil
+    }
+
+    /// POI category on this Bloggo capture: `meta.json` first, then saved blog stop.
+    func placeCategoryForAppCapture(captureId: UUID) -> String? {
+        if let metaCat = AppCapturePhotoService.shared.metadata(captureId: captureId)?.placeCategory?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !metaCat.isEmpty {
+            return metaCat
+        }
+        let assetId = AppCapturePhotoService.identifier(for: captureId)
+        for (_, detail) in blogDetailsBySourceId {
+            for day in detail.days {
+                for stop in day.placeStops where stop.photos.contains(where: { $0.localIdentifier == assetId }) {
+                    return stop.placeCategory
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Saves place name / location edits from **Bloggo Gallery** for a `bloggo-capture:` asset.
+    func updatePlaceStopFromAppCapture(
+        captureId: UUID,
+        newName: String,
+        category: String?,
+        coordinate: CLLocationCoordinate2D?,
+        subtitle: String
+    ) {
+        let trimmedName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        let subTrimmed = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        try? AppCapturePhotoService.shared.updatePlaceMetadata(
+            captureId: captureId,
+            placeTitle: trimmedName,
+            placeSubtitle: subTrimmed.isEmpty ? nil : subTrimmed,
+            placeCategory: category,
+            coordinate: coordinate
+        )
+
+        syncAppCapturePlaceInBlogs(
+            captureId: captureId,
+            newName: trimmedName,
+            category: category,
+            coordinate: coordinate,
+            subtitle: subTrimmed
+        )
+        syncTripDraftPhotosForAppCapture(
+            captureId: captureId,
+            coordinate: coordinate,
+            caption: nil
+        )
+    }
+
+    /// Updates every blog stop / photo row for this `bloggo-capture:` identifier.
+    private func syncAppCapturePlaceInBlogs(
+        captureId: UUID,
+        newName: String,
+        category: String?,
+        coordinate: CLLocationCoordinate2D?,
+        subtitle: String
+    ) {
+        let assetId = AppCapturePhotoService.identifier(for: captureId)
+        let photoCoord = coordinate.map { PhotoCoordinate(latitude: $0.latitude, longitude: $0.longitude) }
+        let subTrimmed = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var targetMomentKeys = Set<String>()
+        for detail in blogDetailsBySourceId.values {
+            for day in detail.days {
+                for stop in day.placeStops {
+                    guard stop.photos.contains(where: { $0.localIdentifier == assetId }) else { continue }
+                    if let vtd = stop.visitedTimeDigitized, !vtd.isEmpty {
+                        targetMomentKeys.insert(vtd)
+                    }
+                }
+            }
+        }
+
+        var changed = false
+        for key in blogDetailsBySourceId.keys {
+            guard var detail = blogDetailsBySourceId[key] else { continue }
+            var detailChanged = false
+            for dayIdx in detail.days.indices {
+                for stopIdx in detail.days[dayIdx].placeStops.indices {
+                    let stop = detail.days[dayIdx].placeStops[stopIdx]
+                    let containsAsset = stop.photos.contains { $0.localIdentifier == assetId }
+                    let sameMoment = stop.visitedTimeDigitized.map { targetMomentKeys.contains($0) } ?? false
+                    guard containsAsset || sameMoment else { continue }
+
+                    detail.days[dayIdx].placeStops[stopIdx].placeTitle = newName
+                    detail.days[dayIdx].placeStops[stopIdx].placeTitleIsManual = true
+                    detail.days[dayIdx].placeStops[stopIdx].placeCategory = category
+                    detail.days[dayIdx].placeStops[stopIdx].placeSubtitle = subTrimmed.isEmpty ? nil : subTrimmed
+                    if let coordinate {
+                        detail.days[dayIdx].placeStops[stopIdx].representativeLocation = photoCoord
+                    }
+
+                    for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
+                        guard detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].localIdentifier == assetId else { continue }
+                        if let photoCoord {
+                            detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].location = photoCoord
+                        }
+                    }
+                    detailChanged = true
+                }
+            }
+            if detailChanged {
+                blogDetailsBySourceId[key] = detail
+                changed = true
+            }
+        }
+        if changed {
+            persistBlogDetails()
+            objectWillChange.send()
+        }
     }
 
     /// Updates the place stop name, category, coordinate, and subtitle for the stop that contains the given photo.
@@ -1994,6 +2308,9 @@ final class CreatedRecapBlogStore: ObservableObject {
                 placeStops[i].orderIndex = i
                 placeStops[i].placeTitle = "Stop \(i + 1)"
             }
+            for i in placeStops.indices {
+                applySavedAppCapturePlaceMetadata(to: &placeStops[i])
+            }
 
             guard !placeStops.isEmpty else { continue }
             // Use the earliest selected photo's calendar day so Day 2's date matches its photos (camera trips use 0-based dayIndex; we use 1-based for display).
@@ -2206,6 +2523,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         var countryCandidates: [(country: String, order: Int)] = []
         var order = 0
         for stopIdx in detail.days[firstDayIdx].placeStops.indices {
+            applySavedAppCapturePlaceMetadata(to: &detail.days[firstDayIdx].placeStops[stopIdx])
             let stop = detail.days[firstDayIdx].placeStops[stopIdx]
             if Task.isCancelled { return detail }
             if let coord = stop.representativeLocation {
@@ -2223,6 +2541,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                     if let cat = resolvedCategory, stopCopy.placeCategory == nil {
                         stopCopy.placeCategory = cat
                     }
+                    syncAppCaptureMetaFromResolvedStop(stopCopy)
                 }
                 dayCopy.placeStops[stopIdx] = stopCopy
                 detail.days[firstDayIdx] = dayCopy
@@ -2297,6 +2616,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         guard dayIndex < result.days.count else { return result }
 
         for stopIdx in result.days[dayIndex].placeStops.indices {
+            applySavedAppCapturePlaceMetadata(to: &result.days[dayIndex].placeStops[stopIdx])
             let stop = result.days[dayIndex].placeStops[stopIdx]
             if Task.isCancelled { return result }
             if let coord = stop.representativeLocation {
@@ -2309,6 +2629,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                     if let cat = resolvedCategory, result.days[dayIndex].placeStops[stopIdx].placeCategory == nil {
                         result.days[dayIndex].placeStops[stopIdx].placeCategory = cat
                     }
+                    syncAppCaptureMetaFromResolvedStop(result.days[dayIndex].placeStops[stopIdx])
                 }
             }
         }
@@ -2400,7 +2721,22 @@ final class CreatedRecapBlogStore: ObservableObject {
             detail.selectedCoverPhotoIdentifier = bestPhotoId
             print("[CoverPhoto] Updated cover: \(prevCoverId?.prefix(8) ?? "nil")… → \(bestPhotoId.prefix(8))… (score=\(String(format: "%.3f", bestPhoto.qualityScore?.totalScore ?? 0))\(usedFallback ? ", fallback: no scenic photos" : ""))")
         } else {
-            print("[CoverPhoto] No scored photos found — keeping initial cover: \(prevCoverId?.prefix(8) ?? "nil")…")
+            // Camera / in-app captures are not in the photo library — pick first included capture with a still on disk.
+            let fallbackId = detail.days
+                .flatMap(\.placeStops)
+                .flatMap(\.photos)
+                .filter(\.isIncluded)
+                .compactMap(\.localIdentifier)
+                .first { id in
+                    id.hasPrefix(AppCapturePhotoService.prefix)
+                        && AppCapturePhotoService.shared.loadImage(identifier: id) != nil
+                }
+            if let fallbackId {
+                detail.selectedCoverPhotoIdentifier = fallbackId
+                print("[CoverPhoto] Fallback cover from in-app capture: \(prevCoverId?.prefix(8) ?? "nil")… → \(fallbackId.prefix(8))…")
+            } else {
+                print("[CoverPhoto] No scored photos found — keeping initial cover: \(prevCoverId?.prefix(8) ?? "nil")…")
+            }
         }
     }
 
@@ -2439,6 +2775,16 @@ final class CreatedRecapBlogStore: ObservableObject {
                     }
                     if let id = photo.localIdentifier {
                         updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isFavorite = favoriteIdentifiers.contains(id)
+                    }
+                }
+
+                for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
+                    let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
+                    guard photo.qualityScore == nil,
+                          let id = photo.localIdentifier,
+                          id.hasPrefix(AppCapturePhotoService.prefix) else { continue }
+                    if let score = await scorer.scoreAppCapture(identifier: id) {
+                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].qualityScore = score
                     }
                 }
 
@@ -2634,7 +2980,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                 let recapPhoto = RecapPhoto(
                     id: photo.id,
                     timestamp: photo.timestamp,
-                    location: photo.location,
+                    location: locationForInjectedMockPhoto(photo),
                     imageName: photo.imageName,
                     isIncluded: isInAppCapture,
                     localIdentifier: photo.localIdentifier
@@ -2696,15 +3042,16 @@ final class CreatedRecapBlogStore: ObservableObject {
                     } else {
                         placeTitle = "Stop \(detail.days[di].placeStops.count + 1)"
                     }
-                    let newStop = PlaceStop(
+                    var newStop = PlaceStop(
                         orderIndex: detail.days[di].placeStops.count,
                         placeTitle: placeTitle,
                         representativeLocation: repLoc,
                         photos: groupPhotos
                     )
+                    applySavedAppCapturePlaceMetadata(to: &newStop)
                     detail.days[di].placeStops.append(newStop)
                     newStopIds.append(newStop.id)
-                    if repLoc != nil {
+                    if newStop.representativeLocation != nil, !newStop.placeTitleIsManual {
                         newStopsToGeocode.append((dayIdx: di, stopId: newStop.id))
                     }
                 }
@@ -2733,6 +3080,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                         if let cat = resolvedCategory, geocodedDetail.days[di].placeStops[si].placeCategory == nil {
                             geocodedDetail.days[di].placeStops[si].placeCategory = cat
                         }
+                        syncAppCaptureMetaFromResolvedStop(geocodedDetail.days[di].placeStops[si])
                     }
                 }
                 saveBlogDetail(geocodedDetail, asDraft: true)

@@ -38,9 +38,11 @@ enum PlaceLibraryPhotoImport {
         return defaultCoordinate(for: stop)
     }
 
-    /// Timezone for digitized-time strings when EXIF / asset GPS are unavailable: reverse-geocode the place coordinate, else device timezone.
+    /// Timezone for digitized-time strings when EXIF / asset GPS are unavailable.
+    /// Uses the place's already-resolved identifier first (zero async cost), then reverse-geocodes, then falls back to device timezone.
     @MainActor
     static func placeTimeZone(for stop: PlaceStop) async -> TimeZone {
+        if let id = stop.timeZoneIdentifier, let tz = TimeZone(identifier: id) { return tz }
         if let coord = defaultCoordinate(for: stop) {
             let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
             if let tz = await GeocodingService.shared.timeZone(for: loc) {

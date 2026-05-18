@@ -6324,12 +6324,15 @@ Your blog remains private unless you choose to share it.
         return nil
     }
 
-    /// Appends library picks to the managed place, fills missing metadata from the place/day, and copies pixels into the in-app gallery.
+    /// Appends library picks to the managed place and fills missing metadata from the place/day.
+    /// Photos appear in the grid immediately after a single synchronous PHAsset lookup; any photos
+    /// whose assets are not yet visible under limited library access are refined in a background Task.
     @MainActor
     private func importLibraryPhotosIntoStop(assetIdentifiers: [String], dayId: UUID, stopId: UUID) async {
         guard let initDayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
               let initStop = draft.days[initDayIdx].placeStops.first(where: { $0.id == stopId }) else { return }
 
+        // Fast path when the place already has a resolved timezone (no geocoding needed).
         let placeTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: initStop)
 
         // Re-validate indices after the async pause — other @MainActor work may have run during geocoding.
@@ -6339,14 +6342,15 @@ Your blog remains private unless you choose to share it.
         let day = draft.days[dayIdx]
         var stop = draft.days[dayIdx].placeStops[stopIdx]
         var existingIds = Set(stop.photos.compactMap(\.localIdentifier))
-        var photosToCache: [(assetId: String, timestamp: Date)] = []
+        var pendingRefinement: [String] = []
 
         for rawId in assetIdentifiers {
             let id = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !id.isEmpty, !existingIds.contains(id) else { continue }
-            // Under limited library access, `PHAsset.fetchAssets` can stay empty briefly after PHPicker returns.
-            // Still append the pick so it is included in the blog; metadata falls back to place/day when asset is nil.
-            let asset = await fetchPHAssetForLibraryImport(localIdentifier: id)
+
+            // Single synchronous fetch — no retry delay before appending.
+            // Under limited access, PHAsset can be absent briefly; fallbacks keep the photo visible immediately.
+            let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject
 
             let coord = PlaceLibraryPhotoImport.resolvedCoordinate(asset: asset, stop: stop)
             let timestamp = PlaceLibraryPhotoImport.resolvedTimestamp(asset: asset, stop: stop, day: day, placeTimeZone: placeTZ)
@@ -6359,22 +6363,34 @@ Your blog remains private unless you choose to share it.
             )
             stop.photos.append(recap)
             existingIds.insert(id)
-            photosToCache.append((assetId: id, timestamp: timestamp))
+
+            if asset == nil { pendingRefinement.append(id) }
         }
 
-        guard !photosToCache.isEmpty else { return }
+        guard stop.photos.count > draft.days[dayIdx].placeStops[stopIdx].photos.count else { return }
 
-        // Update draft before image caching so the photo appears in the grid immediately.
-        // In limited access mode photos are not pre-cached, so loadImage can take many seconds;
-        // waiting for it before writing draft causes the photo to never appear during that wait.
         stop.photos.sort { $0.timestamp < $1.timestamp }
         draft.days[dayIdx].placeStops[stopIdx] = stop
         persistRecapBlogDetail()
 
-        for (assetId, timestamp) in photosToCache {
-            if let img = await ImageLoader.shared.loadImage(assetIdentifier: assetId, targetSize: CGSize(width: 2048, height: 2048)) {
-                InAppCameraPhotoStore.shared.addPhoto(image: img, timestamp: timestamp)
+        // Refine timestamp/location in the background for any photos whose PHAsset wasn't immediately available.
+        guard !pendingRefinement.isEmpty else { return }
+        let capturedDay = day
+        Task {
+            for localId in pendingRefinement {
+                guard !Task.isCancelled else { return }
+                guard let asset = await fetchPHAssetForLibraryImport(localIdentifier: localId) else { continue }
+                guard let dIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+                      let sIdx = draft.days[dIdx].placeStops.firstIndex(where: { $0.id == stopId }),
+                      let pIdx = draft.days[dIdx].placeStops[sIdx].photos.firstIndex(where: { $0.localIdentifier == localId })
+                else { continue }
+                let refinedStop = draft.days[dIdx].placeStops[sIdx]
+                draft.days[dIdx].placeStops[sIdx].photos[pIdx].timestamp =
+                    PlaceLibraryPhotoImport.resolvedTimestamp(asset: asset, stop: refinedStop, day: capturedDay, placeTimeZone: placeTZ)
+                draft.days[dIdx].placeStops[sIdx].photos[pIdx].location =
+                    PlaceLibraryPhotoImport.resolvedCoordinate(asset: asset, stop: refinedStop)
             }
+            persistRecapBlogDetail()
         }
     }
 

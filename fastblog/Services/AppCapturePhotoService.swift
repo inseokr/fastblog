@@ -62,6 +62,12 @@ final class AppCapturePhotoService {
         var longitude: Double?
         var digitizedTime: String            // "yyyy:MM:dd HH:mm:ss"
         var caption: String?                 // User-written or blank
+        /// User-edited place name from Bloggo Gallery / place editor (survives reopen when not yet in a blog).
+        var placeTitle: String?
+        /// City / country line shown under the place name.
+        var placeSubtitle: String?
+        /// `MKPointOfInterestCategory` raw value when resolved from POI search.
+        var placeCategory: String?
     }
 
     /// Writes `image.jpg` and `meta.json` to a new capture folder.
@@ -173,6 +179,9 @@ final class AppCapturePhotoService {
         var location: PhotoCoordinate?
         var digitizedTime: String
         var caption: String?
+        var placeTitle: String?
+        var placeSubtitle: String?
+        var placeCategory: String?
     }
 
     func metadata(captureId: UUID) -> CaptureInfo? {
@@ -185,12 +194,28 @@ final class AppCapturePhotoService {
         if let lat = meta.latitude, let lon = meta.longitude {
             loc = PhotoCoordinate(latitude: lat, longitude: lon)
         }
-        return CaptureInfo(timestamp: timestamp, location: loc, digitizedTime: meta.digitizedTime, caption: meta.caption)
+        return CaptureInfo(
+            timestamp: timestamp,
+            location: loc,
+            digitizedTime: meta.digitizedTime,
+            caption: meta.caption,
+            placeTitle: meta.placeTitle,
+            placeSubtitle: meta.placeSubtitle,
+            placeCategory: meta.placeCategory
+        )
     }
 
     func metadata(identifier: String) -> CaptureInfo? {
         guard let uuid = Self.uuid(from: identifier) else { return nil }
         return metadata(captureId: uuid)
+    }
+
+    /// User saved a non-placeholder place name in Bloggo Gallery / place editor.
+    func hasUserEditedPlaceMetadata(captureId: UUID) -> Bool {
+        guard let title = metadata(captureId: captureId)?.placeTitle?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { return false }
+        return !PlacePlaceholderNaming.isResolvablePlaceholder(title)
     }
 
     // MARK: - Update caption
@@ -201,6 +226,50 @@ final class AppCapturePhotoService {
         guard let data = try? Data(contentsOf: metaURL),
               var meta = try? JSONDecoder().decode(CaptureMetadata.self, from: data) else { return }
         meta.caption = caption?.isEmpty == true ? nil : caption
+        let updated = try JSONEncoder().encode(meta)
+        try updated.write(to: metaURL)
+    }
+
+    /// Updates latitude/longitude in `meta.json` (nil clears stored coordinates).
+    func updateLocation(captureId: UUID, coordinate: CLLocationCoordinate2D?) throws {
+        guard let folder = try? captureURL(for: captureId) else { return }
+        let metaURL = folder.appendingPathComponent("meta.json")
+        guard let data = try? Data(contentsOf: metaURL),
+              var meta = try? JSONDecoder().decode(CaptureMetadata.self, from: data) else { return }
+        if let coordinate {
+            meta.latitude = coordinate.latitude
+            meta.longitude = coordinate.longitude
+        } else {
+            meta.latitude = nil
+            meta.longitude = nil
+        }
+        let updated = try JSONEncoder().encode(meta)
+        try updated.write(to: metaURL)
+    }
+
+    /// Persists user-edited place name, subtitle, category, and optional map pin into `meta.json`.
+    func updatePlaceMetadata(
+        captureId: UUID,
+        placeTitle: String,
+        placeSubtitle: String?,
+        placeCategory: String?,
+        coordinate: CLLocationCoordinate2D?
+    ) throws {
+        guard let folder = try? captureURL(for: captureId) else { return }
+        let metaURL = folder.appendingPathComponent("meta.json")
+        guard let data = try? Data(contentsOf: metaURL),
+              var meta = try? JSONDecoder().decode(CaptureMetadata.self, from: data) else { return }
+
+        let trimmedTitle = placeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        meta.placeTitle = trimmedTitle.isEmpty ? nil : trimmedTitle
+        let trimmedSubtitle = placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        meta.placeSubtitle = trimmedSubtitle.isEmpty ? nil : trimmedSubtitle
+        meta.placeCategory = placeCategory
+        if let coordinate {
+            meta.latitude = coordinate.latitude
+            meta.longitude = coordinate.longitude
+        }
+
         let updated = try JSONEncoder().encode(meta)
         try updated.write(to: metaURL)
     }
@@ -277,6 +346,37 @@ final class AppCapturePhotoService {
     /// Removes only the voice memo for a capture (keeps the photo and vibe).
     func deleteVoiceMemo(captureId: UUID) {
         guard let url = try? voiceMemoPath(for: captureId) else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    // MARK: - Moment video file (moment_video.mov inside capture folder)
+
+    private func momentVideoPath(for captureId: UUID) throws -> URL {
+        try captureURL(for: captureId).appendingPathComponent("moment_video.mov")
+    }
+
+    /// Copies a short moment video into the capture folder. Call after `saveCapture`.
+    func saveMomentVideo(captureId: UUID, from sourceURL: URL) throws {
+        let dest = try momentVideoPath(for: captureId)
+        if FileManager.default.fileExists(atPath: dest.path) {
+            try FileManager.default.removeItem(at: dest)
+        }
+        try FileManager.default.copyItem(at: sourceURL, to: dest)
+        Task { @MainActor in
+            ImageLoader.shared.invalidateThumbnailCache(for: Self.identifier(for: captureId))
+        }
+    }
+
+    /// Returns the local moment video file URL for a capture if it exists on disk.
+    func momentVideoFileURL(for captureId: UUID) -> URL? {
+        guard let url = try? momentVideoPath(for: captureId),
+              FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
+    /// Removes only the moment video for a capture (keeps the photo, vibe, and voice memo).
+    func deleteMomentVideo(captureId: UUID) {
+        guard let url = try? momentVideoPath(for: captureId) else { return }
         try? FileManager.default.removeItem(at: url)
     }
 

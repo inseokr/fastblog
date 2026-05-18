@@ -416,7 +416,11 @@ struct ManagePhotosView: View {
             }
             provisionalLibraryAssetIds = nextProvisional
 
-            refreshExistingAssetIds()
+            // Defer the PHAsset bulk-fetch to a Task so SwiftUI renders the provisional photo
+            // before the synchronous fetchAssets call can block the main thread.
+            Task { @MainActor in
+                refreshExistingAssetIds()
+            }
             scheduleExistingAssetIdRefreshRetriesIfNeeded()
             cachedAiRanks = photos.aiRanksByPhotoId()
             // Reset progressive rendering when the photo set changes.

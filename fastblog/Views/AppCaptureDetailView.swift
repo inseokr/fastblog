@@ -6,22 +6,18 @@
 //  Supports caption editing and photo deletion.
 //
 
+import AVKit
+import CoreLocation
 import Photos
 import SwiftUI
 import UIKit
 
 struct AppCaptureDetailView: View {
-    private enum NavigationMapAppPreference: String {
-        case apple
-        case google
-    }
-    private static let navigationChooserSuppressedKey = "placePhotoNavigationChooserSuppressed"
-    private static let navigationChooserPreferredAppKey = "placePhotoNavigationPreferredApp"
-
     @Binding var items: [AppCaptureItem]
     let initialId: UUID
     var onDelete: (UUID) -> Void
     var onCaptionSaved: (UUID, String?) -> Void
+    var onPlaceSaved: ((UUID) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -30,14 +26,13 @@ struct AppCaptureDetailView: View {
     @State private var isEditingCaption = false
     @State private var captionDraft = ""
     @State private var resolvedPlaceTitle: String = ""
+    @State private var resolvedPlaceSubtitle: String?
     @State private var showDeleteConfirm = false
     @State private var isGeneratingCaption = false
     @State private var downloadToast: String?
-    @State private var showNavigationAppChooser = false
-    @State private var navigationDoNotShowAgain = false
+    @State private var showEditPlaceSheet = false
+    @State private var isResolvingPlaceName = false
     @State private var pendingCaptionEditorClose = false
-    @AppStorage(Self.navigationChooserSuppressedKey) private var navigationChooserSuppressed = false
-    @AppStorage(Self.navigationChooserPreferredAppKey) private var navigationChooserPreferredAppRaw = ""
     @FocusState private var captionFocused: Bool
 
     // MARK: - Vibe
@@ -48,6 +43,9 @@ struct AppCaptureDetailView: View {
     // MARK: - Voice memo (separate player so it can play simultaneously with vibe is undesirable;
     // we explicitly stop vibe when starting voice memo playback and vice-versa).
     @StateObject private var voiceMemoPlayer = VibePlayer()
+    @State private var showMomentVideoPlayer = false
+    /// Pinned when opening the player so delete / pager changes cannot invalidate the URL mid-playback.
+    @State private var momentVideoPlaybackURL: URL?
 
     /// Restrict writing assist in full-screen gallery to iPhone 15+ hardware.
     private var supportsFullScreenWritingAssist: Bool {
@@ -86,6 +84,16 @@ struct AppCaptureDetailView: View {
         return f
     }()
 
+    /// Device safe area — matches `PlacePhotoModalView` so top chrome sits flush under the status bar.
+    private var deviceSafeAreaInsets: UIEdgeInsets {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }?
+            .keyWindow?
+            .safeAreaInsets
+            ?? UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -95,7 +103,6 @@ struct AppCaptureDetailView: View {
             } else {
                 photoPageView
                 if showControls && !isEditingCaption {
-                    topBar
                     VStack {
                         Spacer()
                         galleryBottomChrome
@@ -117,13 +124,16 @@ struct AppCaptureDetailView: View {
                     .allowsHitTesting(false)
                 }
 
-                if showNavigationAppChooser {
-                    navigationAppChooserOverlay
-                        .zIndex(20)
-                        .transition(.opacity)
+                if showControls && !isEditingCaption {
+                    VStack(spacing: 0) {
+                        topBar
+                            .ignoresSafeArea(edges: .top)
+                        Spacer(minLength: 0)
+                    }
                 }
             }
         }
+        .ignoresSafeArea()
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if isEditingCaption {
                 captionEditor
@@ -138,11 +148,8 @@ struct AppCaptureDetailView: View {
                 reconcileCaptionWithBlog(at: currentIndex)
             }
             captionDraft = currentItem?.caption ?? ""
-            if let id = currentItem?.id {
-                resolvedPlaceTitle = resolvePlaceTitle(for: id)
-            } else {
-                resolvedPlaceTitle = ""
-            }
+            refreshResolvedPlace(for: currentItem?.id)
+            resolvePlaceNameIfNeeded(for: currentItem?.id)
         }
         .onDisappear {
             vibePlayer.stop()
@@ -166,6 +173,75 @@ struct AppCaptureDetailView: View {
         } message: {
             Text("This will permanently remove the photo from your device.")
         }
+        .fullScreenCover(isPresented: $showEditPlaceSheet) {
+            if let item = currentItem {
+                let assetId = AppCapturePhotoService.identifier(for: item.id)
+                let photoId = CreatedRecapBlogStore.shared.recapPhotoIdForAppCapture(captureId: item.id) ?? item.id
+                EditPlaceStopNameSheet(
+                    placeTitle: $resolvedPlaceTitle,
+                    initialPlaceSubtitle: resolvedPlaceSubtitle,
+                    initialPlaceCategory: CreatedRecapBlogStore.shared.placeCategoryForAppCapture(captureId: item.id),
+                    location: CreatedRecapBlogStore.shared.mapCenterCoordinateForAppCapture(captureId: item.id)
+                        ?? item.location?.clCoordinate,
+                    photos: [RecapPhoto(
+                        id: photoId,
+                        timestamp: item.timestamp,
+                        location: item.location,
+                        imageName: "camera.fill",
+                        localIdentifier: assetId,
+                        caption: item.caption
+                    )],
+                    onSave: { name, coord, category, subtitle in
+                        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmedName.isEmpty {
+                            resolvedPlaceTitle = trimmedName
+                        }
+                        let trimmedSubtitle = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                        resolvedPlaceSubtitle = trimmedSubtitle.isEmpty ? nil : trimmedSubtitle
+                        CreatedRecapBlogStore.shared.updatePlaceStopFromAppCapture(
+                            captureId: item.id,
+                            newName: name,
+                            category: category,
+                            coordinate: coord,
+                            subtitle: subtitle
+                        )
+                        if let coord, items.indices.contains(currentIndex) {
+                            items[currentIndex].location = PhotoCoordinate(
+                                latitude: coord.latitude,
+                                longitude: coord.longitude
+                            )
+                        } else if let info = AppCapturePhotoService.shared.metadata(captureId: item.id),
+                                  let loc = info.location,
+                                  items.indices.contains(currentIndex) {
+                            items[currentIndex].location = loc
+                        }
+                        onPlaceSaved?(item.id)
+                    }
+                )
+            }
+        }
+        .fullScreenCover(isPresented: $showMomentVideoPlayer, onDismiss: {
+            momentVideoPlaybackURL = nil
+        }) {
+            if let url = momentVideoPlaybackURL {
+                MomentVideoFullScreenPlayer(url: url) {
+                    showMomentVideoPlayer = false
+                    momentVideoPlaybackURL = nil
+                }
+            } else {
+                Color.black.ignoresSafeArea()
+                    .onAppear { showMomentVideoPlayer = false }
+            }
+        }
+    }
+
+    private func presentMomentVideoPlayer() {
+        guard let url = currentItem?.localMomentVideoURL else { return }
+        vibePlayer.stop()
+        voiceMemoPlayer.stop()
+        isVibeEnabled = false
+        momentVideoPlaybackURL = url
+        showMomentVideoPlayer = true
     }
 
     // MARK: - Current item helper
@@ -191,96 +267,135 @@ struct AppCaptureDetailView: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .ignoresSafeArea()
+        .onChange(of: items.count) { _, newCount in
+            if newCount == 0 {
+                dismiss()
+            } else if currentIndex >= newCount {
+                currentIndex = newCount - 1
+            }
+        }
         .onChange(of: currentIndex) { _, newIdx in
             if items.indices.contains(newIdx) {
                 reconcileCaptionWithBlog(at: newIdx)
                 captionDraft = items[newIdx].caption ?? ""
-                resolvedPlaceTitle = resolvePlaceTitle(for: items[newIdx].id)
+                refreshResolvedPlace(for: items[newIdx].id)
+                resolvePlaceNameIfNeeded(for: items[newIdx].id)
             }
             vibePlayer.stop()
             voiceMemoPlayer.stop()
+            showMomentVideoPlayer = false
+            momentVideoPlaybackURL = nil
             if isVibeEnabled, let url = items[safe: newIdx]?.localVibeURL {
                 vibePlayer.play(url: url)
             }
         }
     }
 
-    // MARK: - Top bar
+    // MARK: - Top bar (matches `PlaceDetailTopChrome`: ignore top safe area, apply inset once)
 
     private var topBar: some View {
-        VStack {
+        let safeTop = deviceSafeAreaInsets.top
+        return ZStack(alignment: .top) {
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.52),
+                    Color.black.opacity(0.28),
+                    Color.black.opacity(0.08),
+                    Color.clear
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: safeTop + 120)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .allowsHitTesting(false)
+
             ZStack {
-                // Left: close button
-                HStack {
+                HStack(alignment: .top) {
                     Button {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(size: 18, weight: .bold))
                             .foregroundColor(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.black.opacity(0.5))
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.22))
                             .clipShape(Circle())
                     }
+                    .buttonStyle(.plain)
 
                     Spacer()
 
-                    // Right: Vibe toggle when available (download/delete live in bottom bar)
-                    if currentItem?.localVibeURL != nil {
-                        let audioPlaying = vibePlayer.isPlaying
-                        /// Vibe clips do not loop; after `audioPlayerDidFinishPlaying`, `audioPlaying` is false while `isVibeEnabled` may stay true (e.g. auto-play on swipe).
-                        let vibeArmedIdle = isVibeEnabled && !audioPlaying
-                        Button {
-                            isVibeEnabled.toggle()
-                            if isVibeEnabled, let url = currentItem?.localVibeURL {
-                                voiceMemoPlayer.stop()
-                                vibePlayer.play(url: url)
-                            } else {
-                                vibePlayer.stop()
+                    HStack(spacing: 10) {
+                        if currentItem?.localMomentVideoURL != nil {
+                            Button {
+                                presentMomentVideoPlayer()
+                            } label: {
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 44, height: 44)
+                                    .background(.ultraThinMaterial)
+                                    .background(Color.orange.opacity(0.28))
+                                    .clipShape(Circle())
+                                    .overlay(Circle().stroke(Color.orange.opacity(0.55), lineWidth: 1))
                             }
-                        } label: {
-                            // Match in-app camera: 44pt material circle. Waveform animates only while audio is actually playing.
-                            AtmosphericWaveformView(isActive: audioPlaying)
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial)
-                                .background(
-                                    audioPlaying ? Color.cyan.opacity(0.32)
-                                        : isVibeEnabled ? Color.white.opacity(0.06) : Color.clear
-                                )
-                                .clipShape(Circle())
-                                .overlay(
-                                    Circle()
-                                        .stroke(
-                                            audioPlaying
-                                                ? LinearGradient(
-                                                    colors: [.cyan, .green],
-                                                    startPoint: .topLeading,
-                                                    endPoint: .bottomTrailing
-                                                )
-                                                : LinearGradient(
-                                                    colors: isVibeEnabled
-                                                        ? [Color.white.opacity(0.28)]
-                                                        : [Color.white.opacity(0.15)],
-                                                    startPoint: .top,
-                                                    endPoint: .bottom
-                                                ),
-                                            lineWidth: audioPlaying ? 2 : 1
-                                        )
-                                )
-                                .shadow(color: audioPlaying ? .cyan.opacity(0.55) : .clear, radius: audioPlaying ? 10 : 0)
-                                .opacity(vibeArmedIdle ? 0.52 : 1)
-                                .grayscale(vibeArmedIdle ? 0.85 : 0)
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Play moment video")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(
-                            audioPlaying ? "Vibe playing"
-                                : isVibeEnabled ? "Vibe idle, tap to turn off"
-                                : "Vibe off, tap to play"
-                        )
+                        if currentItem?.localVibeURL != nil {
+                            let audioPlaying = vibePlayer.isPlaying
+                            let vibeArmedIdle = isVibeEnabled && !audioPlaying
+                            Button {
+                                isVibeEnabled.toggle()
+                                if isVibeEnabled, let url = currentItem?.localVibeURL {
+                                    voiceMemoPlayer.stop()
+                                    vibePlayer.play(url: url)
+                                } else {
+                                    vibePlayer.stop()
+                                }
+                            } label: {
+                                AtmosphericWaveformView(isActive: audioPlaying)
+                                    .frame(width: 44, height: 44)
+                                    .background(.ultraThinMaterial)
+                                    .background(
+                                        audioPlaying ? Color.cyan.opacity(0.32)
+                                            : isVibeEnabled ? Color.white.opacity(0.06) : Color.clear
+                                    )
+                                    .clipShape(Circle())
+                                    .overlay(
+                                        Circle()
+                                            .stroke(
+                                                audioPlaying
+                                                    ? LinearGradient(
+                                                        colors: [.cyan, .green],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                    : LinearGradient(
+                                                        colors: isVibeEnabled
+                                                            ? [Color.white.opacity(0.28)]
+                                                            : [Color.white.opacity(0.15)],
+                                                        startPoint: .top,
+                                                        endPoint: .bottom
+                                                    ),
+                                                lineWidth: audioPlaying ? 2 : 1
+                                            )
+                                    )
+                                    .shadow(color: audioPlaying ? .cyan.opacity(0.55) : .clear, radius: audioPlaying ? 10 : 0)
+                                    .opacity(vibeArmedIdle ? 0.52 : 1)
+                                    .grayscale(vibeArmedIdle ? 0.85 : 0)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(
+                                audioPlaying ? "Vibe playing"
+                                    : isVibeEnabled ? "Vibe idle, tap to turn off"
+                                    : "Vibe off, tap to play"
+                            )
+                        }
                     }
                 }
 
-                // Center: photo index (e.g. 1/2)
                 if items.count > 1 {
                     Text("\(currentIndex + 1) / \(items.count)")
                         .font(.subheadline.weight(.medium))
@@ -288,23 +403,56 @@ struct AppCaptureDetailView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 8)
-            Spacer()
+            .padding(.top, safeTop + 4)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     // MARK: - Bottom chrome (flush under photo via safeAreaInset): metadata + square actions
     private var galleryBottomChrome: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let item = currentItem {
-                let placeTitle = resolvedPlaceTitle.isEmpty ? "Unknown Place" : resolvedPlaceTitle
+                let placeTitle = displayedPlaceTitle
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(placeTitle)
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.4), radius: 2)
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Button {
+                            showEditPlaceSheet = true
+                        } label: {
+                            Text(placeTitle)
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                                .shadow(color: .black.opacity(0.4), radius: 2)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            showEditPlaceSheet = true
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.white.opacity(0.22))
+                                Image(systemName: "square.and.pencil")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.white)
+                            }
+                            .frame(width: 28, height: 28)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Edit place name and location")
+
+                        Spacer(minLength: 0)
+                    }
+
+                    if let subtitle = resolvedPlaceSubtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.85))
+                            .shadow(color: .black.opacity(0.3), radius: 1)
+                    }
 
                     HStack(alignment: .center, spacing: 12) {
                         Text(Self.dateFormatter.string(from: item.timestamp))
@@ -415,22 +563,8 @@ struct AppCaptureDetailView: View {
                             .font(.system(size: 22, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(width: 56, height: 56)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                     }
                     .accessibilityLabel("Download Photo")
-
-                    if let location = item.location {
-                        Button {
-                            handleNavigationTap(for: location)
-                        } label: {
-                            Image(systemName: "map")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
-                        }
-                        .accessibilityLabel("Open in Maps")
-                    }
 
                     Spacer()
 
@@ -441,7 +575,6 @@ struct AppCaptureDetailView: View {
                             .font(.system(size: 22, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(width: 56, height: 56)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                     }
                     .accessibilityLabel("Delete Photo")
                 }
@@ -449,9 +582,9 @@ struct AppCaptureDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
-        .padding(.top, 60)
-        .padding(.bottom, 40)
+        .padding(.horizontal, 16)
+        .padding(.top, 28)
+        .padding(.bottom, 24)
         .background(
             LinearGradient(
                 colors: [.clear, .black.opacity(0.55), .black.opacity(0.88)],
@@ -489,13 +622,31 @@ struct AppCaptureDetailView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 if let item = currentItem {
-                    let placeTitle = resolvedPlaceTitle.isEmpty ? "Unknown Place" : resolvedPlaceTitle
+                    let placeTitle = displayedPlaceTitle
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(placeTitle)
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(placeTitle)
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+
+                            Button {
+                                captionFocused = false
+                                showEditPlaceSheet = true
+                            } label: {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.white.opacity(0.22))
+                                    Image(systemName: "square.and.pencil")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                }
+                                .frame(width: 28, height: 28)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Edit place name and location")
+                        }
 
                         if !Self.dateFormatter.string(from: item.timestamp).isEmpty {
                             Text(Self.dateFormatter.string(from: item.timestamp))
@@ -537,42 +688,85 @@ struct AppCaptureDetailView: View {
         onCaptionSaved(captureId, blogCaption)
     }
 
-    private func resolvePlaceTitle(for captureId: UUID) -> String {
-        let target = AppCapturePhotoService.identifier(for: captureId)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // `visitedPlaces` contains the per-photo graph and is what the Year/Category filters also use.
-        if let match = CreatedRecapBlogStore.shared.visitedPlaces.first(where: { place in
-            place.photos.contains(where: { photo in
-                photo.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) == target
-            })
-        }) {
-            return match.displayName
+    private func refreshResolvedPlace(for captureId: UUID?) {
+        guard let captureId else {
+            resolvedPlaceTitle = ""
+            resolvedPlaceSubtitle = nil
+            return
         }
+        resolvedPlaceTitle = resolvePlaceTitle(for: captureId)
+        resolvedPlaceSubtitle = CreatedRecapBlogStore.shared.placeSubtitleForAppCapture(captureId: captureId)
+    }
 
-        return "Unknown Place"
+    private var displayedPlaceTitle: String {
+        if isResolvingPlaceName {
+            return "Finding place…"
+        }
+        if resolvedPlaceTitle.isEmpty {
+            return currentItem?.location == nil ? "No location" : "Unknown Place"
+        }
+        return resolvedPlaceTitle
+    }
+
+    private func resolvePlaceNameIfNeeded(for captureId: UUID?) {
+        guard let captureId else { return }
+        let fallbackCoord = currentItem?.location?.clCoordinate
+        Task {
+            await MainActor.run {
+                guard currentItem?.id == captureId else { return }
+                isResolvingPlaceName = true
+            }
+            await CreatedRecapBlogStore.shared.resolveAppCapturePlaceIfNeeded(
+                captureId: captureId,
+                fallbackCoordinate: fallbackCoord
+            )
+            await MainActor.run {
+                guard currentItem?.id == captureId else { return }
+                isResolvingPlaceName = false
+                refreshResolvedPlace(for: captureId)
+                if let info = AppCapturePhotoService.shared.metadata(captureId: captureId),
+                   let loc = info.location,
+                   let idx = items.firstIndex(where: { $0.id == captureId }) {
+                    items[idx].location = loc
+                }
+            }
+        }
+    }
+
+    private func resolvePlaceTitle(for captureId: UUID) -> String {
+        if let title = CreatedRecapBlogStore.shared.placeTitleForAppCapture(captureId: captureId) {
+            return title
+        }
+        return ""
     }
 
     private func downloadCurrentPhotoToPhotoLibrary() {
         guard let item = currentItem else { return }
-        let image = item.image ?? AppCapturePhotoService.shared.loadImage(captureId: item.id)
+        let captureId = item.id
+        let image = item.image ?? AppCapturePhotoService.shared.loadImage(captureId: captureId)
         guard let image else {
             downloadToast = "Couldn’t load photo"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
+            scheduleDownloadToastClear()
             return
         }
         PHPhotoLibrary.shared().performChanges {
             PHAssetChangeRequest.creationRequestForAsset(from: image)
         } completionHandler: { success, _ in
             DispatchQueue.main.async {
+                guard self.currentItem?.id == captureId else { return }
                 if success {
                     downloadToast = "1 photo saved to Photos"
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
                 } else {
                     downloadToast = "Couldn’t save to Photos"
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
                 }
+                scheduleDownloadToastClear()
             }
+        }
+    }
+
+    private func scheduleDownloadToastClear() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            downloadToast = nil
         }
     }
 
@@ -603,160 +797,30 @@ struct AppCaptureDetailView: View {
 
     private func deleteCurrentPhoto() {
         guard let item = currentItem else { return }
+
+        showMomentVideoPlayer = false
+        momentVideoPlaybackURL = nil
         vibePlayer.stop()
+        voiceMemoPlayer.stop()
+
+        let deletedIndex = currentIndex
+        let wasOnlyItem = items.count == 1
+
         AppCapturePhotoService.shared.deleteCapture(captureId: item.id)
         CreatedRecapBlogStore.shared.excludeAppCapturesFromBlogs(captureIds: [item.id])
         InAppCameraPhotoStore.shared.removePhotos(ids: [item.id])
+
+        // Parent gallery removes this id from the shared `items` binding — do not remove again here.
         onDelete(item.id)
 
-        // Navigate to adjacent item or dismiss if last
-        if items.count == 1 {
+        if wasOnlyItem || items.isEmpty {
             dismiss()
-        } else {
-            let newIndex = min(currentIndex, items.count - 2)
-            items.remove(at: currentIndex)
-            currentIndex = newIndex
-            captionDraft = items[safe: currentIndex]?.caption ?? ""
-        }
-    }
-
-    private var preferredNavigationApp: NavigationMapAppPreference? {
-        NavigationMapAppPreference(rawValue: navigationChooserPreferredAppRaw)
-    }
-
-    private func handleNavigationTap(for coordinate: PhotoCoordinate) {
-        if navigationChooserSuppressed, let preferredNavigationApp {
-            openNavigation(with: preferredNavigationApp, coordinate: coordinate)
             return
         }
-        navigationDoNotShowAgain = false
-        showNavigationAppChooser = true
-    }
 
-    private func chooseNavigationApp(_ app: NavigationMapAppPreference) {
-        if navigationDoNotShowAgain {
-            navigationChooserSuppressed = true
-            navigationChooserPreferredAppRaw = app.rawValue
-        } else {
-            navigationChooserSuppressed = false
-        }
-        showNavigationAppChooser = false
-        guard let coordinate = currentItem?.location else { return }
-        openNavigation(with: app, coordinate: coordinate)
-    }
-
-    private func openNavigation(with app: NavigationMapAppPreference, coordinate: PhotoCoordinate) {
-        let lat = coordinate.latitude
-        let lon = coordinate.longitude
-
-        switch app {
-        case .apple:
-            let urlString = "http://maps.apple.com/?daddr=\(lat),\(lon)"
-            if let url = URL(string: urlString) {
-                UIApplication.shared.open(url)
-            }
-        case .google:
-            let nativeURL = URL(string: "comgooglemaps://?daddr=\(lat),\(lon)&directionsmode=driving")
-            if let nativeURL, UIApplication.shared.canOpenURL(nativeURL) {
-                UIApplication.shared.open(nativeURL)
-                return
-            }
-            let webURL = URL(string: "https://www.google.com/maps/dir/?api=1&destination=\(lat),\(lon)")
-            if let webURL {
-                UIApplication.shared.open(webURL)
-            }
-        }
-    }
-
-    private var navigationAppChooserOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.5)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    showNavigationAppChooser = false
-                }
-
-            VStack(spacing: 14) {
-                Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
-                    .font(.system(size: 44))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, Color.green)
-                    .padding(.top, 4)
-
-                Text("Navigate")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
-
-                Text("Pick your preferred map app to start directions instantly.")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.88))
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 6)
-
-                Toggle(isOn: $navigationDoNotShowAgain) {
-                    Text("Do not show again")
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.9))
-                }
-                .tint(.green)
-                .padding(.top, 2)
-
-                VStack(spacing: 10) {
-                    Button(action: { chooseNavigationApp(.apple) }) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "apple.logo")
-                                .font(.system(size: 16, weight: .semibold))
-                            Text("Apple Maps")
-                                .font(.body.weight(.semibold))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 13)
-                        .padding(.horizontal, 14)
-                        .background(Color.gray.opacity(0.42), in: RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
-                        .foregroundStyle(.white)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(action: { chooseNavigationApp(.google) }) {
-                        HStack(spacing: 10) {
-                            googleMapsLogoBadge
-                            Text("Google Maps")
-                                .font(.body.weight(.semibold))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 13)
-                        .padding(.horizontal, 14)
-                        .background(Color.gray.opacity(0.42), in: RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
-                        .foregroundStyle(.white)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.top, 2)
-            }
-            .padding(22)
-            .background(
-                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            )
-            .overlay(
-                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
-                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 12)
-            .padding(.horizontal, 26)
-        }
-    }
-
-    private var googleMapsLogoBadge: some View {
-        ZStack {
-            Circle()
-                .fill(Color.white)
-            Text("G")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(Color(red: 0.26, green: 0.52, blue: 0.96))
-        }
-        .frame(width: 18, height: 18)
+        currentIndex = min(deletedIndex, items.count - 1)
+        captionDraft = currentItem?.caption ?? ""
+        refreshResolvedPlace(for: currentItem?.id)
     }
 
     // MARK: - Empty
@@ -809,8 +873,9 @@ private struct PhotoPageCell: View {
     private func imageContent(geo: GeometryProxy, image: UIImage) -> some View {
         let base = Image(uiImage: image)
             .resizable()
-            .scaledToFit()
+            .scaledToFill()
             .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
             .scaleEffect(scale * magnifyBy)
             .offset(offset)
             .gesture(

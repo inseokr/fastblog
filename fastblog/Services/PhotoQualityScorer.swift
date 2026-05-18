@@ -94,6 +94,15 @@ actor PhotoQualityScorer {
         return results
     }
 
+    /// Scores an in-app capture (`bloggo-capture:`) from its on-disk still (`image.jpg`).
+    func scoreAppCapture(identifier: String) async -> PhotoScore? {
+        guard identifier.hasPrefix(AppCapturePhotoService.prefix),
+              let uuid = AppCapturePhotoService.uuid(from: identifier),
+              let image = AppCapturePhotoService.shared.loadImage(captureId: uuid),
+              let cgImage = image.cgImage else { return nil }
+        return await score(cgImage: cgImage)
+    }
+
     // MARK: - Private helpers
 
     private func scoreAsset(_ asset: PHAsset) async -> PhotoScore? {
@@ -104,7 +113,10 @@ actor PhotoQualityScorer {
             return nil
         }
         print("[PQS] scoreAsset: thumbnail loaded \(cgImage.width)×\(cgImage.height) for \(shortId)…")
+        return await score(cgImage: cgImage)
+    }
 
+    private func score(cgImage: CGImage) async -> PhotoScore? {
         async let aesthetics = analyzeAesthetics(cgImage)
         async let sharpness  = analyzeSharpness(cgImage)
         async let hasFaces   = detectFaces(cgImage)

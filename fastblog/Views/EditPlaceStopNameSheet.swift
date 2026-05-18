@@ -37,12 +37,15 @@ struct EditPlaceStopNameSheet: View {
     @State private var mapTapResolvedAsPOI: Bool = false
     /// Set to true when the user picks a result from the autocomplete suggestions list.
     @State private var pickedFromAutocomplete: Bool = false
+    @State private var lastAutocompleteSuggestion: PlaceSuggestion?
     @State private var initialTitle: String = ""
     @State private var editedSubtitle: String = ""
     @State private var initialSubtitle: String = ""
     @State private var initialCoordinate: CLLocationCoordinate2D? = nil
     @State private var initialCategory: String? = nil
     @State private var showSaveConfirmationAlert = false
+    @State private var showPhotoCoordinateMismatchAlert = false
+    @State private var pendingPhotoCoordinateMismatchSave: PendingPhotoCoordinateMismatchSave?
     @State private var showMapTapPOIDisambiguation = false
     @State private var mapTapPOIDisambiguationCandidates: [MapTapPOICandidate] = []
     /// ISO country code for the place's location, resolved on appear. Drives provider selection and map link choice.
@@ -63,6 +66,15 @@ struct EditPlaceStopNameSheet: View {
     @State private var enlargedStripPhoto: RecapPhoto? = nil
     /// Square cell size for the stacked map zoom control (compact, map-style).
     private let mapZoomControlSide: CGFloat = 34
+
+    private struct PendingPhotoCoordinateMismatchSave {
+        let finalName: String
+        let category: String?
+        let subtitle: String
+        let poiCoordinate: CLLocationCoordinate2D
+        let photoCoordinate: CLLocationCoordinate2D
+        let separationMeters: Double
+    }
 
     private var stripPhotos: [RecapPhoto] {
         photos.filter(\.isIncluded).filter(\.hasDisplayableLocalBacking)
@@ -111,6 +123,39 @@ struct EditPlaceStopNameSheet: View {
                         location == nil
                             ? "You have unsaved changes to the place name, city or country, or location. Would you like to save them before leaving?"
                             : "You have unsaved changes to the place name or location. Would you like to save them before leaving?"
+                    )
+                }
+                .alert(
+                    "Update map location?",
+                    isPresented: $showPhotoCoordinateMismatchAlert,
+                    presenting: pendingPhotoCoordinateMismatchSave
+                ) { pending in
+                    Button("Use Photo Location") {
+                        commitPlaceSave(
+                            name: pending.finalName,
+                            coordinate: pending.photoCoordinate,
+                            category: pending.category,
+                            subtitle: pending.subtitle
+                        )
+                        pendingPhotoCoordinateMismatchSave = nil
+                        dismiss()
+                    }
+                    Button("Keep Place Location") {
+                        commitPlaceSave(
+                            name: pending.finalName,
+                            coordinate: pending.poiCoordinate,
+                            category: pending.category,
+                            subtitle: pending.subtitle
+                        )
+                        pendingPhotoCoordinateMismatchSave = nil
+                        dismiss()
+                    }
+                    Button("Cancel", role: .cancel) {
+                        pendingPhotoCoordinateMismatchSave = nil
+                    }
+                } message: { pending in
+                    Text(
+                        "“\(pending.finalName)” is about \(formattedPlaceSeparation(pending.separationMeters)) from where your photo was taken — farther than a typical golf course. Move the map pin to your photo’s location?"
                     )
                 }
                 .sheet(isPresented: $showMapTapPOIDisambiguation) {
@@ -257,12 +302,18 @@ struct EditPlaceStopNameSheet: View {
         let subSeed = initialPlaceSubtitle ?? ""
         editedSubtitle = subSeed
         initialSubtitle = subSeed
-        selectedCoordinate = nil
-        initialCoordinate = nil
+        if let coord = location {
+            selectedCoordinate = coord
+            initialCoordinate = coord
+        } else {
+            selectedCoordinate = nil
+            initialCoordinate = nil
+        }
         selectedCategory = initialPlaceCategory
         initialCategory = initialPlaceCategory
         mapTapResolvedAsPOI = false
         pickedFromAutocomplete = false
+        lastAutocompleteSuggestion = nil
         searchViewModel.setBiasLocation(location)
         if location != nil, !mapTapCoachmarkSeen {
             showMapTapCoachmarkSheet = true
@@ -278,8 +329,7 @@ struct EditPlaceStopNameSheet: View {
 
             // When Apple geocoder has no country code (cached failure), try Kakao
             // as a country detector. Reuse its result for name resolution too.
-            let needsNameResolve = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines) == "Unknown Place"
-                || editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let needsNameResolve = PlacePlaceholderNaming.isResolvablePlaceholder(editedTitle)
             if isoCode.isEmpty, KakaoLocalService.shared.isAvailable {
                 if let doc = await KakaoLocalService.shared.reverseGeocode(coordinate: coord),
                    !doc.bestPlaceName.isEmpty {
@@ -700,13 +750,78 @@ struct EditPlaceStopNameSheet: View {
             AppAnalytics.trackEvent(name: "Blog-Place-ChangeName-Custom")
         }
         let subTrimmed: String = {
-            if location == nil {
-                return editedSubtitle.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
+            let edited = editedSubtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !edited.isEmpty { return edited }
             return initialSubtitle.trimmingCharacters(in: .whitespacesAndNewlines)
         }()
-        onSave(finalName, selectedCoordinate, category, subTrimmed)
+
+        var saveCategory = category
+        var saveCoordinate = selectedCoordinate
+        if saveCoordinate == nil, let suggestion = lastAutocompleteSuggestion {
+            let (coord, cat) = await searchViewModel.resolveDetails(for: suggestion)
+            saveCoordinate = coord
+            if saveCategory == nil { saveCategory = cat }
+        }
+        let resolvedCoordinate = saveCoordinate ?? location
+
+        if titleChanged,
+           let poiCoordinate = resolvedCoordinate,
+           let photoCoordinate = centroidPhotoCoordinate(),
+           let separationMeters = photoToPOISeparationMeters(photo: photoCoordinate, poi: poiCoordinate),
+           separationMeters > ScanConfig.placeEditPhotoToPOIMaxDistanceMeters {
+            pendingPhotoCoordinateMismatchSave = PendingPhotoCoordinateMismatchSave(
+                finalName: finalName,
+                category: saveCategory,
+                subtitle: subTrimmed,
+                poiCoordinate: poiCoordinate,
+                photoCoordinate: photoCoordinate,
+                separationMeters: separationMeters
+            )
+            showPhotoCoordinateMismatchAlert = true
+            return
+        }
+
+        commitPlaceSave(
+            name: finalName,
+            coordinate: resolvedCoordinate,
+            category: saveCategory,
+            subtitle: subTrimmed
+        )
         dismiss()
+    }
+
+    private func commitPlaceSave(
+        name: String,
+        coordinate: CLLocationCoordinate2D?,
+        category: String?,
+        subtitle: String
+    ) {
+        onSave(name, coordinate, category, subtitle)
+    }
+
+    /// Centroid of GPS on photos passed into this sheet (included shots with a location).
+    private func centroidPhotoCoordinate() -> CLLocationCoordinate2D? {
+        let coords = photos.filter(\.isIncluded).compactMap(\.location)
+        guard !coords.isEmpty else { return nil }
+        let lat = coords.map(\.latitude).reduce(0, +) / Double(coords.count)
+        let lon = coords.map(\.longitude).reduce(0, +) / Double(coords.count)
+        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+    }
+
+    private func photoToPOISeparationMeters(
+        photo: CLLocationCoordinate2D,
+        poi: CLLocationCoordinate2D
+    ) -> Double? {
+        let from = CLLocation(latitude: photo.latitude, longitude: photo.longitude)
+        let to = CLLocation(latitude: poi.latitude, longitude: poi.longitude)
+        return from.distance(from: to)
+    }
+
+    private func formattedPlaceSeparation(_ meters: Double) -> String {
+        if meters >= 1000 {
+            return String(format: "%.1f km", meters / 1000)
+        }
+        return String(format: "%.0f m", meters)
     }
 
     /// City / country (or any subtitle); always available so users can fix metadata without photos or map.
@@ -1009,8 +1124,18 @@ struct EditPlaceStopNameSheet: View {
         }
 
         func updateUIView(_ mapView: MKMapView, context: Context) {
-            // Do not reset region here — SwiftUI calls this on every state change (e.g. isResolvingPOI),
-            // which was overriding the user's zoom/pan. Initial region is set in makeUIView only.
+            let ctx = context.coordinator
+            if !Self.coordinatesAreNear(ctx.lastRecenteredCenter, center, thresholdMeters: 20) {
+                let region = MKCoordinateRegion(
+                    center: center,
+                    latitudinalMeters: 350,
+                    longitudinalMeters: 350
+                )
+                mapView.setRegion(region, animated: ctx.hasRecenteredOnce)
+                ctx.lastRecenteredCenter = center
+                ctx.hasRecenteredOnce = true
+            }
+
             if let pin = mapView.annotations.first(where: { $0 is MKPointAnnotation }) as? MKPointAnnotation {
                 if pin.coordinate.latitude != center.latitude || pin.coordinate.longitude != center.longitude {
                     UIView.animate(withDuration: 0.25) {
@@ -1039,10 +1164,23 @@ struct EditPlaceStopNameSheet: View {
             Coordinator(self)
         }
 
+        private static func coordinatesAreNear(
+            _ a: CLLocationCoordinate2D?,
+            _ b: CLLocationCoordinate2D,
+            thresholdMeters: CLLocationDistance
+        ) -> Bool {
+            guard let a else { return false }
+            let locA = CLLocation(latitude: a.latitude, longitude: a.longitude)
+            let locB = CLLocation(latitude: b.latitude, longitude: b.longitude)
+            return locA.distance(from: locB) < thresholdMeters
+        }
+
         final class Coordinator: NSObject, MKMapViewDelegate {
             let parent: TappableMapView
             var lastZoomInTrigger: Int = 0
             var lastZoomOutTrigger: Int = 0
+            var lastRecenteredCenter: CLLocationCoordinate2D?
+            var hasRecenteredOnce = false
             /// When the user taps a rendered POI, `didSelect(MKMapFeatureAnnotation)` runs; we cancel this so we do not
             /// also run proximity-based `MKLocalPointsOfInterestRequest` (which can pick a different sub-POI).
             private var pendingBareMapTap: DispatchWorkItem?
@@ -1131,6 +1269,11 @@ struct EditPlaceStopNameSheet: View {
                                 isFocused = false
                                 editedTitle = suggestion.title
                                 pickedFromAutocomplete = true
+                                lastAutocompleteSuggestion = suggestion
+                                let suggestionSubtitle = suggestion.subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if !suggestionSubtitle.isEmpty {
+                                    editedSubtitle = suggestionSubtitle
+                                }
                                 searchViewModel.suggestions = []
                                 Task { @MainActor in
                                     let (coord, cat) = await searchViewModel.resolveDetails(for: suggestion)

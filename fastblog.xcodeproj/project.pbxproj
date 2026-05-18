@@ -196,6 +196,7 @@
 		BB0002B3 /* SlideshowMusicPlaybackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */; };
 		BB0002B5 /* SlideshowBundledMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B4 /* SlideshowBundledMusic.swift */; };
 		BB0002B7 /* BlogVideoExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B6 /* BlogVideoExportService.swift */; };
+		BB000340 /* BlogCarouselExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000341 /* BlogCarouselExportService.swift */; };
 		BB0002B9 /* BlogVideoExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B8 /* BlogVideoExportOptionsSheet.swift */; };
 		BB0002BA /* CinematicBlogVideoBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002BB /* CinematicBlogVideoBuilder.swift */; };
 		BB0002C1 /* PlaceStopCategoryPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002C2 /* PlaceStopCategoryPickerSheet.swift */; };
@@ -215,6 +216,7 @@
 		BB000303 /* MyStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000302 /* MyStatsView.swift */; };
 		BB000305 /* CameraRollPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000304 /* CameraRollPickerView.swift */; };
 		BB000306 /* AtmosphericWaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000307 /* AtmosphericWaveformView.swift */; };
+		BB000312 /* MomentVideoFullScreenPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000313 /* MomentVideoFullScreenPlayer.swift */; };
 		BB000309 /* TripDistanceFromHomeOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000308 /* TripDistanceFromHomeOnboardingView.swift */; };
 		BB00030B /* SlideBlockTextEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00030A /* SlideBlockTextEditView.swift */; };
 		BB00030C /* BlogVideoPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00030D /* BlogVideoPreviewView.swift */; };
@@ -459,6 +461,7 @@
 		BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowMusicPlaybackCoordinator.swift; sourceTree = "<group>"; };
 		BB0002B4 /* SlideshowBundledMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowBundledMusic.swift; sourceTree = "<group>"; };
 		BB0002B6 /* BlogVideoExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogVideoExportService.swift; sourceTree = "<group>"; };
+		BB000341 /* BlogCarouselExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogCarouselExportService.swift; sourceTree = "<group>"; };
 		BB0002B8 /* BlogVideoExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoExportOptionsSheet.swift; path = StoryBook/BlogVideoExportOptionsSheet.swift; sourceTree = "<group>"; };
 		BB0002BB /* CinematicBlogVideoBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicBlogVideoBuilder.swift; sourceTree = "<group>"; };
 		BB0002C2 /* PlaceStopCategoryPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopCategoryPickerSheet.swift; sourceTree = "<group>"; };
@@ -478,6 +481,7 @@
 		BB000302 /* MyStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyStatsView.swift; sourceTree = "<group>"; };
 		BB000304 /* CameraRollPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollPickerView.swift; sourceTree = "<group>"; };
 		BB000307 /* AtmosphericWaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmosphericWaveformView.swift; sourceTree = "<group>"; };
+		BB000313 /* MomentVideoFullScreenPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoFullScreenPlayer.swift; sourceTree = "<group>"; };
 		BB000308 /* TripDistanceFromHomeOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDistanceFromHomeOnboardingView.swift; sourceTree = "<group>"; };
 		BB00030A /* SlideBlockTextEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideBlockTextEditView.swift; sourceTree = "<group>"; };
 		BB00030D /* BlogVideoPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoPreviewView.swift; path = StoryBook/BlogVideoPreviewView.swift; sourceTree = "<group>"; };
@@ -842,6 +846,7 @@
 				BB0002B0 /* SlideshowMusicPreference.swift */,
 				BB0002B4 /* SlideshowBundledMusic.swift */,
 				BB0002B6 /* BlogVideoExportService.swift */,
+				BB000341 /* BlogCarouselExportService.swift */,
 				BB0002BB /* CinematicBlogVideoBuilder.swift */,
 				BB000311 /* CinematicTravelSegment.swift */,
 				BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */,
@@ -881,6 +886,7 @@
 			isa = PBXGroup;
 			children = (
 				BB000307 /* AtmosphericWaveformView.swift */,
+				BB000313 /* MomentVideoFullScreenPlayer.swift */,
 				BB0001C1 /* KeyboardCaptionToolbar.swift */,
 				BB0001E8 /* PlaceCardView.swift */,
 				BB0001E0 /* RecallCard.swift */,
@@ -1131,6 +1137,7 @@
 				BB0002B1 /* SlideshowMusicPreference.swift in Sources */,
 				BB0002B5 /* SlideshowBundledMusic.swift in Sources */,
 				BB0002B7 /* BlogVideoExportService.swift in Sources */,
+				BB000340 /* BlogCarouselExportService.swift in Sources */,
 				BB0002B9 /* BlogVideoExportOptionsSheet.swift in Sources */,
 				BB00030C /* BlogVideoPreviewView.swift in Sources */,
 				BB0002BA /* CinematicBlogVideoBuilder.swift in Sources */,
@@ -1142,6 +1149,7 @@
 				BB000226 /* LocalLLMStoryCaptionGenerator.swift in Sources */,
 				BB0001C0 /* PlaceSearchViewModel.swift in Sources */,
 				BB000306 /* AtmosphericWaveformView.swift in Sources */,
+				BB000312 /* MomentVideoFullScreenPlayer.swift in Sources */,
 				BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */,
 				BB0001C4 /* UndoOverlayView.swift in Sources */,
 				BB0003E3 /* UndoToastView.swift in Sources */,

@@ -45,7 +45,8 @@ struct KakaoTappableMapView: UIViewRepresentable {
             c.lastZoomOutTrigger = zoomOutTrigger
             c.zoomOut()
         }
-        c.updatePin(to: center)
+        c.recenter(to: center, animated: c.hasRecenteredOnce)
+        c.hasRecenteredOnce = true
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -148,6 +149,8 @@ struct KakaoTappableMapView: UIViewRepresentable {
         private var currentZoomLevel: Int = 15
         var lastZoomInTrigger = 0
         var lastZoomOutTrigger = 0
+        var lastRecenteredCenter: CLLocationCoordinate2D?
+        var hasRecenteredOnce = false
 
         private static let viewName = "mapview"
         private static let layerID  = "pinLayer"
@@ -314,10 +317,37 @@ struct KakaoTappableMapView: UIViewRepresentable {
             debugPrint("[KakaoMap] pin added at \(coord.latitude),\(coord.longitude)")
         }
 
-        func updatePin(to center: CLLocationCoordinate2D) {
-            guard pin != nil else { return }
+        func recenter(to center: CLLocationCoordinate2D, animated: Bool) {
+            guard let map else {
+                pendingCenter = center
+                return
+            }
             let mapPoint = MapPoint(longitude: center.longitude, latitude: center.latitude)
-            pin?.moveAt(mapPoint, duration: 250)
+            let duration: UInt = animated ? 250 : 0
+            pin?.moveAt(mapPoint, duration: duration)
+
+            let last = lastRecenteredCenter
+            let movedEnough: Bool = {
+                guard let last else { return true }
+                let a = CLLocation(latitude: last.latitude, longitude: last.longitude)
+                let b = CLLocation(latitude: center.latitude, longitude: center.longitude)
+                return a.distance(from: b) >= 20
+            }()
+            guard movedEnough else { return }
+            lastRecenteredCenter = center
+
+            let camera = CameraUpdate.make(
+                target: mapPoint,
+                zoomLevel: currentZoomLevel,
+                rotation: 0,
+                tilt: 0,
+                mapView: map
+            )
+            map.moveCamera(camera)
+        }
+
+        func updatePin(to center: CLLocationCoordinate2D) {
+            recenter(to: center, animated: true)
         }
 
         // MARK: - Zoom

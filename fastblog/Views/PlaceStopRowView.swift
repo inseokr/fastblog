@@ -3,6 +3,7 @@
 //  Capper
 //
 
+import AVKit
 import SwiftUI
 import UIKit
 
@@ -219,6 +220,8 @@ struct PlaceStopRowView: View {
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
+    @State private var momentVideoPhotoId: UUID? = nil
+    @State private var momentVideoPlaybackURL: URL?
     @StateObject private var voiceMemoPlayer = VibePlayer()
     @State private var playingVoiceMemoPhotoId: UUID? = nil
     @State private var showPlaceGoogleSearchSheet = false
@@ -308,6 +311,36 @@ struct PlaceStopRowView: View {
         guard let id = photo.localIdentifier,
               let captureId = AppCapturePhotoService.uuid(from: id) else { return nil }
         return AppCapturePhotoService.shared.voiceMemoFileURL(for: captureId)
+    }
+
+    private func momentVideoURL(for photo: RecapPhoto) -> URL? {
+        guard let id = photo.localIdentifier,
+              let captureId = AppCapturePhotoService.uuid(from: id) else { return nil }
+        return AppCapturePhotoService.shared.momentVideoFileURL(for: captureId)
+    }
+
+    @ViewBuilder
+    private func momentVideoBottomLeftControl(for photo: RecapPhoto, compact: Bool) -> some View {
+        if momentVideoURL(for: photo) != nil {
+            Button {
+                vibePlayer.stop()
+                playingVibePhotoId = nil
+                guard let url = momentVideoURL(for: photo) else { return }
+                momentVideoPlaybackURL = url
+                momentVideoPhotoId = photo.id
+            } label: {
+                Image(systemName: "video.fill")
+                    .font(.system(size: compact ? 11 : 12, weight: .semibold))
+                    .foregroundColor(.orange)
+                    .padding(compact ? 6 : 7)
+                    .background(Color.black.opacity(0.5))
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.orange.opacity(0.55), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Play moment video")
+            .padding(compact ? 5 : 8)
+        }
     }
 
     @ViewBuilder
@@ -1014,9 +1047,12 @@ struct PlaceStopRowView: View {
                                 }
                             }
                             .overlay(alignment: .bottomLeading) {
-                                vibeBottomLeftControl(for: photo, compact: false)
-                                    .padding(.leading, 6)
-                                    .padding(.bottom, 6)
+                                HStack(spacing: 6) {
+                                    momentVideoBottomLeftControl(for: photo, compact: false)
+                                    vibeBottomLeftControl(for: photo, compact: false)
+                                }
+                                .padding(.leading, 6)
+                                .padding(.bottom, 6)
                             }
                             .contentShape(Rectangle())
                             .onTapGesture { onPhotoTapped?(photo) }
@@ -1133,11 +1169,27 @@ struct PlaceStopRowView: View {
                 }
             }
         }
+        .fullScreenCover(isPresented: Binding(
+            get: { momentVideoPhotoId != nil },
+            set: { if !$0 {
+                momentVideoPhotoId = nil
+                momentVideoPlaybackURL = nil
+            } }
+        )) {
+            if let url = momentVideoPlaybackURL {
+                MomentVideoFullScreenPlayer(url: url) {
+                    momentVideoPhotoId = nil
+                    momentVideoPlaybackURL = nil
+                }
+            }
+        }
         .onDisappear {
             vibePlayer.stop()
             voiceMemoPlayer.stop()
             playingVibePhotoId = nil
             playingVoiceMemoPhotoId = nil
+            momentVideoPhotoId = nil
+            momentVideoPlaybackURL = nil
         }
     }
 

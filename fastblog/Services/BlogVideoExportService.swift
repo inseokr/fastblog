@@ -6,9 +6,14 @@ import UIKit
 // MARK: - Options
 
 struct BlogVideoExportOptions: Codable, Equatable {
+    enum ExportMode: String, Codable, Equatable {
+        case video
+        case carousel
+    }
+
     enum CodingKeys: String, CodingKey {
         case secondsPerSlide, musicFilename, musicDisabled, showPhotoCaptions, maxPhotosPerPlace,
-             includedPlaceIDs, includedPlaceCategoryRaws
+             includedPlaceIDs, includedPlaceCategoryRaws, showDayItineraryCards, exportMode
     }
 
     var secondsPerSlide: Double = 3.0
@@ -22,8 +27,12 @@ struct BlogVideoExportOptions: Codable, Equatable {
     var maxPhotosPerPlace: Int = 3
     /// Place stop IDs to include. nil means all places are included.
     var includedPlaceIDs: Set<UUID>? = nil
-    /// Place categories to include (raw MapKit POI strings, plus optional `"Others"`). nil means all categories are included.
+    /// Place categories to include (raw MapKit POI strings, plus optional `”Others”`). nil means all categories are included.
     var includedPlaceCategoryRaws: Set<String>? = nil
+    /// Inject a 2-second itinerary card before each day's map sequence listing all places for that day.
+    var showDayItineraryCards: Bool = false
+    /// Whether to export a cinematic video or a set of carousel slide images.
+    var exportMode: ExportMode = .video
 
     init(
         secondsPerSlide: Double = 3.0,
@@ -32,7 +41,9 @@ struct BlogVideoExportOptions: Codable, Equatable {
         showPhotoCaptions: Bool = true,
         maxPhotosPerPlace: Int = 3,
         includedPlaceIDs: Set<UUID>? = nil,
-        includedPlaceCategoryRaws: Set<String>? = nil
+        includedPlaceCategoryRaws: Set<String>? = nil,
+        showDayItineraryCards: Bool = false,
+        exportMode: ExportMode = .video
     ) {
         self.secondsPerSlide = secondsPerSlide
         self.musicFilename = musicFilename
@@ -41,6 +52,8 @@ struct BlogVideoExportOptions: Codable, Equatable {
         self.maxPhotosPerPlace = maxPhotosPerPlace
         self.includedPlaceIDs = includedPlaceIDs
         self.includedPlaceCategoryRaws = includedPlaceCategoryRaws
+        self.showDayItineraryCards = showDayItineraryCards
+        self.exportMode = exportMode
     }
 
     init(from decoder: Decoder) throws {
@@ -52,6 +65,8 @@ struct BlogVideoExportOptions: Codable, Equatable {
         maxPhotosPerPlace = try c.decodeIfPresent(Int.self, forKey: .maxPhotosPerPlace) ?? 3
         includedPlaceIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .includedPlaceIDs)
         includedPlaceCategoryRaws = try c.decodeIfPresent(Set<String>.self, forKey: .includedPlaceCategoryRaws)
+        showDayItineraryCards = try c.decodeIfPresent(Bool.self, forKey: .showDayItineraryCards) ?? false
+        exportMode = try c.decodeIfPresent(ExportMode.self, forKey: .exportMode) ?? .video
     }
 
     func encode(to encoder: Encoder) throws {
@@ -63,6 +78,8 @@ struct BlogVideoExportOptions: Codable, Equatable {
         try c.encode(maxPhotosPerPlace, forKey: .maxPhotosPerPlace)
         try c.encodeIfPresent(includedPlaceIDs, forKey: .includedPlaceIDs)
         try c.encodeIfPresent(includedPlaceCategoryRaws, forKey: .includedPlaceCategoryRaws)
+        try c.encode(showDayItineraryCards, forKey: .showDayItineraryCards)
+        try c.encode(exportMode, forKey: .exportMode)
     }
 
     /// Filename passed to `SlideshowBundledMusicLibrary`, or `nil` when music is off.
@@ -93,6 +110,17 @@ struct BlogVideoExportOptions: Codable, Equatable {
     }
 }
 
+// MARK: - Moment reel audio
+
+/// Where a moment-video reel’s original audio should sit on the exported timeline.
+struct MomentVideoAudioSegment: Sendable {
+    let url: URL
+    /// Wall-clock start on the finished video (after any map→reel transition).
+    let timelineStart: Double
+    /// How long to play source audio (matches the reel body, not the transition).
+    let duration: Double
+}
+
 // MARK: - Service
 
 enum BlogVideoExportService {
@@ -106,7 +134,8 @@ enum BlogVideoExportService {
             draft: draft,
             secondsPerPhoto: options.secondsPerSlide,
             maxPhotosPerPlace: options.maxPhotosPerPlace,
-            includedPlaceIDs: options.includedPlaceIDs
+            includedPlaceIDs: options.includedPlaceIDs,
+            showDayItineraryCards: options.showDayItineraryCards
         ) + videoWriterEndPadSeconds
     }
 
@@ -217,6 +246,8 @@ enum BlogVideoExportService {
         /// The final sample has no successor, so decoders often treat its duration as ~0 — the last photo (or page) flashes away.
         /// We append one extra duplicate at the end so the real last frame keeps its intended duration.
         var lastImageWritten: UIImage?
+        var videoTimelineSeconds: Double = 0
+        var momentAudioSegments: [MomentVideoAudioSegment] = []
 
         // Encode one logical "hold" as one or more samples so very long display durations are not
         // a single frame (problematic for some social transcoders / cover extraction).
@@ -247,6 +278,7 @@ enum BlogVideoExportService {
                 frameIdx += 1
             }
             lastImageWritten = image
+            videoTimelineSeconds += duration
         }
 
         // Step 1 – Generate + write frames one at a time (0 → 85 %).
@@ -257,7 +289,17 @@ enum BlogVideoExportService {
             showPhotoCaptions: options.showPhotoCaptions,
             maxPhotosPerPlace: options.maxPhotosPerPlace,
             includedPlaceIDs: options.includedPlaceIDs,
+            showDayItineraryCards: options.showDayItineraryCards,
             progressHandler: { p in progressHandler?(p * 0.85) },
+            momentAudioHandler: { url, transitionSeconds, clipSeconds in
+                momentAudioSegments.append(
+                    MomentVideoAudioSegment(
+                        url: url,
+                        timelineStart: videoTimelineSeconds + transitionSeconds,
+                        duration: clipSeconds
+                    )
+                )
+            },
             frameHandler: { img, dur in try await appendFrame(img, duration: dur) }
         )
 
@@ -286,9 +328,26 @@ enum BlogVideoExportService {
             .appendingPathComponent("\(safeTitle) | Blog Video.mp4")
         try? FileManager.default.removeItem(at: finalURL)
 
-        if let filename = options.resolvedMusicFilenameForMix(),
-           let track = SlideshowBundledMusicLibrary.tracksInAppBundle().first(where: { $0.filename == filename }) {
-            try await compositeAudio(videoURL: tempVideoURL, musicURL: track.fileURL, outputURL: finalURL)
+        let musicURL: URL? = {
+            guard let filename = options.resolvedMusicFilenameForMix(),
+                  let track = SlideshowBundledMusicLibrary.tracksInAppBundle().first(where: { $0.filename == filename })
+            else { return nil }
+            return track.fileURL
+        }()
+
+        if musicURL != nil || !momentAudioSegments.isEmpty {
+            do {
+                try await muxAudioOntoVideo(
+                    videoURL: tempVideoURL,
+                    musicURL: musicURL,
+                    momentSegments: momentAudioSegments,
+                    outputURL: finalURL
+                )
+            } catch {
+                // Prefer a silent video over failing the whole export if audio mux fails.
+                try? FileManager.default.removeItem(at: finalURL)
+                try FileManager.default.moveItem(at: tempVideoURL, to: finalURL)
+            }
             try? FileManager.default.removeItem(at: tempVideoURL)
         } else {
             try FileManager.default.moveItem(at: tempVideoURL, to: finalURL)
@@ -298,59 +357,146 @@ enum BlogVideoExportService {
         return finalURL
     }
 
-    // MARK: - AVMutableComposition (audio track)
+    // MARK: - AVMutableComposition (audio tracks)
 
-    private static func compositeAudio(videoURL: URL, musicURL: URL, outputURL: URL) async throws {
+    private static let audioTimescale: CMTimeScale = 600
+    /// Lower music while reel clips are present (flat mix — no volume ramps; ramps can crash AVFoundation).
+    private static let musicVolumeWithReelClips: Float = 0.32
+
+    /// Muxes background music and/or moment-reel clip audio onto the silent video-only export.
+    private static func muxAudioOntoVideo(
+        videoURL: URL,
+        musicURL: URL?,
+        momentSegments: [MomentVideoAudioSegment],
+        outputURL: URL
+    ) async throws {
         let videoAsset = AVURLAsset(url: videoURL)
-        let musicAsset = AVURLAsset(
-            url: musicURL,
-            options: [AVURLAssetPreferPreciseDurationAndTimingKey: true]
-        )
         let composition = AVMutableComposition()
 
         let videoTracks = try await videoAsset.loadTracks(withMediaType: .video)
         guard let videoTrack = videoTracks.first,
-              let compVideo = composition.addMutableTrack(withMediaType: .video,
-                                                          preferredTrackID: kCMPersistentTrackID_Invalid)
+              let compVideo = composition.addMutableTrack(
+                withMediaType: .video,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+              )
         else { throw ExportError.audioMixFailed }
 
         let videoDuration = try await videoAsset.load(.duration)
-        try compVideo.insertTimeRange(CMTimeRange(start: .zero, duration: videoDuration),
-                                      of: videoTrack, at: .zero)
+        let videoSeconds = CMTimeGetSeconds(videoDuration)
+        try compVideo.insertTimeRange(
+            CMTimeRange(start: .zero, duration: videoDuration),
+            of: videoTrack,
+            at: .zero
+        )
 
-        _ = try await musicAsset.load(.isReadable)
-        let musicTrackList = try await musicAsset.loadTracks(withMediaType: .audio)
-        guard let musicTrack = musicTrackList.first,
-              let compAudio = composition.addMutableTrack(withMediaType: .audio,
-                                                          preferredTrackID: kCMPersistentTrackID_Invalid)
-        else { throw ExportError.audioMixFailed }
+        var compMusicTrack: AVMutableCompositionTrack?
+        if let musicURL {
+            let musicAsset = AVURLAsset(
+                url: musicURL,
+                options: [AVURLAssetPreferPreciseDurationAndTimingKey: true]
+            )
+            _ = try await musicAsset.load(.isReadable)
+            let musicTrackList = try await musicAsset.loadTracks(withMediaType: .audio)
+            if let musicTrack = musicTrackList.first,
+               let compMusic = composition.addMutableTrack(
+                withMediaType: .audio,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+               ) {
+                let musicTimeRange = try await musicTrack.load(.timeRange)
+                let sourceStart = musicTimeRange.start
+                let musicDuration = musicTimeRange.duration
+                if CMTimeCompare(musicDuration, .zero) > 0 {
+                    var insertAt = CMTime.zero
+                    while CMTimeCompare(insertAt, videoDuration) < 0 {
+                        let remaining = CMTimeSubtract(videoDuration, insertAt)
+                        let chunk = CMTimeMinimum(musicDuration, remaining)
+                        if CMTimeCompare(chunk, .zero) <= 0 { break }
+                        try compMusic.insertTimeRange(
+                            CMTimeRange(start: sourceStart, duration: chunk),
+                            of: musicTrack,
+                            at: insertAt
+                        )
+                        insertAt = CMTimeAdd(insertAt, chunk)
+                    }
+                    compMusicTrack = compMusic
+                }
+            }
+        }
 
-        let musicTimeRange = try await musicTrack.load(.timeRange)
-        let sourceStart = musicTimeRange.start
-        let musicDuration = musicTimeRange.duration
-        guard CMTimeCompare(musicDuration, .zero) > 0 else { throw ExportError.audioMixFailed }
+        var insertedClipCount = 0
+        let sortedSegments = momentSegments.sorted { $0.timelineStart < $1.timelineStart }
+        for segment in sortedSegments {
+            guard segment.timelineStart.isFinite,
+                  segment.duration.isFinite,
+                  segment.timelineStart >= 0,
+                  segment.duration > 0.02 else { continue }
 
-        var insertAt = CMTime.zero
-        while CMTimeCompare(insertAt, videoDuration) < 0 {
-            let remaining = CMTimeSubtract(videoDuration, insertAt)
-            let chunk = CMTimeMinimum(musicDuration, remaining)
-            if CMTimeCompare(chunk, .zero) <= 0 { break }
-            try compAudio.insertTimeRange(CMTimeRange(start: sourceStart, duration: chunk),
-                                          of: musicTrack, at: insertAt)
-            insertAt = CMTimeAdd(insertAt, chunk)
+            let clipAsset = AVURLAsset(url: segment.url)
+            let clipAudioTracks = try await clipAsset.loadTracks(withMediaType: .audio)
+            guard let clipAudio = clipAudioTracks.first,
+                  let compClip = composition.addMutableTrack(
+                    withMediaType: .audio,
+                    preferredTrackID: kCMPersistentTrackID_Invalid
+                  )
+            else { continue }
+
+            let assetDuration = try await clipAsset.load(.duration)
+            let assetSec = CMTimeGetSeconds(assetDuration)
+            var useSec = min(
+                segment.duration,
+                assetSec.isFinite && assetSec > 0 ? assetSec : segment.duration
+            )
+            if videoSeconds.isFinite, videoSeconds > 0 {
+                let remaining = videoSeconds - segment.timelineStart
+                if remaining > 0.02 {
+                    useSec = min(useSec, remaining)
+                } else {
+                    continue
+                }
+            }
+            guard useSec > 0.02 else { continue }
+
+            let insertAt = CMTime(seconds: segment.timelineStart, preferredTimescale: audioTimescale)
+            let insertDuration = CMTime(seconds: useSec, preferredTimescale: audioTimescale)
+            guard insertAt.isValid, !insertAt.isIndefinite,
+                  insertDuration.isValid, !insertDuration.isIndefinite,
+                  CMTimeCompare(insertDuration, .zero) > 0 else { continue }
+
+            do {
+                try compClip.insertTimeRange(
+                    CMTimeRange(start: .zero, duration: insertDuration),
+                    of: clipAudio,
+                    at: insertAt
+                )
+                insertedClipCount += 1
+            } catch {
+                continue
+            }
         }
 
         guard !composition.tracks(withMediaType: .audio).isEmpty else {
-            throw ExportError.audioMixFailed
+            try? FileManager.default.removeItem(at: outputURL)
+            try FileManager.default.copyItem(at: videoURL, to: outputURL)
+            return
         }
 
-        guard let session = AVAssetExportSession(asset: composition,
-                                                  presetName: AVAssetExportPresetHighestQuality)
-        else { throw ExportError.audioMixFailed }
+        var audioMix: AVMutableAudioMix?
+        if let compMusic = compMusicTrack, insertedClipCount > 0 {
+            let musicParams = AVMutableAudioMixInputParameters(track: compMusic)
+            musicParams.setVolume(musicVolumeWithReelClips, at: .zero)
+            audioMix = AVMutableAudioMix()
+            audioMix?.inputParameters = [musicParams]
+        }
+
+        guard let session = AVAssetExportSession(
+            asset: composition,
+            presetName: AVAssetExportPresetHighestQuality
+        ) else { throw ExportError.audioMixFailed }
         session.outputURL = outputURL
         session.outputFileType = .mp4
         session.timeRange = CMTimeRange(start: .zero, duration: videoDuration)
         session.shouldOptimizeForNetworkUse = true
+        session.audioMix = audioMix
         try Task.checkCancellation()
         let sessionBox = ExportSessionBox(session: session)
 

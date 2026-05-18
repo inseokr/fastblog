@@ -463,3 +463,18 @@ struct PlacePOICategoryBadge: View {
         )
     }
 }
+
+/// Auto-generated place titles before reverse geocoding or POI resolution completes.
+enum PlacePlaceholderNaming {
+    static func isResolvablePlaceholder(_ title: String) -> Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == "Unknown Place" { return true }
+        if trimmed.range(of: #"^Stop \d+$"#, options: .regularExpression) != nil { return true }
+        if trimmed.range(of: #"^Captured Moment( \d+)?$"#, options: .regularExpression) != nil { return true }
+        if trimmed.hasPrefix("Near ") {
+            let suffix = trimmed.dropFirst(5).trimmingCharacters(in: .whitespacesAndNewlines)
+            return suffix.isEmpty || suffix == "Unknown Place"
+        }
+        return false
+    }
+}

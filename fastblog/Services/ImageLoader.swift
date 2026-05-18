@@ -37,6 +37,23 @@ final class ImageLoader {
         cache.removeAllObjects()
     }
 
+    /// Clears cached thumbnails for one identifier (e.g. after attaching a moment video to an app capture).
+    func invalidateThumbnailCache(for assetIdentifier: String) {
+        let prefix = "\(assetIdentifier)-thumb-"
+        // NSCache has no key enumeration; common thumbnail sizes used in grids/covers.
+        let sizes = [
+            CGSize(width: 200, height: 200),
+            CGSize(width: 400, height: 400),
+            CGSize(width: 600, height: 400),
+            CGSize(width: 800, height: 800),
+            CGSize(width: 1200, height: 1200)
+        ]
+        for size in sizes {
+            let key = NSString(string: "\(prefix)\(size.width)x\(size.height)")
+            cache.removeObject(forKey: key)
+        }
+    }
+
     private func fetchAsset(localIdentifier: String) async -> PHAsset? {
         for attempt in 0..<3 {
             let assets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)

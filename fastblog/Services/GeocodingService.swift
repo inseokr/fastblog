@@ -218,6 +218,25 @@ final class GeocodingService {
         }
     }
 
+    /// Auto-label for Bloggo captures: always `Near …` from neighborhood / area / city — never a specific venue.
+    func autoCaptureNearPlaceTitle(at coordinate: CLLocationCoordinate2D) async -> (title: String, subtitle: String) {
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        let place = await place(for: location, precise: true)
+        let subtitle = place.subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let anchorCandidates = [place.bestPlaceLabel, place.areaName, place.cityName]
+        guard let anchor = anchorCandidates
+            .map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+            .first(where: { !$0.isEmpty && $0 != "Unknown Place" }) else {
+            return ("Unknown Place", subtitle)
+        }
+
+        if anchor.hasPrefix("Near ") {
+            return (anchor, subtitle)
+        }
+        return ("Near \(anchor)", subtitle)
+    }
+
     /// Resolves a display title from `areaName` that CLGeocoder produced.
     /// When the LLM (or heuristic on older OS) identifies the name as a concrete POI/landmark,
     /// returns the name directly and attempts to fetch the POI category via MapKit.

@@ -22,6 +22,9 @@ enum ScanConfig {
     /// Place clustering radius in meters (configurable). Reduced to 150m for tighter clusters (Accuracy-First PRD).
     static let placeClusterMeters = 150.0
 
+    /// When a renamed POI pin is farther than this from capture GPS, prompt to move the pin (~large golf-course span).
+    static let placeEditPhotoToPOIMaxDistanceMeters = 650.0
+
     /// Meters per mile for distance checks.
     static let metersPerMile: Double = 1609.34
 

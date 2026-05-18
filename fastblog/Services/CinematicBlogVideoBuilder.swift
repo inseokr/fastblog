@@ -1,4 +1,5 @@
 // fastblog/Services/CinematicBlogVideoBuilder.swift
+import AVFoundation
 import UIKit
 import Foundation
 import MapKit
@@ -12,7 +13,7 @@ import MapKit
 ///   2. Zoom-in        — `MapAnimationQuality.efficient`: cross-dissolve at cinematicZoomSegmentTargetFPS.
 ///                       `.highFidelity`: interpolated MKMapSnapshotter frames (true tile zoom; slower export).
 ///   3. Focused reveal — 0.003° with place info overlaid at bottom (2.5 s wall; bottom chrome fades in over the first ~0.5 s)
-///   4. Photo slides   — full-pixel images, story panel when caption is non-empty
+///   4. Photo/reel slides — if a moment-video reel exists for a photo, the reel plays directly (with place/time overlay) instead of a Ken-Burns still; otherwise the still is shown with Ken Burns
 enum CinematicBlogVideoBuilder {
 
     /// Target temporal sampling for the wide→tight zoom dissolve (no extra MapKit work).
@@ -56,9 +57,36 @@ enum CinematicBlogVideoBuilder {
     private static let cinematicPhotoToPhotoDissolveDurationSeconds: Double = 0.40
     private static let cinematicPhotoToPhotoDissolveTargetFPS: Double = 30
 
+    /// Map → moment-video reel transition (zoom-burst reveal).
+    private static let mapToReelTransitionSeconds: Double = 0.50
+    private static let mapToReelTransitionFPS: Double = 30
+    private static let momentVideoExportFPS: Double = 30
+
     /// After the cover hold, cross-dissolve into the first day’s overview map (same frame as pan start).
     private static let coverToMapTransitionSeconds: Double = 0.72
     private static let coverToMapTransitionFPS: Double = 30
+
+    // MARK: Opening hook (cover → hero still → map)
+
+    /// Title card before the hero still (down from a flat 2 s hold so the hook lands faster).
+    private static let openingCoverHoldSeconds: Double = 1.15
+    private static let openingCoverToHeroDissolveSeconds: Double = 0.45
+    private static let openingCoverToHeroDissolveFPS: Double = 30
+    /// Ken Burns duration on the hook hero still (cover photo).
+    private static let openingHeroKenBurnsSeconds: Double = 2.10
+    private static let openingHeroKenBurnsFactor: CGFloat = 0.09
+    private static let openingHeroKenBurnsFPS: Double = 24
+
+    /// Day itinerary card: how long the card is held between crossfades.
+    private static let cinematicDayCardHoldSeconds: Double = 2.0
+    /// Day itinerary card: crossfade duration in→card and card→map.
+    private static let cinematicDayCardCrossfadeSeconds: Double = 0.40
+    private static let cinematicDayCardCrossfadeFPS: Double = 30
+
+    /// Total extra seconds added per day when day itinerary cards are enabled.
+    private static var cinematicDayCardTotalSeconds: Double {
+        cinematicDayCardCrossfadeSeconds + cinematicDayCardHoldSeconds + cinematicDayCardCrossfadeSeconds
+    }
 
     private static var cinematicZoomFrameDurationSeconds: Double {
         1.0 / cinematicZoomSegmentTargetFPS
@@ -94,7 +122,8 @@ enum CinematicBlogVideoBuilder {
         draft: RecapBlogDetail,
         secondsPerPhoto: Double,
         maxPhotosPerPlace: Int,
-        includedPlaceIDs: Set<UUID>? = nil
+        includedPlaceIDs: Set<UUID>? = nil,
+        showDayItineraryCards: Bool = false
     ) -> Double {
         let days: [RecapBlogDay] = draft.days.compactMap { day in
             let filteredStops: [PlaceStop]
@@ -110,11 +139,11 @@ enum CinematicBlogVideoBuilder {
         }
 
         var total = 0.0
-        // Cover hold
-        total += 2.0
+        total += estimatedOpeningHookSeconds(draft: draft, includedPlaceIDs: includedPlaceIDs)
 
         if let firstDay = days.first, let firstStop = firstDay.placeStops.first, hasFiniteCoord(firstStop) {
-            total += coverToFirstMapCrossfadeSeconds
+            // Day itinerary cards replace the cover→map crossfade with cover→card→map
+            total += showDayItineraryCards ? cinematicDayCardTotalSeconds : coverToFirstMapCrossfadeSeconds
         }
 
         var handoffSkipsPanAndZoom = false
@@ -137,13 +166,22 @@ enum CinematicBlogVideoBuilder {
                 let photoCount = min(maxPhotosPerPlace, stop.includedPhotos.count)
                 if photoCount > 0 {
                     for photoIdx in 0..<photoCount {
-                        if photoIdx == 0, coordOK {
-                            total += mapToFirstPhotoTransitionSeconds
+                        let photo = stop.includedPhotos[photoIdx]
+                        let clipDur = momentVideoDurationSeconds(for: photo)
+                        if clipDur > 0 {
+                            // Reel replaces the photo: dissolve from previous frame + reel
+                            total += mapToReelTransitionSeconds
+                            total += clipDur
+                        } else {
+                            // Regular Ken-Burns photo slide
+                            if photoIdx == 0, coordOK {
+                                total += mapToFirstPhotoTransitionSeconds
+                            }
+                            if photoIdx > 0 {
+                                total += cinematicPhotoToPhotoDissolveDurationSeconds
+                            }
+                            total += secondsPerPhoto
                         }
-                        if photoIdx > 0 {
-                            total += cinematicPhotoToPhotoDissolveDurationSeconds
-                        }
-                        total += secondsPerPhoto
                     }
                 }
 
@@ -157,7 +195,8 @@ enum CinematicBlogVideoBuilder {
                     if dayIdx + 1 < days.count,
                        let nextFirst = days[dayIdx + 1].placeStops.first,
                        hasFiniteCoord(nextFirst) {
-                        total += lastPhotoToMapFadeSeconds
+                        // Day itinerary cards replace the plain photo→map dissolve with photo→card→map
+                        total += showDayItineraryCards ? cinematicDayCardTotalSeconds : lastPhotoToMapFadeSeconds
                     }
                 } else {
                     let nextStop = stops[placeIdx + 1]
@@ -189,7 +228,9 @@ enum CinematicBlogVideoBuilder {
         showPhotoCaptions: Bool = true,
         maxPhotosPerPlace: Int = 5,
         includedPlaceIDs: Set<UUID>? = nil,
+        showDayItineraryCards: Bool = false,
         progressHandler: ((Double) -> Void)? = nil,
+        momentAudioHandler: ((URL, Double, Double) -> Void)? = nil,
         frameHandler: (UIImage, Double) async throws -> Void
     ) async throws {
         let pixelSize = CGSize(width: logicalSize.width * 2, height: logicalSize.height * 2)
@@ -213,7 +254,12 @@ enum CinematicBlogVideoBuilder {
         let coverComposite = autoreleasepool {
             drawCoverPage(draft: draft, pixelSize: pixelSize, coverImage: coverImage)
         }
-        try await frameHandler(coverComposite, 2.0)
+        let postHookFrame = try await emitOpeningHook(
+            coverComposite: coverComposite,
+            coverImage: coverImage,
+            pixelSize: pixelSize,
+            frameHandler: frameHandler
+        )
 
         if let firstDay = days.first, !firstDay.placeStops.isEmpty {
             let firstStops = firstDay.placeStops
@@ -237,15 +283,42 @@ enum CinematicBlogVideoBuilder {
                         to: firstMapWithHeader, pixelSize: pixelSize, show: true
                     )
                 }
-                let crossDt = 1.0 / coverToMapTransitionFPS
-                let crossFrames = max(14, Int((coverToMapTransitionSeconds * coverToMapTransitionFPS).rounded()))
-                for fi in 1...crossFrames {
-                    try Task.checkCancellation()
-                    let u = easeInOutCubic(CGFloat(fi) / CGFloat(crossFrames))
-                    let blended = autoreleasepool {
-                        blendCoverToMap(from: coverComposite, to: firstMapForCrossfade, progress: u, size: pixelSize)
+
+                if showDayItineraryCards {
+                    // cover → day 1 card → first map (replacing the direct cover→map crossfade)
+                    let day1Card = autoreleasepool {
+                        drawDayItineraryCard(day: firstDay, dayNumber: 1, pixelSize: pixelSize)
                     }
-                    try await frameHandler(blended, crossDt)
+                    let cardFrames = max(10, Int(round(cinematicDayCardCrossfadeSeconds * cinematicDayCardCrossfadeFPS)))
+                    let cardDt = cinematicDayCardCrossfadeSeconds / Double(cardFrames)
+                    for fi in 0..<cardFrames {
+                        try Task.checkCancellation()
+                        let u = easeInOutCubic(CGFloat(fi) / CGFloat(max(cardFrames - 1, 1)))
+                        let blended = autoreleasepool {
+                            blendCoverToMap(from: postHookFrame, to: day1Card, progress: u, size: pixelSize)
+                        }
+                        try await frameHandler(blended, cardDt)
+                    }
+                    try await frameHandler(day1Card, cinematicDayCardHoldSeconds)
+                    for fi in 0..<cardFrames {
+                        try Task.checkCancellation()
+                        let u = easeInOutCubic(CGFloat(fi) / CGFloat(max(cardFrames - 1, 1)))
+                        let blended = autoreleasepool {
+                            blendCoverToMap(from: day1Card, to: firstMapForCrossfade, progress: u, size: pixelSize)
+                        }
+                        try await frameHandler(blended, cardDt)
+                    }
+                } else {
+                    let crossDt = 1.0 / coverToMapTransitionFPS
+                    let crossFrames = max(14, Int((coverToMapTransitionSeconds * coverToMapTransitionFPS).rounded()))
+                    for fi in 1...crossFrames {
+                        try Task.checkCancellation()
+                        let u = easeInOutCubic(CGFloat(fi) / CGFloat(crossFrames))
+                        let blended = autoreleasepool {
+                            blendCoverToMap(from: postHookFrame, to: firstMapForCrossfade, progress: u, size: pixelSize)
+                        }
+                        try await frameHandler(blended, crossDt)
+                    }
                 }
             }
         }
@@ -444,13 +517,35 @@ enum CinematicBlogVideoBuilder {
                     progressHandler?((Double(dayIdx) + Double(placeIdx + 1) / stopCount) / totalDays)
                 }
 
-                // 4. Photo slides — one at a time, released after each write
+                // 4. Photo/reel slides — if a photo has a reel, the reel plays directly with
+                //    place/time overlay (no still shown); otherwise a Ken-Burns still is shown.
                 var lastPhotoSlide: UIImage?
                 var lastPhotoKBLastFrame: UIImage?
                 for (photoIdx, photo) in stop.includedPhotos.prefix(maxPhotosPerPlace).enumerated() {
                     try Task.checkCancellation()
+                    let timeLabel = photoSlideTimeDisplayText(for: photo, stop: stop)
+
+                    if let clipURL = momentVideoURL(for: photo) {
+                        // Reel found: show it directly with place/time overlay, dissolving from the
+                        // previous frame (focused map for the first photo, last KB frame otherwise).
+                        let dissolveFrom: UIImage? = lastPhotoKBLastFrame ?? lastFocusedMapCompositeForPhotoTransition
+                        if let clipLast = try await emitMomentVideoClipWithPlaceOverlay(
+                            url: clipURL,
+                            pixelSize: pixelSize,
+                            dissolveFrom: dissolveFrom,
+                            placeName: stop.placeTitle,
+                            timestampText: timeLabel,
+                            momentAudioHandler: momentAudioHandler,
+                            frameHandler: frameHandler
+                        ) {
+                            lastPhotoKBLastFrame = clipLast
+                            lastPhotoSlide = clipLast
+                        }
+                        continue
+                    }
+
                     if let img = await loadPhoto(photo, targetSize: pixelSize) {
-                        let timeLabel = photoSlideTimeDisplayText(for: photo, stop: stop)
+                        // First photo: hero zoom from the focused-map thumbnail cell.
                         if photoIdx == 0,
                            let mapComposite = lastFocusedMapCompositeForPhotoTransition,
                            let fromCell = mapToPhotoThumbCell,
@@ -488,7 +583,6 @@ enum CinematicBlogVideoBuilder {
                         let kbFrameCount = max(8, Int(round(secondsPerPhoto * cinematicPhotoKenBurnsFPS)))
                         let kbDt = secondsPerPhoto / Double(kbFrameCount)
 
-                        // Build the first KB frame up-front — used as dissolve target.
                         let firstKBFrame = autoreleasepool {
                             drawPhotoSlide(
                                 img,
@@ -500,7 +594,7 @@ enum CinematicBlogVideoBuilder {
                             )
                         }
 
-                        // Cross-dissolve from the previous photo's last KB frame.
+                        // Cross-dissolve from the previous frame (photo or reel last frame).
                         if let prevLast = lastPhotoKBLastFrame {
                             let nD = max(8, Int(round(cinematicPhotoToPhotoDissolveDurationSeconds * cinematicPhotoToPhotoDissolveTargetFPS)))
                             let dDt = cinematicPhotoToPhotoDissolveDurationSeconds / Double(nD)
@@ -515,7 +609,6 @@ enum CinematicBlogVideoBuilder {
                             }
                         }
 
-                        // Ken Burns sequence.
                         var kbLastFrame = firstKBFrame
                         for fi in 0..<kbFrameCount {
                             try Task.checkCancellation()
@@ -546,10 +639,11 @@ enum CinematicBlogVideoBuilder {
 
                 if !isLastPlaceOverall, let lastSlide = lastPhotoSlide {
                     if isLastPlaceOfDay {
-                        // Cross-day transition: no map animation. Dissolve from the last photo of
-                        // this day directly into the next day's overview region; the next iteration
-                        // then starts its normal pan+zoom from that overview.
+                        // Cross-day transition: dissolve from the last photo into the next day's
+                        // overview (or via an itinerary card when enabled); the next iteration
+                        // starts its normal pan+zoom from that overview.
                         let nextDayStops = days[dayIdx + 1].placeStops
+                        let nextDay = days[dayIdx + 1]
                         let nextDayOverview = Self.dayOverviewRegion(for: nextDayStops)
                         if let nextMapBase = await MapSnapshotHelper.generateSnapshotAtRegion(
                             region: nextDayOverview,
@@ -563,16 +657,42 @@ enum CinematicBlogVideoBuilder {
                             let nextMapOut = autoreleasepool {
                                 applyingPoweredByBloggoWatermarkIfNeeded(to: nextMapBase, pixelSize: pixelSize, show: false)
                             }
-                            let nFadeFrames = max(14, Int(round(lastPhotoToMapFadeSeconds * lastPhotoToMapFadeFPS)))
-                            let fadeDt = lastPhotoToMapFadeSeconds / Double(nFadeFrames)
-                            let denom = max(nFadeFrames - 1, 1)
-                            for fi in 0..<nFadeFrames {
-                                try Task.checkCancellation()
-                                let eased = easeInOutCubic(CGFloat(fi) / CGFloat(denom))
-                                let blended = autoreleasepool {
-                                    blendCoverToMap(from: lastSlide, to: nextMapOut, progress: eased, size: pixelSize)
+                            if showDayItineraryCards {
+                                // lastPhoto → nextDayCard → nextMap
+                                let nextDayCard = autoreleasepool {
+                                    drawDayItineraryCard(day: nextDay, dayNumber: dayIdx + 2, pixelSize: pixelSize)
                                 }
-                                try await frameHandler(blended, fadeDt)
+                                let cf = max(10, Int(round(cinematicDayCardCrossfadeSeconds * cinematicDayCardCrossfadeFPS)))
+                                let cdt = cinematicDayCardCrossfadeSeconds / Double(cf)
+                                for fi in 0..<cf {
+                                    try Task.checkCancellation()
+                                    let u = easeInOutCubic(CGFloat(fi) / CGFloat(max(cf - 1, 1)))
+                                    let blended = autoreleasepool {
+                                        blendCoverToMap(from: lastSlide, to: nextDayCard, progress: u, size: pixelSize)
+                                    }
+                                    try await frameHandler(blended, cdt)
+                                }
+                                try await frameHandler(nextDayCard, cinematicDayCardHoldSeconds)
+                                for fi in 0..<cf {
+                                    try Task.checkCancellation()
+                                    let u = easeInOutCubic(CGFloat(fi) / CGFloat(max(cf - 1, 1)))
+                                    let blended = autoreleasepool {
+                                        blendCoverToMap(from: nextDayCard, to: nextMapOut, progress: u, size: pixelSize)
+                                    }
+                                    try await frameHandler(blended, cdt)
+                                }
+                            } else {
+                                let nFadeFrames = max(14, Int(round(lastPhotoToMapFadeSeconds * lastPhotoToMapFadeFPS)))
+                                let fadeDt = lastPhotoToMapFadeSeconds / Double(nFadeFrames)
+                                let denom = max(nFadeFrames - 1, 1)
+                                for fi in 0..<nFadeFrames {
+                                    try Task.checkCancellation()
+                                    let eased = easeInOutCubic(CGFloat(fi) / CGFloat(denom))
+                                    let blended = autoreleasepool {
+                                        blendCoverToMap(from: lastSlide, to: nextMapOut, progress: eased, size: pixelSize)
+                                    }
+                                    try await frameHandler(blended, fadeDt)
+                                }
                             }
                         }
                         // travelHandoffTightImage stays nil → next day starts with its normal pan+zoom.
@@ -716,6 +836,112 @@ enum CinematicBlogVideoBuilder {
             }
 
             progressHandler?(Double(dayIdx + 1) / totalDays)
+        }
+    }
+
+    // MARK: - Opening hook
+
+    private static func estimatedOpeningHookSeconds(
+        draft: RecapBlogDetail,
+        includedPlaceIDs: Set<UUID>?
+    ) -> Double {
+        var total = openingCoverHoldSeconds
+        let hasCoverPhoto = (draft.selectedCoverPhotoIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)).map { !$0.isEmpty } ?? false
+        if hasCoverPhoto {
+            total += openingCoverToHeroDissolveSeconds + openingHeroKenBurnsSeconds
+        }
+        return total
+    }
+
+    /// Cover title card → hero still (Ken Burns) → returns last frame for map handoff.
+    private static func emitOpeningHook(
+        coverComposite: UIImage,
+        coverImage: UIImage?,
+        pixelSize: CGSize,
+        frameHandler: (UIImage, Double) async throws -> Void
+    ) async throws -> UIImage {
+        try await frameHandler(coverComposite, openingCoverHoldSeconds)
+        var lastFrame = coverComposite
+
+        guard let hero = coverImage else { return lastFrame }
+
+        let heroBase = autoreleasepool { drawHookHeroSlide(hero, pixelSize: pixelSize) }
+
+        let dissolveFrames = max(
+            10,
+            Int(round(openingCoverToHeroDissolveSeconds * openingCoverToHeroDissolveFPS))
+        )
+        let dissolveDt = openingCoverToHeroDissolveSeconds / Double(dissolveFrames)
+        let dissolveDenom = max(dissolveFrames - 1, 1)
+        for fi in 0..<dissolveFrames {
+            try Task.checkCancellation()
+            let t = easeInOutCubic(CGFloat(fi) / CGFloat(dissolveDenom))
+            let blended = autoreleasepool {
+                blendCoverToMap(from: lastFrame, to: heroBase, progress: t, size: pixelSize)
+            }
+            try await frameHandler(blended, dissolveDt)
+        }
+        lastFrame = heroBase
+
+        let kbFrameCount = max(10, Int(round(openingHeroKenBurnsSeconds * openingHeroKenBurnsFPS)))
+        let kbDt = openingHeroKenBurnsSeconds / Double(kbFrameCount)
+        let kbDenom = max(kbFrameCount - 1, 1)
+        let kbStart: CGFloat = 1.0
+        let kbEnd: CGFloat = 1.0 + openingHeroKenBurnsFactor
+        for fi in 0..<kbFrameCount {
+            try Task.checkCancellation()
+            let t = CGFloat(fi) / CGFloat(kbDenom)
+            let kbScale = kbStart + (kbEnd - kbStart) * t
+            let frame = autoreleasepool { drawHookHeroSlide(hero, pixelSize: pixelSize, kbScale: kbScale) }
+            lastFrame = frame
+            try await frameHandler(frame, kbDt)
+        }
+
+        return lastFrame
+    }
+
+    /// Full-bleed hook still — no story chrome so the reel punch reads instantly.
+    private static func drawHookHeroSlide(
+        _ photo: UIImage,
+        pixelSize: CGSize,
+        kbScale: CGFloat = 1.0
+    ) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
+            let cg = ctx.cgContext
+            let w = pixelSize.width, h = pixelSize.height
+            let cs = CGColorSpaceCreateDeviceRGB()
+            UIColor.black.setFill()
+            cg.fill(CGRect(origin: .zero, size: pixelSize))
+
+            let photoAR = photo.size.width / max(photo.size.height, 1)
+            let frameAR = w / h
+            let baseRect: CGRect
+            if photoAR > frameAR {
+                let dh = h
+                let dw = dh * photoAR
+                baseRect = CGRect(x: (w - dw) / 2, y: 0, width: dw, height: dh)
+            } else {
+                let dw = w
+                let dh = dw / photoAR
+                baseRect = CGRect(x: 0, y: (h - dh) / 2, width: dw, height: dh)
+            }
+            let kbW = baseRect.width * kbScale, kbH = baseRect.height * kbScale
+            let photoRect = integralRect(CGRect(
+                x: baseRect.midX - kbW / 2, y: baseRect.midY - kbH / 2,
+                width: kbW, height: kbH
+            ))
+            prepareContextForSharpBitmapCompositing(cg)
+            photo.draw(in: photoRect)
+
+            cg.drawLinearGradient(
+                CGGradient(colorsSpace: cs, colors: [
+                    UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.35).cgColor
+                ] as CFArray, locations: [0.55, 1])!,
+                start: CGPoint(x: 0, y: h * 0.55), end: CGPoint(x: 0, y: h), options: []
+            )
         }
     }
 
@@ -949,8 +1175,6 @@ enum CinematicBlogVideoBuilder {
     private static func drawPoweredByBloggoWatermark(in cg: CGContext, pixelSize: CGSize) {
         let w = pixelSize.width, h = pixelSize.height
         let margin = max(32, w * 0.038)
-        // Below typical host top crop; avoids overlapping bottom map/place overlays.
-        let topInset = max(112, round(h * 0.058))
 
         let poweredFont = UIFont.systemFont(ofSize: (w * 0.026).rounded(), weight: .medium)
         let bloggoFont = UIFont.systemFont(ofSize: (w * 0.026).rounded(), weight: .bold)
@@ -986,7 +1210,7 @@ enum CinematicBlogVideoBuilder {
         let chipH = chipPadV * 2 + max(iconSide, textRowH)
         let chipRect = CGRect(
             x: w - margin - chipW,
-            y: topInset,
+            y: h - margin - chipH,
             width: chipW,
             height: chipH
         )
@@ -1116,6 +1340,137 @@ enum CinematicBlogVideoBuilder {
             y = (y + dateSize.height + lineGap).rounded()
             if !subtitle.isEmpty {
                 cityStr.draw(at: CGPoint(x: padX, y: y), withAttributes: cityAttribs)
+            }
+        }
+    }
+
+    // MARK: - Day Itinerary Card
+
+    /// Full-frame dark card shown before each day's map sequence listing all places for that day.
+    static func drawDayItineraryCard(day: RecapBlogDay, dayNumber: Int, pixelSize: CGSize) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
+            let cg = ctx.cgContext
+            let w = pixelSize.width, h = pixelSize.height
+            let cs = CGColorSpaceCreateDeviceRGB()
+
+            // Deep navy background
+            cg.drawLinearGradient(
+                CGGradient(colorsSpace: cs, colors: [
+                    UIColor(red: 5/255, green: 10/255, blue: 48/255, alpha: 1).cgColor,
+                    UIColor(red: 2/255, green: 5/255, blue: 30/255, alpha: 1).cgColor
+                ] as CFArray, locations: [0, 1])!,
+                start: .zero, end: CGPoint(x: 0, y: h), options: []
+            )
+
+            let iceBlue = UIColor(red: 200/255, green: 235/255, blue: 255/255, alpha: 0.80)
+            let accentBlue = UIColor(red: 0.0, green: 0.85, blue: 1.0, alpha: 1.0)
+
+            let labelFont = UIFont.monospacedSystemFont(ofSize: (w * 0.028).rounded(), weight: .medium)
+            let labelAttribs: [NSAttributedString.Key: Any] = [
+                .font: labelFont, .foregroundColor: iceBlue, .kern: w * 0.006
+            ]
+            let labelStr = "DAY \(dayNumber)" as NSString
+            let labelSize = labelStr.size(withAttributes: labelAttribs)
+
+            let numPara = NSMutableParagraphStyle(); numPara.alignment = .center
+            let numFont = UIFont.systemFont(ofSize: (w * 0.13).rounded(), weight: .black)
+            let numAttribs: [NSAttributedString.Key: Any] = [
+                .font: numFont, .foregroundColor: UIColor.white, .paragraphStyle: numPara
+            ]
+            let numStr = "\(dayNumber)" as NSString
+            let numSize = numStr.boundingRect(
+                with: CGSize(width: w - 80, height: h * 0.3),
+                options: [.usesLineFragmentOrigin], attributes: numAttribs, context: nil
+            ).integral.size
+
+            let datePara = NSMutableParagraphStyle(); datePara.alignment = .center
+            let dateFont = UIFont.systemFont(ofSize: (w * 0.036).rounded(), weight: .medium)
+            let dateAttribs: [NSAttributedString.Key: Any] = [
+                .font: dateFont,
+                .foregroundColor: UIColor.white.withAlphaComponent(0.72),
+                .paragraphStyle: datePara
+            ]
+            let dateStr = day.shortDateText as NSString
+            let dateSize = dateStr.size(withAttributes: dateAttribs)
+
+            let blockH = labelSize.height + 4 + numSize.height + 10 + dateSize.height
+            let blockTop = ((h / 2) - (blockH / 2) - (h * 0.07)).rounded()
+            let centerX = w / 2
+
+            labelStr.draw(
+                at: CGPoint(x: (centerX - labelSize.width / 2).rounded(), y: blockTop),
+                withAttributes: labelAttribs
+            )
+            let numY = (blockTop + labelSize.height + 4).rounded()
+            numStr.draw(
+                in: CGRect(x: (w - numSize.width) / 2, y: numY,
+                           width: numSize.width, height: numSize.height),
+                withAttributes: numAttribs
+            )
+            let dateY = (numY + numSize.height + 10).rounded()
+            dateStr.draw(
+                in: CGRect(x: (w - dateSize.width) / 2, y: dateY,
+                           width: dateSize.width, height: dateSize.height),
+                withAttributes: dateAttribs
+            )
+
+            // Separator
+            let sepY = (dateY + dateSize.height + 30).rounded()
+            let sepInset = w * 0.18
+            cg.setStrokeColor(UIColor.white.withAlphaComponent(0.18).cgColor)
+            cg.setLineWidth(max(1.0, w * 0.0015))
+            cg.move(to: CGPoint(x: sepInset, y: sepY))
+            cg.addLine(to: CGPoint(x: w - sepInset, y: sepY))
+            cg.strokePath()
+
+            // Place list (up to 6 items)
+            let maxItems = 6
+            let stops = day.placeStops
+            let listStops = stops.prefix(maxItems)
+            let overflow = max(0, stops.count - maxItems)
+
+            let placeFont = UIFont.systemFont(ofSize: (w * 0.030).rounded(), weight: .semibold)
+            let placeAttribs: [NSAttributedString.Key: Any] = [
+                .font: placeFont, .foregroundColor: UIColor.white.withAlphaComponent(0.88)
+            ]
+            let dotAttribs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: (w * 0.020).rounded(), weight: .bold),
+                .foregroundColor: accentBlue
+            ]
+            let dotStr = "•" as NSString
+            let dotSize = dotStr.size(withAttributes: dotAttribs)
+            let rowH = placeFont.lineHeight
+            let rowSpacing: CGFloat = 13
+            let listInset = w * 0.22
+            var listY = (sepY + 26).rounded()
+
+            for stop in listStops {
+                let dotX = (listInset - dotSize.width - 10).rounded()
+                dotStr.draw(
+                    at: CGPoint(x: dotX, y: (listY + (rowH - dotSize.height) / 2).rounded()),
+                    withAttributes: dotAttribs
+                )
+                let nameStr = stop.placeTitle as NSString
+                let maxNameW = w - listInset - sepInset
+                nameStr.draw(
+                    in: CGRect(x: listInset, y: listY, width: maxNameW, height: rowH + 4),
+                    withAttributes: placeAttribs
+                )
+                listY = (listY + rowH + rowSpacing).rounded()
+            }
+
+            if overflow > 0 {
+                let moreFont = UIFont.systemFont(ofSize: (w * 0.025).rounded(), weight: .regular)
+                let moreAttribs: [NSAttributedString.Key: Any] = [
+                    .font: moreFont, .foregroundColor: UIColor.white.withAlphaComponent(0.42)
+                ]
+                ("+ \(overflow) more" as NSString).draw(
+                    at: CGPoint(x: listInset, y: listY),
+                    withAttributes: moreAttribs
+                )
             }
         }
     }
@@ -1586,6 +1941,104 @@ enum CinematicBlogVideoBuilder {
         }
     }
 
+    // MARK: - Moment video clip
+
+    private static func momentVideoURL(for photo: RecapPhoto) -> URL? {
+        guard let id = photo.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !id.isEmpty,
+              id.hasPrefix(AppCapturePhotoService.prefix),
+              let uuid = AppCapturePhotoService.uuid(from: id) else { return nil }
+        return AppCapturePhotoService.shared.momentVideoFileURL(for: uuid)
+    }
+
+    private static func momentVideoDurationSeconds(for photo: RecapPhoto) -> Double {
+        guard let url = momentVideoURL(for: photo) else { return 0 }
+        let sec = CMTimeGetSeconds(AVURLAsset(url: url).duration)
+        guard sec.isFinite, sec > 0.02 else { return 0 }
+        return sec
+    }
+
+    /// Decodes `moment_video.mov` at export FPS, overlays place name + timestamp on every frame,
+    /// and streams through `frameHandler`. Cross-dissolves from `dissolveFrom` when provided.
+    /// Returns the last emitted frame (for dissolves into the next slide).
+    private static func emitMomentVideoClipWithPlaceOverlay(
+        url: URL,
+        pixelSize: CGSize,
+        dissolveFrom previousFrame: UIImage?,
+        placeName: String,
+        timestampText: String,
+        momentAudioHandler: ((URL, Double, Double) -> Void)?,
+        frameHandler: (UIImage, Double) async throws -> Void
+    ) async throws -> UIImage? {
+        let asset = AVURLAsset(url: url)
+        let durationSec: Double
+        if #available(iOS 16.0, *) {
+            durationSec = CMTimeGetSeconds(try await asset.load(.duration))
+        } else {
+            durationSec = CMTimeGetSeconds(asset.duration)
+        }
+        guard durationSec.isFinite, durationSec > 0.02 else { return previousFrame }
+
+        let transitionSeconds = previousFrame != nil ? mapToReelTransitionSeconds : 0
+        momentAudioHandler?(url, transitionSeconds, durationSec)
+
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: pixelSize.width, height: pixelSize.height)
+        generator.requestedTimeToleranceBefore = CMTime(seconds: 0.02, preferredTimescale: 600)
+        generator.requestedTimeToleranceAfter = CMTime(seconds: 0.02, preferredTimescale: 600)
+
+        let frameCount = max(1, Int((durationSec * momentVideoExportFPS).rounded()))
+        let dt = durationSec / Double(frameCount)
+
+        func videoFrameWithOverlay(at index: Int) throws -> UIImage {
+            let t = min(Double(index) / momentVideoExportFPS, max(durationSec - 0.001, 0))
+            let time = CMTime(seconds: t, preferredTimescale: 600)
+            let cg = try generator.copyCGImage(at: time, actualTime: nil)
+            return drawPhotoSlide(
+                UIImage(cgImage: cg),
+                caption: nil,
+                placeName: placeName,
+                timestampText: timestampText,
+                pixelSize: pixelSize,
+                kbScale: 1.0
+            )
+        }
+
+        var lastEmitted: UIImage?
+
+        if let prev = previousFrame {
+            let firstVF = try videoFrameWithOverlay(at: 0)
+            let nD = max(10, Int(round(mapToReelTransitionSeconds * mapToReelTransitionFPS)))
+            let dDt = mapToReelTransitionSeconds / Double(nD)
+            let denom = max(nD - 1, 1)
+            for fi in 0..<nD {
+                try Task.checkCancellation()
+                let t = CGFloat(fi) / CGFloat(denom)
+                let blended = autoreleasepool {
+                    drawMapToReelTransitionFrame(mapFrame: prev, reelFrame: firstVF, progress: t, pixelSize: pixelSize)
+                }
+                try await frameHandler(blended, dDt)
+            }
+            lastEmitted = firstVF
+            for fi in 1..<frameCount {
+                try Task.checkCancellation()
+                let frame = try videoFrameWithOverlay(at: fi)
+                lastEmitted = frame
+                try await frameHandler(frame, dt)
+            }
+        } else {
+            for fi in 0..<frameCount {
+                try Task.checkCancellation()
+                let frame = try videoFrameWithOverlay(at: fi)
+                lastEmitted = frame
+                try await frameHandler(frame, dt)
+            }
+        }
+
+        return lastEmitted
+    }
+
     // MARK: - Photo Slide
 
     private static func drawPhotoSlide(
@@ -1785,6 +2238,62 @@ enum CinematicBlogVideoBuilder {
             center: c,
             span: MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06)
         )
+    }
+
+    /// Map → reel transition: map punches in (zoom-burst) while the reel materialises from the
+    /// centre with a delayed scale-up. A luminance flash at the midpoint sharpens the cut.
+    private static func drawMapToReelTransitionFrame(
+        mapFrame: UIImage,
+        reelFrame: UIImage,
+        progress rawT: CGFloat,
+        pixelSize: CGSize
+    ) -> UIImage {
+        let t = min(1, max(0, rawT))
+        let w = pixelSize.width, h = pixelSize.height
+
+        // Map punches in: 1.0 → 1.40x zoom from centre (ease-in so it accelerates)
+        let mapZoom = 1.0 + 0.40 * easeInOutCubic(t)
+
+        // Reel materialises: scale 0.84 → 1.0, opacity delayed until t = 0.22
+        let reelAlpha = easeInOutCubic(max(0, (t - 0.22) / 0.78))
+        let reelScale = 0.84 + 0.16 * easeInOutCubic(t)
+
+        // Luminance flash peaks at t ≈ 0.5 (sin arch, max 30% white)
+        let flash = CGFloat(sin(Double(t) * .pi) * 0.30)
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
+            let cg = ctx.cgContext
+
+            // Map zoomed in from centre
+            cg.saveGState()
+            cg.translateBy(x: w / 2, y: h / 2)
+            cg.scaleBy(x: mapZoom, y: mapZoom)
+            cg.translateBy(x: -w / 2, y: -h / 2)
+            prepareContextForSharpBitmapCompositing(cg)
+            mapFrame.draw(in: CGRect(origin: .zero, size: pixelSize))
+            cg.restoreGState()
+
+            // Reel scaled up from centre + fade in
+            if reelAlpha > 0 {
+                cg.saveGState()
+                cg.setAlpha(reelAlpha)
+                cg.translateBy(x: w / 2, y: h / 2)
+                cg.scaleBy(x: reelScale, y: reelScale)
+                cg.translateBy(x: -w / 2, y: -h / 2)
+                prepareContextForSharpBitmapCompositing(cg)
+                reelFrame.draw(in: CGRect(origin: .zero, size: pixelSize))
+                cg.restoreGState()
+            }
+
+            // Luminance flash
+            if flash > 0 {
+                cg.setFillColor(UIColor.white.withAlphaComponent(flash).cgColor)
+                cg.fill(CGRect(origin: .zero, size: pixelSize))
+            }
+        }
     }
 
     /// Cross-fade from the rendered cover to the first map frame (`progress` 0…1).
