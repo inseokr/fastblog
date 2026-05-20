@@ -1689,8 +1689,10 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     private var captureCompletion: ((UIImage?, String?) -> Void)?
     private var momentVideoCompletion: ((URL?) -> Void)?
     private var momentVideoStopWorkItem: DispatchWorkItem?
-    /// Wall-clock length of the post-shutter moment clip (matches UI countdown).
-    static let momentVideoClipDuration: TimeInterval = 5
+    /// Wall-clock length of the post-shutter moment clip (matches UI countdown and Settings).
+    static var momentVideoClipDuration: TimeInterval {
+        MomentVideoPreferences.maxDurationSeconds
+    }
 
     @Published var isConfigured = false
     @Published var authorizationDenied = false
@@ -1954,8 +1956,10 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         }
         if needsMovie, !session.outputs.contains(movieOutput), session.canAddOutput(movieOutput) {
             session.addOutput(movieOutput)
-            movieOutput.maxRecordedDuration = CMTime(seconds: Self.momentVideoClipDuration, preferredTimescale: 600)
             hasMovieOutput = true
+        }
+        if hasMovieOutput {
+            movieOutput.maxRecordedDuration = CMTime(seconds: Self.momentVideoClipDuration, preferredTimescale: 600)
         }
         if hasMovieOutput, session.canSetSessionPreset(.high) {
             session.sessionPreset = .high

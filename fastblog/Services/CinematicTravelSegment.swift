@@ -25,7 +25,21 @@ enum TravelMode: String, Codable, CaseIterable, Equatable {
     case bus      // manual  →  bus.fill
     case train    // manual  →  tram.fill
     case subway   // manual  →  tram.tunnel.fill
-    case flying   // Airplane — manual pick only (never auto-assigned).
+    case flying   // Airplane — manual pick, or auto when ``shouldAutoSelectFlying`` applies.
+
+    /// Auto-flight: legs longer than this with implied speed above ``autoFlyingMinImpliedMPH``.
+    private static let autoFlyingDistanceMiles: Double = 200
+    private static let autoFlyingMinImpliedMPH: Double = 70
+    private static let metersPerMile: Double = 1609.344
+
+    /// Long haul with elapsed time shorter than steady 70 mph driving → likely flew.
+    static func shouldAutoSelectFlying(distanceMeters: Double, gapMinutes: Int) -> Bool {
+        let miles = distanceMeters / metersPerMile
+        guard miles > autoFlyingDistanceMiles, gapMinutes > 0 else { return false }
+        let gapHours = Double(gapMinutes) / 60.0
+        let impliedMPH = miles / gapHours
+        return impliedMPH > autoFlyingMinImpliedMPH
+    }
 
     /// Distance-only fallback when timestamps are unavailable (e.g. map preview with coordinates only).
     /// Prefer ``detect(from:to:)`` on two ``PlaceStop`` values whenever possible for time-aware walking vs driving.
@@ -55,6 +69,10 @@ enum TravelMode: String, Codable, CaseIterable, Equatable {
         let km = meters / 1000.0
 
         if let gapMin = timeDifferenceMinutes(a: fromStop, b: toStop), gapMin > 0 {
+            if shouldAutoSelectFlying(distanceMeters: meters, gapMinutes: gapMin) {
+                return .flying
+            }
+
             let gap = Double(gapMin)
 
             // Pace model: slow exploratory walk / backpacking (~3.2 km/h) with sightseeing slack.
@@ -107,6 +125,11 @@ enum TravelMode: String, Codable, CaseIterable, Equatable {
 
         // Hard boundaries: LLM can't override physics for short walks.
         if meters < 300 { return .walking }
+
+        if let gapMin = timeDifferenceMinutes(a: a, b: b),
+           shouldAutoSelectFlying(distanceMeters: meters, gapMinutes: gapMin) {
+            return .flying
+        }
 
         #if canImport(FoundationModels)
         let prompt = buildInferencePrompt(distanceMeters: meters, from: a, to: b)

@@ -21,14 +21,14 @@ enum CinematicBlogVideoBuilder {
     /// Wall-clock for the zoom segment. Split into two phases: pure crop-scale (0→65 %) then a
     /// dissolve to sharp tight tiles (65→100 %). 1.1 s gives the physical zoom enough screen time
     /// before the sharpening dissolve.
-    private static let cinematicZoomSegmentDurationSeconds: Double = 1.1
+    private static let cinematicZoomSegmentDurationSeconds: Double = 0.8
 
-    private static let cinematicPanFrameDurationSeconds: Double = 0.11
+    private static let cinematicPanFrameDurationSeconds: Double = 0.09
 
     /// Supersample MapKit snapshots (@3× logical canvas) then downscale into the 1080p frame for sharper
     /// tiles and overlay text than @2× alone; matches `BlogVideoExportService` 2× logical → 1080×1920 output.
     private static let exportMapDisplayScale: CGFloat = 3
-    private static let cinematicPanFrameCount = 14
+    private static let cinematicPanFrameCount = 10
     /// After the first place on a day, the map “hands off” from the previous marker (still highlighted)
     /// → brief all-muted beat → new marker + optional on-map place pill for the rest of the pan.
     private static let cinematicPanHandoffPreviousHighlightFrames = 5
@@ -37,18 +37,22 @@ enum CinematicBlogVideoBuilder {
     private static let cinematicHighFidelityZoomFrameCount = 22
 
     /// Tight map + place overlay hold before photo slides (includes bottom-chrome fade-in).
-    private static let cinematicFocusedMapHoldSeconds: Double = 1.5
+    private static let cinematicFocusedMapHoldSeconds: Double = 0.8
     /// Bottom place chrome (gradient, pin, title, time, thumbs) eases in over the held tight map.
     private static let cinematicPlaceOverlayFadeInSeconds: Double = 0.5
     private static let cinematicPlaceOverlayFadeInFPS: Double = 30
 
-    /// Map hold → first photo: hero zoom from the in-map thumbnail cell to the slide aspect-fill rect.
-    private static let mapToFirstPhotoTransitionSeconds: Double = 0.50
+    /// Map hold → first photo: iris aperture reveal from the place pin (canvas center).
+    private static let mapToFirstPhotoTransitionSeconds: Double = 0.35
     private static let mapToFirstPhotoTransitionFPS: Double = 30
 
-    /// Last photo slide → next place's map: cross-dissolve out.
-    private static let lastPhotoToMapFadeSeconds: Double = 0.50
+    /// Last photo slide → next place's map: iris aperture contract back to the place pin.
+    private static let lastPhotoToMapFadeSeconds: Double = 0.30
     private static let lastPhotoToMapFadeFPS: Double = 30
+
+    /// Photo → photo slide-push when showMapFrames is off (no map between places).
+    private static let noMapInterPlaceTransitionSeconds: Double = 0.30
+    private static let noMapInterPlaceTransitionFPS: Double = 30
 
     /// Ken Burns slow zoom on each photo hold.  Even-indexed photos zoom in, odd zoom out.
     private static let cinematicPhotoKenBurnsFactor: CGFloat = 0.06
@@ -123,7 +127,8 @@ enum CinematicBlogVideoBuilder {
         secondsPerPhoto: Double,
         maxPhotosPerPlace: Int,
         includedPlaceIDs: Set<UUID>? = nil,
-        showDayItineraryCards: Bool = false
+        showDayItineraryCards: Bool = false,
+        showMapFrames: Bool = true
     ) -> Double {
         let days: [RecapBlogDay] = draft.days.compactMap { day in
             let filteredStops: [PlaceStop]
@@ -140,6 +145,33 @@ enum CinematicBlogVideoBuilder {
 
         var total = 0.0
         total += estimatedOpeningHookSeconds(draft: draft, includedPlaceIDs: includedPlaceIDs)
+
+        // Fast path: no map segments — cover hook → photos with slide-push between places.
+        if !showMapFrames {
+            var isFirstPhotoOfVideo = true
+            for day in days {
+                for stop in day.placeStops {
+                    let photoCount = min(maxPhotosPerPlace, stop.includedPhotos.count)
+                    guard photoCount > 0 else { continue }
+                    if !isFirstPhotoOfVideo {
+                        total += noMapInterPlaceTransitionSeconds
+                    }
+                    for photoIdx in 0..<photoCount {
+                        let photo = stop.includedPhotos[photoIdx]
+                        let clipDur = momentVideoDurationSeconds(for: photo)
+                        if clipDur > 0 {
+                            if !isFirstPhotoOfVideo { total += mapToReelTransitionSeconds }
+                            total += clipDur
+                        } else {
+                            if photoIdx > 0 { total += cinematicPhotoToPhotoDissolveDurationSeconds }
+                            total += secondsPerPhoto
+                        }
+                        isFirstPhotoOfVideo = false
+                    }
+                }
+            }
+            return total
+        }
 
         if let firstDay = days.first, let firstStop = firstDay.placeStops.first, hasFiniteCoord(firstStop) {
             // Day itinerary cards replace the cover→map crossfade with cover→card→map
@@ -229,6 +261,7 @@ enum CinematicBlogVideoBuilder {
         maxPhotosPerPlace: Int = 5,
         includedPlaceIDs: Set<UUID>? = nil,
         showDayItineraryCards: Bool = false,
+        showMapFrames: Bool = true,
         progressHandler: ((Double) -> Void)? = nil,
         momentAudioHandler: ((URL, Double, Double) -> Void)? = nil,
         frameHandler: (UIImage, Double) async throws -> Void
@@ -261,7 +294,7 @@ enum CinematicBlogVideoBuilder {
             frameHandler: frameHandler
         )
 
-        if let firstDay = days.first, !firstDay.placeStops.isEmpty {
+        if showMapFrames, let firstDay = days.first, !firstDay.placeStops.isEmpty {
             let firstStops = firstDay.placeStops
             if let firstStop = firstStops.first,
                let fc = firstStop.representativeLocation?.clCoordinate,
@@ -326,6 +359,8 @@ enum CinematicBlogVideoBuilder {
         // When the travel animation zooms into the next stop, it hands off the tight
         // arrival image here so the next iteration can skip pan + zoom.
         var travelHandoffTightImage: UIImage? = nil
+        // No-map mode: last photo from the previous place for slide-push inter-place transition.
+        var noMapInterPlaceLastSlide: UIImage? = nil
 
         for (dayIdx, day) in days.enumerated() {
             try Task.checkCancellation()
@@ -337,8 +372,6 @@ enum CinematicBlogVideoBuilder {
             for (placeIdx, stop) in stops.enumerated() {
                 try Task.checkCancellation()
                 var lastFocusedMapCompositeForPhotoTransition: UIImage?
-                var mapToPhotoThumbCell: CGRect?
-                var mapToPhotoThumbCorner: CGFloat?
                 /// Cinematic export: brand chip only on the first map segment (first day, first stop).
                 let isFirstMapSegmentInVideo = (dayIdx == 0 && placeIdx == 0)
 
@@ -346,7 +379,8 @@ enum CinematicBlogVideoBuilder {
                 let handoffTight = travelHandoffTightImage
                 travelHandoffTightImage = nil
 
-                if let focusedCoord = stop.representativeLocation?.clCoordinate,
+                if showMapFrames,
+                   let focusedCoord = stop.representativeLocation?.clCoordinate,
                    focusedCoord.latitude.isFinite, focusedCoord.longitude.isFinite {
 
                     var photoThumbs: [UIImage] = []
@@ -499,12 +533,6 @@ enum CinematicBlogVideoBuilder {
                             frameHandler: frameHandler
                         )
                         lastFocusedMapCompositeForPhotoTransition = overlaid
-                        if let thumb = firstThumbnailCellOnFocusedPlaceMap(
-                            pixelSize: pixelSize, stop: stop, photoThumbnails: photoThumbs
-                        ) {
-                            mapToPhotoThumbCell = thumb.rect
-                            mapToPhotoThumbCorner = thumb.cornerRadius
-                        }
                     }
 
                     // Record this stop so the persistent trail grows with each visit.
@@ -521,58 +549,91 @@ enum CinematicBlogVideoBuilder {
                 //    place/time overlay (no still shown); otherwise a Ken-Burns still is shown.
                 var lastPhotoSlide: UIImage?
                 var lastPhotoKBLastFrame: UIImage?
+                var placeCaptionAssignedToSlide = false
+                let placeStoryForSlides = showPhotoCaptions ? effectivePlaceStory(for: stop) : nil
                 for (photoIdx, photo) in stop.includedPhotos.prefix(maxPhotosPerPlace).enumerated() {
                     try Task.checkCancellation()
                     let timeLabel = photoSlideTimeDisplayText(for: photo, stop: stop)
 
-                    if let clipURL = momentVideoURL(for: photo) {
-                        // Reel found: show it directly with place/time overlay, dissolving from the
-                        // previous frame (focused map for the first photo, last KB frame otherwise).
+                    var emittedReel = false
+                    if momentVideoDurationSeconds(for: photo) > 0,
+                       let clipURL = momentVideoURL(for: photo) {
+                        // Reel with valid duration: decode frames with overlays; fall back to still if decode fails.
                         let dissolveFrom: UIImage? = lastPhotoKBLastFrame ?? lastFocusedMapCompositeForPhotoTransition
+                        let (slideCaption, usesPlaceCaptionFallback) = slideCaptionForExport(
+                            photo: photo,
+                            placeStory: placeStoryForSlides,
+                            placeCaptionAssigned: placeCaptionAssignedToSlide
+                        )
                         if let clipLast = try await emitMomentVideoClipWithPlaceOverlay(
                             url: clipURL,
                             pixelSize: pixelSize,
                             dissolveFrom: dissolveFrom,
+                            caption: slideCaption,
                             placeName: stop.placeTitle,
                             timestampText: timeLabel,
                             momentAudioHandler: momentAudioHandler,
                             frameHandler: frameHandler
                         ) {
+                            if usesPlaceCaptionFallback { placeCaptionAssignedToSlide = true }
                             lastPhotoKBLastFrame = clipLast
                             lastPhotoSlide = clipLast
+                            emittedReel = true
                         }
-                        continue
                     }
 
+                    if emittedReel { continue }
+
                     if let img = await loadPhoto(photo, targetSize: pixelSize) {
-                        // First photo: hero zoom from the focused-map thumbnail cell.
-                        if photoIdx == 0,
-                           let mapComposite = lastFocusedMapCompositeForPhotoTransition,
-                           let fromCell = mapToPhotoThumbCell,
-                           let fromCorner = mapToPhotoThumbCorner {
-                            let toRect = photoAspectFillDrawRect(for: img, pixelSize: pixelSize)
-                            let nFrames = max(
-                                14,
-                                Int(round(mapToFirstPhotoTransitionSeconds * mapToFirstPhotoTransitionFPS))
-                            )
-                            let transitionDt = mapToFirstPhotoTransitionSeconds / Double(nFrames)
-                            let denom = max(nFrames - 1, 1)
-                            for fi in 0..<nFrames {
-                                try Task.checkCancellation()
-                                let rawT = CGFloat(fi) / CGFloat(denom)
-                                let eased = easeInOutCubic(rawT)
-                                let frame = autoreleasepool {
-                                    drawMapToFirstPhotoTransitionFrame(
-                                        lastMapComposite: mapComposite,
-                                        photo: img,
-                                        progress: eased,
-                                        fromCell: fromCell,
-                                        fromCornerRadius: fromCorner,
-                                        toPhotoRect: toRect,
-                                        pixelSize: pixelSize
-                                    )
+                        let (slideCaption, usesPlaceCaptionFallback) = slideCaptionForExport(
+                            photo: photo,
+                            placeStory: placeStoryForSlides,
+                            placeCaptionAssigned: placeCaptionAssignedToSlide
+                        )
+                        if usesPlaceCaptionFallback { placeCaptionAssignedToSlide = true }
+                        // First photo of a place: iris reveal from map (showMapFrames on)
+                        // or slide-push from the previous place's last photo (showMapFrames off).
+                        if photoIdx == 0 {
+                            if let mapComposite = lastFocusedMapCompositeForPhotoTransition {
+                                // Iris aperture opens from the tight map's pin center (canvas center).
+                                let irisCenter = CGPoint(x: pixelSize.width / 2, y: pixelSize.height / 2)
+                                let nFrames = max(8, Int(round(mapToFirstPhotoTransitionSeconds * mapToFirstPhotoTransitionFPS)))
+                                let transitionDt = mapToFirstPhotoTransitionSeconds / Double(nFrames)
+                                let denom = max(nFrames - 1, 1)
+                                for fi in 0..<nFrames {
+                                    try Task.checkCancellation()
+                                    let rawT = CGFloat(fi + 1) / CGFloat(denom + 1)
+                                    let frame = autoreleasepool {
+                                        drawIrisRevealFrame(
+                                            mapComposite: mapComposite,
+                                            photo: img,
+                                            center: irisCenter,
+                                            progress: rawT,
+                                            pixelSize: pixelSize
+                                        )
+                                    }
+                                    try await frameHandler(frame, transitionDt)
                                 }
-                                try await frameHandler(frame, transitionDt)
+                            } else if !showMapFrames, let prevSlide = noMapInterPlaceLastSlide {
+                                // Slide-push from the previous place's last photo into this one.
+                                let firstKBForSlide = autoreleasepool {
+                                    drawPhotoSlide(img, caption: slideCaption, placeName: stop.placeTitle,
+                                                   timestampText: timeLabel,
+                                                   pixelSize: pixelSize, kbScale: 1.0)
+                                }
+                                let nFrames = max(8, Int(round(noMapInterPlaceTransitionSeconds * noMapInterPlaceTransitionFPS)))
+                                let transitionDt = noMapInterPlaceTransitionSeconds / Double(nFrames)
+                                let denom = max(nFrames - 1, 1)
+                                for fi in 0..<nFrames {
+                                    try Task.checkCancellation()
+                                    let rawT = CGFloat(fi + 1) / CGFloat(denom + 1)
+                                    let frame = autoreleasepool {
+                                        drawSlidePushFrame(outgoing: prevSlide, incoming: firstKBForSlide,
+                                                           progress: rawT, pixelSize: pixelSize)
+                                    }
+                                    try await frameHandler(frame, transitionDt)
+                                }
+                                noMapInterPlaceLastSlide = nil
                             }
                         }
 
@@ -586,7 +647,7 @@ enum CinematicBlogVideoBuilder {
                         let firstKBFrame = autoreleasepool {
                             drawPhotoSlide(
                                 img,
-                                caption: showPhotoCaptions ? photo.caption : nil,
+                                caption: slideCaption,
                                 placeName: stop.placeTitle,
                                 timestampText: timeLabel,
                                 pixelSize: pixelSize,
@@ -617,7 +678,7 @@ enum CinematicBlogVideoBuilder {
                             let frame = autoreleasepool {
                                 drawPhotoSlide(
                                     img,
-                                    caption: showPhotoCaptions ? photo.caption : nil,
+                                    caption: slideCaption,
                                     placeName: stop.placeTitle,
                                     timestampText: timeLabel,
                                     pixelSize: pixelSize,
@@ -633,13 +694,18 @@ enum CinematicBlogVideoBuilder {
                 }
 
                 // Transition to next stop: travel animation (path reveal + vehicle icon) for
-                // same-day moves; simple cross-dissolve to the next day's overview for day changes.
+                // same-day moves; iris-contract to map for day changes; or slide-push when showMapFrames=false.
                 let isLastPlaceOverall = (dayIdx == days.count - 1) && (placeIdx == stops.count - 1)
                 let isLastPlaceOfDay   = placeIdx == stops.count - 1
 
-                if !isLastPlaceOverall, let lastSlide = lastPhotoSlide {
+                // No-map mode: store the last photo for slide-push at the start of the next place.
+                if !showMapFrames, let lastSlide = lastPhotoSlide {
+                    noMapInterPlaceLastSlide = lastSlide
+                }
+
+                if showMapFrames, !isLastPlaceOverall, let lastSlide = lastPhotoSlide {
                     if isLastPlaceOfDay {
-                        // Cross-day transition: dissolve from the last photo into the next day's
+                        // Cross-day transition: iris contract from the last photo into the next day's
                         // overview (or via an itinerary card when enabled); the next iteration
                         // starts its normal pan+zoom from that overview.
                         let nextDayStops = days[dayIdx + 1].placeStops
@@ -658,7 +724,7 @@ enum CinematicBlogVideoBuilder {
                                 applyingPoweredByBloggoWatermarkIfNeeded(to: nextMapBase, pixelSize: pixelSize, show: false)
                             }
                             if showDayItineraryCards {
-                                // lastPhoto → nextDayCard → nextMap
+                                // lastPhoto → nextDayCard → nextMap (keep cross-dissolve for card transitions)
                                 let nextDayCard = autoreleasepool {
                                     drawDayItineraryCard(day: nextDay, dayNumber: dayIdx + 2, pixelSize: pixelSize)
                                 }
@@ -682,16 +748,19 @@ enum CinematicBlogVideoBuilder {
                                     try await frameHandler(blended, cdt)
                                 }
                             } else {
-                                let nFadeFrames = max(14, Int(round(lastPhotoToMapFadeSeconds * lastPhotoToMapFadeFPS)))
+                                // Iris contract: photo aperture closes into the map's pin center.
+                                let irisCenter = CGPoint(x: pixelSize.width / 2, y: pixelSize.height / 2)
+                                let nFadeFrames = max(8, Int(round(lastPhotoToMapFadeSeconds * lastPhotoToMapFadeFPS)))
                                 let fadeDt = lastPhotoToMapFadeSeconds / Double(nFadeFrames)
                                 let denom = max(nFadeFrames - 1, 1)
                                 for fi in 0..<nFadeFrames {
                                     try Task.checkCancellation()
-                                    let eased = easeInOutCubic(CGFloat(fi) / CGFloat(denom))
-                                    let blended = autoreleasepool {
-                                        blendCoverToMap(from: lastSlide, to: nextMapOut, progress: eased, size: pixelSize)
+                                    let rawT = CGFloat(fi + 1) / CGFloat(denom + 1)
+                                    let frame = autoreleasepool {
+                                        drawIrisContractFrame(photo: lastSlide, mapComposite: nextMapOut,
+                                                              center: irisCenter, progress: rawT, pixelSize: pixelSize)
                                     }
-                                    try await frameHandler(blended, fadeDt)
+                                    try await frameHandler(frame, fadeDt)
                                 }
                             }
                         }
@@ -818,16 +887,19 @@ enum CinematicBlogVideoBuilder {
                             let nextMapOut = autoreleasepool {
                                 applyingPoweredByBloggoWatermarkIfNeeded(to: nextMapBase, pixelSize: pixelSize, show: false)
                             }
-                            let nFadeFrames = max(14, Int(round(lastPhotoToMapFadeSeconds * lastPhotoToMapFadeFPS)))
+                            // Iris contract fallback (same as day-boundary non-card path).
+                            let irisCenter = CGPoint(x: pixelSize.width / 2, y: pixelSize.height / 2)
+                            let nFadeFrames = max(8, Int(round(lastPhotoToMapFadeSeconds * lastPhotoToMapFadeFPS)))
                             let fadeDt = lastPhotoToMapFadeSeconds / Double(nFadeFrames)
                             let denom = max(nFadeFrames - 1, 1)
                             for fi in 0..<nFadeFrames {
                                 try Task.checkCancellation()
-                                let eased = easeInOutCubic(CGFloat(fi) / CGFloat(denom))
-                                let blended = autoreleasepool {
-                                    blendCoverToMap(from: lastSlide, to: nextMapOut, progress: eased, size: pixelSize)
+                                let rawT = CGFloat(fi + 1) / CGFloat(denom + 1)
+                                let frame = autoreleasepool {
+                                    drawIrisContractFrame(photo: lastSlide, mapComposite: nextMapOut,
+                                                          center: irisCenter, progress: rawT, pixelSize: pixelSize)
                                 }
-                                try await frameHandler(blended, fadeDt)
+                                try await frameHandler(frame, fadeDt)
                             }
                         }
                     }
@@ -1649,13 +1721,23 @@ enum CinematicBlogVideoBuilder {
                                     y: markerCenter.y - numSize.height / 2), withAttributes: numAttribs)
 
             let titleX = markerCenter.x + markerR + 14
+            let titleMaxW = w - titleX - trailingPad
             let titleFont = UIFont.systemFont(ofSize: (w * 0.050).rounded(), weight: .bold)
-            let titleAttribs: [NSAttributedString.Key: Any] = [.font: titleFont, .foregroundColor: UIColor.white]
+            let titlePara = NSMutableParagraphStyle()
+            titlePara.lineBreakMode = .byTruncatingTail
+            let titleAttribs: [NSAttributedString.Key: Any] = [
+                .font: titleFont,
+                .foregroundColor: UIColor.white,
+                .paragraphStyle: titlePara
+            ]
+            let titleLineH = ceil(titleFont.lineHeight)
             (stop.placeTitle as NSString).draw(
-                in: CGRect(x: titleX, y: contentY, width: w - titleX - trailingPad, height: titleFont.lineHeight * 2),
-                withAttributes: titleAttribs
+                with: CGRect(x: titleX, y: contentY, width: titleMaxW, height: titleLineH),
+                options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
+                attributes: titleAttribs,
+                context: nil
             )
-            var nextY = contentY + titleFont.lineHeight + 4
+            var nextY = contentY + titleLineH + 4
 
             if let sub = stop.placeSubtitle, !sub.isEmpty {
                 let subFont = UIFont.systemFont(ofSize: (w * 0.032).rounded(), weight: .regular)
@@ -1799,7 +1881,7 @@ enum CinematicBlogVideoBuilder {
         let markerCenter = CGPoint(x: leadingPad + markerR, y: contentY + markerR)
         let titleX = markerCenter.x + markerR + 14
         let titleFont = UIFont.systemFont(ofSize: (w * 0.050).rounded(), weight: .bold)
-        var nextY = contentY + titleFont.lineHeight + 4
+        var nextY = contentY + ceil(titleFont.lineHeight) + 4
 
         if let sub = stop.placeSubtitle, !sub.isEmpty {
             let subFont = UIFont.systemFont(ofSize: (w * 0.032).rounded(), weight: .regular)
@@ -1941,7 +2023,149 @@ enum CinematicBlogVideoBuilder {
         }
     }
 
+    // MARK: - Iris & slide-push transitions
+
+    /// Map → Photo: iris aperture opens from the canvas center (the focused place pin location on
+    /// a tight 0.003° map snapshot). The photo is revealed through a circle that expands with an
+    /// easeOutCubic curve; a bright rim at the leading edge fades as the aperture widens.
+    private static func drawIrisRevealFrame(
+        mapComposite: UIImage,
+        photo: UIImage,
+        center: CGPoint,
+        progress t: CGFloat,
+        pixelSize: CGSize
+    ) -> UIImage {
+        let u = min(1, max(0, t))
+        let eased: CGFloat = 1 - pow(1 - u, 3)  // easeOutCubic
+        let maxRadius = hypot(
+            max(center.x, pixelSize.width  - center.x),
+            max(center.y, pixelSize.height - center.y)
+        )
+        let radius = maxRadius * eased
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
+            let cg = ctx.cgContext
+            prepareContextForSharpBitmapCompositing(cg)
+            mapComposite.draw(in: CGRect(origin: .zero, size: pixelSize))
+            guard radius > 0.5 else { return }
+            cg.saveGState()
+            cg.addEllipse(in: CGRect(x: center.x - radius, y: center.y - radius,
+                                      width: radius * 2, height: radius * 2))
+            cg.clip()
+            prepareContextForSharpBitmapCompositing(cg)
+            photo.draw(in: photoAspectFillDrawRect(for: photo, pixelSize: pixelSize))
+            cg.restoreGState()
+            // Bright rim fades out as the aperture opens (first 40 % of the animation).
+            let rimAlpha = max(0, 1 - u / 0.4) * 0.55
+            if rimAlpha > 0.01 {
+                cg.setStrokeColor(UIColor.white.withAlphaComponent(rimAlpha).cgColor)
+                cg.setLineWidth(max(3, pixelSize.width * 0.005))
+                cg.strokeEllipse(in: CGRect(x: center.x - radius, y: center.y - radius,
+                                             width: radius * 2, height: radius * 2))
+            }
+        }
+    }
+
+    /// Photo → Map: iris aperture contracts back to the canvas center, revealing the map beneath.
+    /// Uses easeInCubic so the aperture closes slowly at first then snaps shut — like a camera lens.
+    private static func drawIrisContractFrame(
+        photo: UIImage,
+        mapComposite: UIImage,
+        center: CGPoint,
+        progress t: CGFloat,
+        pixelSize: CGSize
+    ) -> UIImage {
+        let u = min(1, max(0, t))
+        let eased: CGFloat = u * u * u  // easeInCubic
+        let maxRadius = hypot(
+            max(center.x, pixelSize.width  - center.x),
+            max(center.y, pixelSize.height - center.y)
+        )
+        let radius = maxRadius * (1 - eased)
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
+            let cg = ctx.cgContext
+            prepareContextForSharpBitmapCompositing(cg)
+            mapComposite.draw(in: CGRect(origin: .zero, size: pixelSize))
+            guard radius > 0.5 else { return }
+            cg.saveGState()
+            cg.addEllipse(in: CGRect(x: center.x - radius, y: center.y - radius,
+                                      width: radius * 2, height: radius * 2))
+            cg.clip()
+            prepareContextForSharpBitmapCompositing(cg)
+            photo.draw(in: photoAspectFillDrawRect(for: photo, pixelSize: pixelSize))
+            cg.restoreGState()
+        }
+    }
+
+    /// No-map inter-place transition: outgoing photo slides left, incoming slides in from the right.
+    /// Fast easeInOutCubic keeps it snappy for short-form social posting.
+    private static func drawSlidePushFrame(
+        outgoing: UIImage,
+        incoming: UIImage,
+        progress t: CGFloat,
+        pixelSize: CGSize
+    ) -> UIImage {
+        let u = easeInOutCubic(min(1, max(0, t)))
+        let offset = pixelSize.width * u
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
+            let cg = ctx.cgContext
+            cg.setFillColor(UIColor.black.cgColor)
+            cg.fill(CGRect(origin: .zero, size: pixelSize))
+            prepareContextForSharpBitmapCompositing(cg)
+            outgoing.draw(in: CGRect(x: -offset, y: 0,
+                                      width: pixelSize.width, height: pixelSize.height))
+            incoming.draw(in: CGRect(x: pixelSize.width - offset, y: 0,
+                                      width: pixelSize.width, height: pixelSize.height))
+        }
+    }
+
     // MARK: - Moment video clip
+
+    /// Matches `StoryBookBuilder.effectivePlaceStory` — manual overall story, then narrative, then note.
+    private static func effectivePlaceStory(for stop: PlaceStop) -> String? {
+        let manual = stop.overallStory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if stop.overallStoryIsManual, !manual.isEmpty { return manual }
+        if let narrative = stop.placeNarrative?.trimmingCharacters(in: .whitespacesAndNewlines), !narrative.isEmpty {
+            return narrative
+        }
+        if !manual.isEmpty { return manual }
+        if let note = stop.noteText?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty { return note }
+        return nil
+    }
+
+    /// Per-photo caption only (`RecapPhoto.caption`, then Bloggo capture `meta.json`).
+    private static func resolvedPhotoCaption(for photo: RecapPhoto) -> String? {
+        let fromPhoto = photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !fromPhoto.isEmpty { return fromPhoto }
+        guard let lid = photo.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !lid.isEmpty,
+              lid.hasPrefix(AppCapturePhotoService.prefix),
+              let captureId = AppCapturePhotoService.uuid(from: lid) else { return nil }
+        let fromMeta = AppCapturePhotoService.shared.metadata(captureId: captureId)?.caption?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return fromMeta.isEmpty ? nil : fromMeta
+    }
+
+    /// Photo caption when set; otherwise the place story on the first exported slide at this stop that has no photo caption.
+    /// The `Bool` is true when the place story is used (caller should set `placeCaptionAssigned` only after a successful emit).
+    private static func slideCaptionForExport(
+        photo: RecapPhoto,
+        placeStory: String?,
+        placeCaptionAssigned: Bool
+    ) -> (String?, Bool) {
+        if let photoCaption = resolvedPhotoCaption(for: photo) { return (photoCaption, false) }
+        guard !placeCaptionAssigned, let placeStory else { return (nil, false) }
+        return (placeStory, true)
+    }
 
     private static func momentVideoURL(for photo: RecapPhoto) -> URL? {
         guard let id = photo.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1958,85 +2182,90 @@ enum CinematicBlogVideoBuilder {
         return sec
     }
 
-    /// Decodes `moment_video.mov` at export FPS, overlays place name + timestamp on every frame,
+    /// Decodes `moment_video.mov` at export FPS, overlays caption (when provided), place name + timestamp on every frame,
     /// and streams through `frameHandler`. Cross-dissolves from `dissolveFrom` when provided.
     /// Returns the last emitted frame (for dissolves into the next slide).
     private static func emitMomentVideoClipWithPlaceOverlay(
         url: URL,
         pixelSize: CGSize,
         dissolveFrom previousFrame: UIImage?,
+        caption: String?,
         placeName: String,
         timestampText: String,
         momentAudioHandler: ((URL, Double, Double) -> Void)?,
         frameHandler: (UIImage, Double) async throws -> Void
     ) async throws -> UIImage? {
-        let asset = AVURLAsset(url: url)
-        let durationSec: Double
-        if #available(iOS 16.0, *) {
-            durationSec = CMTimeGetSeconds(try await asset.load(.duration))
-        } else {
-            durationSec = CMTimeGetSeconds(asset.duration)
-        }
-        guard durationSec.isFinite, durationSec > 0.02 else { return previousFrame }
+        do {
+            let asset = AVURLAsset(url: url)
+            let durationSec: Double
+            if #available(iOS 16.0, *) {
+                durationSec = CMTimeGetSeconds(try await asset.load(.duration))
+            } else {
+                durationSec = CMTimeGetSeconds(asset.duration)
+            }
+            guard durationSec.isFinite, durationSec > 0.02 else { return nil }
 
-        let transitionSeconds = previousFrame != nil ? mapToReelTransitionSeconds : 0
-        momentAudioHandler?(url, transitionSeconds, durationSec)
+            let transitionSeconds = previousFrame != nil ? mapToReelTransitionSeconds : 0
+            momentAudioHandler?(url, transitionSeconds, durationSec)
 
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: pixelSize.width, height: pixelSize.height)
-        generator.requestedTimeToleranceBefore = CMTime(seconds: 0.02, preferredTimescale: 600)
-        generator.requestedTimeToleranceAfter = CMTime(seconds: 0.02, preferredTimescale: 600)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: pixelSize.width, height: pixelSize.height)
+            generator.requestedTimeToleranceBefore = CMTime(seconds: 0.02, preferredTimescale: 600)
+            generator.requestedTimeToleranceAfter = CMTime(seconds: 0.02, preferredTimescale: 600)
 
-        let frameCount = max(1, Int((durationSec * momentVideoExportFPS).rounded()))
-        let dt = durationSec / Double(frameCount)
+            let frameCount = max(1, Int((durationSec * momentVideoExportFPS).rounded()))
+            let dt = durationSec / Double(frameCount)
 
-        func videoFrameWithOverlay(at index: Int) throws -> UIImage {
-            let t = min(Double(index) / momentVideoExportFPS, max(durationSec - 0.001, 0))
-            let time = CMTime(seconds: t, preferredTimescale: 600)
-            let cg = try generator.copyCGImage(at: time, actualTime: nil)
-            return drawPhotoSlide(
-                UIImage(cgImage: cg),
-                caption: nil,
-                placeName: placeName,
-                timestampText: timestampText,
-                pixelSize: pixelSize,
-                kbScale: 1.0
-            )
-        }
+            func videoFrameWithOverlay(at index: Int) throws -> UIImage {
+                let t = min(Double(index) / momentVideoExportFPS, max(durationSec - 0.001, 0))
+                let time = CMTime(seconds: t, preferredTimescale: 600)
+                let cg = try generator.copyCGImage(at: time, actualTime: nil)
+                return drawPhotoSlide(
+                    UIImage(cgImage: cg),
+                    caption: caption,
+                    placeName: placeName,
+                    timestampText: timestampText,
+                    pixelSize: pixelSize,
+                    kbScale: 1.0
+                )
+            }
 
-        var lastEmitted: UIImage?
+            var lastEmitted: UIImage?
 
-        if let prev = previousFrame {
-            let firstVF = try videoFrameWithOverlay(at: 0)
-            let nD = max(10, Int(round(mapToReelTransitionSeconds * mapToReelTransitionFPS)))
-            let dDt = mapToReelTransitionSeconds / Double(nD)
-            let denom = max(nD - 1, 1)
-            for fi in 0..<nD {
-                try Task.checkCancellation()
-                let t = CGFloat(fi) / CGFloat(denom)
-                let blended = autoreleasepool {
-                    drawMapToReelTransitionFrame(mapFrame: prev, reelFrame: firstVF, progress: t, pixelSize: pixelSize)
+            if let prev = previousFrame {
+                let firstVF = try videoFrameWithOverlay(at: 0)
+                let nD = max(10, Int(round(mapToReelTransitionSeconds * mapToReelTransitionFPS)))
+                let dDt = mapToReelTransitionSeconds / Double(nD)
+                let denom = max(nD - 1, 1)
+                for fi in 0..<nD {
+                    try Task.checkCancellation()
+                    let t = CGFloat(fi) / CGFloat(denom)
+                    let blended = autoreleasepool {
+                        drawMapToReelTransitionFrame(mapFrame: prev, reelFrame: firstVF, progress: t, pixelSize: pixelSize)
+                    }
+                    try await frameHandler(blended, dDt)
                 }
-                try await frameHandler(blended, dDt)
+                lastEmitted = firstVF
+                for fi in 1..<frameCount {
+                    try Task.checkCancellation()
+                    let frame = try videoFrameWithOverlay(at: fi)
+                    lastEmitted = frame
+                    try await frameHandler(frame, dt)
+                }
+            } else {
+                for fi in 0..<frameCount {
+                    try Task.checkCancellation()
+                    let frame = try videoFrameWithOverlay(at: fi)
+                    lastEmitted = frame
+                    try await frameHandler(frame, dt)
+                }
             }
-            lastEmitted = firstVF
-            for fi in 1..<frameCount {
-                try Task.checkCancellation()
-                let frame = try videoFrameWithOverlay(at: fi)
-                lastEmitted = frame
-                try await frameHandler(frame, dt)
-            }
-        } else {
-            for fi in 0..<frameCount {
-                try Task.checkCancellation()
-                let frame = try videoFrameWithOverlay(at: fi)
-                lastEmitted = frame
-                try await frameHandler(frame, dt)
-            }
-        }
 
-        return lastEmitted
+            return lastEmitted
+        } catch {
+            return nil
+        }
     }
 
     // MARK: - Photo Slide
@@ -2095,15 +2324,18 @@ enum CinematicBlogVideoBuilder {
             let storyAttribs: [NSAttributedString.Key: Any] = [
                 .font: storyFont, .foregroundColor: UIColor.white, .paragraphStyle: para
             ]
-            let capHeight: CGFloat = {
-                guard hasStory, !capTrimmed.isEmpty else { return 0 }
-                let measured = (capTrimmed as NSString).boundingRect(
-                    with: CGSize(width: maxW, height: storyFont.lineHeight * 4 + 16),
+            let captionMaxLines = 12
+            let capMeasureHeight = storyFont.lineHeight * CGFloat(captionMaxLines) + 16
+            let capBounds: CGRect = {
+                guard hasStory, !capTrimmed.isEmpty else { return .zero }
+                return (capTrimmed as NSString).boundingRect(
+                    with: CGSize(width: maxW, height: capMeasureHeight),
                     options: [.usesLineFragmentOrigin, .usesFontLeading],
                     attributes: storyAttribs, context: nil
                 )
-                return ceil(measured.height)
             }()
+            let capWidth = min(max(ceil(capBounds.width), 1), maxW)
+            let capHeight = ceil(capBounds.height)
 
             // Place name above timestamp — top center stack, kept low to clear faces / skyline
             let placeFont = UIFont.systemFont(ofSize: w * 0.038, weight: .semibold)
@@ -2173,11 +2405,6 @@ enum CinematicBlogVideoBuilder {
             // Story caption — vertically centered (~62 % down) so it clears both the top
             // place/time pills and the bottom chrome on TikTok / Facebook / Instagram.
             if hasStory, !capTrimmed.isEmpty, capHeight > 0 {
-                // Measure the true single-line width so we can CENTER the draw rect on the
-                // canvas directly — never rely on paragraph .center alignment for positioning
-                // (it doesn't work when the container is wider than the text content).
-                let singleLineW = ceil((capTrimmed as NSString).size(withAttributes: storyAttribs).width)
-                let capWidth = min(singleLineW, maxW)
                 let capX = ((w - capWidth) / 2).rounded()
                 let capY  = (h * 0.62 - capHeight / 2).rounded()
                 let capRect = CGRect(x: capX, y: capY, width: capWidth, height: capHeight)

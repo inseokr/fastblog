@@ -816,6 +816,8 @@ private struct SettingsView: View {
     @State private var backupFlowAlertMessage = ""
     @State private var showBackupFlowAlert = false
     @AppStorage("bloggo.backupImport.preferPhotoLibrary") private var preferPhotoLibraryWhenImportingBackup = true
+    @AppStorage(MomentVideoPreferences.userDefaultsKey) private var momentVideoMaxDurationSeconds: Double =
+        MomentVideoPreferences.defaultDurationSeconds
     @State private var settingsHelpTopic: SettingsHelpTopic?
 
     private var travelStats: (countries: Int, cities: Int, places: Int) {
@@ -966,6 +968,23 @@ private struct SettingsView: View {
                     PhotoAccessRow()
                 } header: {
                     Text("Permissions")
+                }
+
+                Section {
+                    Picker(selection: $momentVideoMaxDurationSeconds) {
+                        ForEach(MomentVideoPreferences.choices, id: \.self) { seconds in
+                            Text(MomentVideoPreferences.label(for: seconds)).tag(seconds)
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Max reel length")
+                            Text("Applies to Reel captures in the in-app camera.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Camera")
                 }
 
                 Section {
@@ -1171,6 +1190,9 @@ private struct SettingsView: View {
                 .environmentObject(authService)
             }
             .onAppear {
+                if !MomentVideoPreferences.choices.contains(momentVideoMaxDurationSeconds) {
+                    momentVideoMaxDurationSeconds = MomentVideoPreferences.defaultDurationSeconds
+                }
                 customProfileImageData = authService.profileImageData
                 loadCloudStorageIfNeeded()
                 tripExclusionRadius = NeighborhoodStore.tripExclusionRadiusMiles

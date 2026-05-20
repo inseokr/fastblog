@@ -13,7 +13,7 @@ struct BlogVideoExportOptions: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case secondsPerSlide, musicFilename, musicDisabled, showPhotoCaptions, maxPhotosPerPlace,
-             includedPlaceIDs, includedPlaceCategoryRaws, showDayItineraryCards, exportMode
+             includedPlaceIDs, includedPlaceCategoryRaws, showDayItineraryCards, exportMode, showMapFrames
     }
 
     var secondsPerSlide: Double = 3.0
@@ -33,6 +33,8 @@ struct BlogVideoExportOptions: Codable, Equatable {
     var showDayItineraryCards: Bool = false
     /// Whether to export a cinematic video or a set of carousel slide images.
     var exportMode: ExportMode = .video
+    /// When true, map pan/zoom/overlay segments are included between photo slides.
+    var showMapFrames: Bool = true
 
     init(
         secondsPerSlide: Double = 3.0,
@@ -43,7 +45,8 @@ struct BlogVideoExportOptions: Codable, Equatable {
         includedPlaceIDs: Set<UUID>? = nil,
         includedPlaceCategoryRaws: Set<String>? = nil,
         showDayItineraryCards: Bool = false,
-        exportMode: ExportMode = .video
+        exportMode: ExportMode = .video,
+        showMapFrames: Bool = true
     ) {
         self.secondsPerSlide = secondsPerSlide
         self.musicFilename = musicFilename
@@ -54,6 +57,7 @@ struct BlogVideoExportOptions: Codable, Equatable {
         self.includedPlaceCategoryRaws = includedPlaceCategoryRaws
         self.showDayItineraryCards = showDayItineraryCards
         self.exportMode = exportMode
+        self.showMapFrames = showMapFrames
     }
 
     init(from decoder: Decoder) throws {
@@ -67,6 +71,7 @@ struct BlogVideoExportOptions: Codable, Equatable {
         includedPlaceCategoryRaws = try c.decodeIfPresent(Set<String>.self, forKey: .includedPlaceCategoryRaws)
         showDayItineraryCards = try c.decodeIfPresent(Bool.self, forKey: .showDayItineraryCards) ?? false
         exportMode = try c.decodeIfPresent(ExportMode.self, forKey: .exportMode) ?? .video
+        showMapFrames = try c.decodeIfPresent(Bool.self, forKey: .showMapFrames) ?? true
     }
 
     func encode(to encoder: Encoder) throws {
@@ -80,6 +85,7 @@ struct BlogVideoExportOptions: Codable, Equatable {
         try c.encodeIfPresent(includedPlaceCategoryRaws, forKey: .includedPlaceCategoryRaws)
         try c.encode(showDayItineraryCards, forKey: .showDayItineraryCards)
         try c.encode(exportMode, forKey: .exportMode)
+        try c.encode(showMapFrames, forKey: .showMapFrames)
     }
 
     /// Filename passed to `SlideshowBundledMusicLibrary`, or `nil` when music is off.
@@ -135,7 +141,8 @@ enum BlogVideoExportService {
             secondsPerPhoto: options.secondsPerSlide,
             maxPhotosPerPlace: options.maxPhotosPerPlace,
             includedPlaceIDs: options.includedPlaceIDs,
-            showDayItineraryCards: options.showDayItineraryCards
+            showDayItineraryCards: options.showDayItineraryCards,
+            showMapFrames: options.showMapFrames
         ) + videoWriterEndPadSeconds
     }
 
@@ -290,6 +297,7 @@ enum BlogVideoExportService {
             maxPhotosPerPlace: options.maxPhotosPerPlace,
             includedPlaceIDs: options.includedPlaceIDs,
             showDayItineraryCards: options.showDayItineraryCards,
+            showMapFrames: options.showMapFrames,
             progressHandler: { p in progressHandler?(p * 0.85) },
             momentAudioHandler: { url, transitionSeconds, clipSeconds in
                 momentAudioSegments.append(
