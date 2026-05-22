@@ -220,6 +220,10 @@ enum BlogVideoExportService {
         static let logicalWidth: CGFloat = 540
         static let logicalHeight: CGFloat = 960
         static var logicalSize: CGSize { CGSize(width: logicalWidth, height: logicalHeight) }
+        /// @2× logical canvas — matches cinematic export and 9:16 social targets.
+        static var exportPixelSize: CGSize {
+            CGSize(width: logicalWidth * 2, height: logicalHeight * 2)
+        }
     }
 
     enum ExportError: Error, LocalizedError {
@@ -543,6 +547,67 @@ enum BlogVideoExportService {
         return finalURL
     }
 
+    /// One stitched reel segment on the composition timeline (for per-clip portrait transforms).
+    private struct StitchedClipSegment {
+        let start: CMTime
+        let duration: CMTime
+        let layerTransform: CGAffineTransform
+    }
+
+    /// Aspect-fills source video into a fixed 9:16 canvas, honoring `preferredTransform`.
+    private static func layerTransformFillingVerticalCanvas(
+        naturalSize: CGSize,
+        preferredTransform: CGAffineTransform,
+        renderSize: CGSize
+    ) -> CGAffineTransform {
+        var displayRect = CGRect(origin: .zero, size: naturalSize).applying(preferredTransform)
+        let displayW = abs(displayRect.width)
+        let displayH = abs(displayRect.height)
+        guard displayW > 0, displayH > 0 else { return preferredTransform }
+
+        let scale = max(renderSize.width / displayW, renderSize.height / displayH)
+        var transform = preferredTransform.concatenating(CGAffineTransform(scaleX: scale, y: scale))
+        displayRect = CGRect(origin: .zero, size: naturalSize).applying(transform)
+        let dx = (renderSize.width - abs(displayRect.width)) / 2 - displayRect.minX
+        let dy = (renderSize.height - abs(displayRect.height)) / 2 - displayRect.minY
+        return transform.concatenating(CGAffineTransform(translationX: dx, y: dy))
+    }
+
+    private static func makePortraitFillVideoComposition(
+        renderSize: CGSize,
+        compositionTrack: AVCompositionTrack,
+        segments: [StitchedClipSegment],
+        timelineDuration: CMTime
+    ) -> AVMutableVideoComposition {
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.renderSize = renderSize
+        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+
+        var instructions = [AVMutableVideoCompositionInstruction]()
+        instructions.reserveCapacity(segments.count)
+
+        for segment in segments {
+            let instruction = AVMutableVideoCompositionInstruction()
+            instruction.timeRange = CMTimeRange(start: segment.start, duration: segment.duration)
+            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
+            layer.setTransform(segment.layerTransform, at: segment.start)
+            instruction.layerInstructions = [layer]
+            instructions.append(instruction)
+        }
+
+        if instructions.isEmpty {
+            let fallback = AVMutableVideoCompositionInstruction()
+            fallback.timeRange = CMTimeRange(start: .zero, duration: timelineDuration)
+            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
+            layer.setTransform(.identity, at: .zero)
+            fallback.layerInstructions = [layer]
+            instructions = [fallback]
+        }
+
+        videoComposition.instructions = instructions
+        return videoComposition
+    }
+
     /// Inserts each clip’s video (and clip audio when present) back-to-back, then exports once.
     private static func composeMomentClipsIntoVideo(
         clipURLs: [URL],
@@ -562,7 +627,10 @@ enum BlogVideoExportService {
             preferredTrackID: kCMPersistentTrackID_Invalid
         )
 
+        let renderSize = SocialVerticalVideoExportMetrics.exportPixelSize
         var cursor = CMTime.zero
+        var segments = [StitchedClipSegment]()
+        segments.reserveCapacity(clipURLs.count)
         let clipCount = clipURLs.count
 
         for (index, url) in clipURLs.enumerated() {
@@ -577,10 +645,25 @@ enum BlogVideoExportService {
 
             let sourceVideoTracks = try await asset.loadTracks(withMediaType: .video)
             if let sourceVideo = sourceVideoTracks.first {
+                let segmentStart = cursor
                 try compositionVideoTrack.insertTimeRange(
                     CMTimeRange(start: .zero, duration: duration),
                     of: sourceVideo,
                     at: cursor
+                )
+                let naturalSize = try await sourceVideo.load(.naturalSize)
+                let preferredTransform = try await sourceVideo.load(.preferredTransform)
+                let layerTransform = layerTransformFillingVerticalCanvas(
+                    naturalSize: naturalSize,
+                    preferredTransform: preferredTransform,
+                    renderSize: renderSize
+                )
+                segments.append(
+                    StitchedClipSegment(
+                        start: segmentStart,
+                        duration: duration,
+                        layerTransform: layerTransform
+                    )
                 )
             }
 
@@ -602,11 +685,19 @@ enum BlogVideoExportService {
 
         guard CMTimeCompare(cursor, .zero) > 0 else { throw ExportError.noReelsToExport }
 
+        let videoComposition = makePortraitFillVideoComposition(
+            renderSize: renderSize,
+            compositionTrack: compositionVideoTrack,
+            segments: segments,
+            timelineDuration: cursor
+        )
+
         try await runAssetExportSession(
             asset: composition,
             outputURL: outputURL,
             fileType: .mp4,
-            presetName: AVAssetExportPresetHighestQuality
+            presetName: AVAssetExportPresetHighestQuality,
+            videoComposition: videoComposition
         )
     }
 
@@ -616,7 +707,8 @@ enum BlogVideoExportService {
         fileType: AVFileType,
         presetName: String,
         timeRange: CMTimeRange? = nil,
-        audioMix: AVAudioMix? = nil
+        audioMix: AVAudioMix? = nil,
+        videoComposition: AVVideoComposition? = nil
     ) async throws {
         guard let session = AVAssetExportSession(asset: asset, presetName: presetName) else {
             throw ExportError.writerFailed("Could not create export session.")
@@ -626,6 +718,7 @@ enum BlogVideoExportService {
         session.shouldOptimizeForNetworkUse = true
         if let timeRange { session.timeRange = timeRange }
         session.audioMix = audioMix
+        session.videoComposition = videoComposition
         try Task.checkCancellation()
 
         let sessionBox = ExportSessionBox(session: session)
