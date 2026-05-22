@@ -65,6 +65,8 @@ enum CinematicBlogVideoBuilder {
     private static let mapToReelTransitionSeconds: Double = 0.50
     private static let mapToReelTransitionFPS: Double = 30
     private static let momentVideoExportFPS: Double = 30
+    /// Caps decode/encode work per reel so 15s clips do not always emit 450+ frames (reduces memory churn and export time).
+    private static let momentVideoMaxFramesPerClip = 360
 
     /// After the cover hold, cross-dissolve into the first day’s overview map (same frame as pan start).
     private static let coverToMapTransitionSeconds: Double = 0.72
@@ -122,13 +124,73 @@ enum CinematicBlogVideoBuilder {
     /// Omits `BlogVideoExportService`’s final writer pad — add `1/30` s there to match the encoded file.
     ///
     /// Assumes snapshot and photo loads succeed; failed MapKit/photo fetches produce a shorter real export.
+    /// Included photos at this stop that have a playable moment reel on disk.
+    static func exportableReelPhotos(
+        for stop: PlaceStop,
+        includedReelPhotoIDs: Set<UUID>? = nil
+    ) -> [RecapPhoto] {
+        let reels = stop.includedPhotos.filter { momentVideoDurationSeconds(for: $0) > 0 }
+        guard let ids = includedReelPhotoIDs else { return reels }
+        return reels.filter { ids.contains($0.id) }
+    }
+
+    static func allExportableReelPhotoIDs(
+        draft: RecapBlogDetail,
+        includedPlaceIDs: Set<UUID>? = nil
+    ) -> Set<UUID> {
+        Set(
+            draft.days.flatMap(\.placeStops)
+                .filter { stop in
+                    guard let ids = includedPlaceIDs else { return true }
+                    return ids.contains(stop.id)
+                }
+                .flatMap { exportableReelPhotos(for: $0) }
+                .map(\.id)
+        )
+    }
+
+    static func exportableReelCount(
+        draft: RecapBlogDetail,
+        includedPlaceIDs: Set<UUID>? = nil,
+        includedReelPhotoIDs: Set<UUID>? = nil
+    ) -> Int {
+        draft.days.flatMap(\.placeStops)
+            .filter { stop in
+                guard let ids = includedPlaceIDs else { return true }
+                return ids.contains(stop.id)
+            }
+            .reduce(0) { $0 + exportableReelPhotos(for: $1, includedReelPhotoIDs: includedReelPhotoIDs).count }
+    }
+
+    /// Moment-video file URLs in export order (for composition-based simple stitch).
+    static func orderedExportableMomentVideoClipURLs(
+        draft: RecapBlogDetail,
+        includedPlaceIDs: Set<UUID>? = nil,
+        includedReelPhotoIDs: Set<UUID>? = nil
+    ) -> [URL] {
+        draft.days.flatMap { day in
+            let stops: [PlaceStop]
+            if let ids = includedPlaceIDs {
+                stops = day.placeStops.filter { ids.contains($0.id) }
+            } else {
+                stops = day.placeStops
+            }
+            return stops.flatMap { stop in
+                exportableReelPhotos(for: stop, includedReelPhotoIDs: includedReelPhotoIDs)
+            }
+        }.compactMap { momentVideoURL(for: $0) }
+    }
+
     static func estimatedTimelineSecondsForExportConfiguration(
         draft: RecapBlogDetail,
         secondsPerPhoto: Double,
         maxPhotosPerPlace: Int,
         includedPlaceIDs: Set<UUID>? = nil,
+        includedReelPhotoIDs: Set<UUID>? = nil,
         showDayItineraryCards: Bool = false,
-        showMapFrames: Bool = true
+        showMapFrames: Bool = true,
+        videoStyle: BlogVideoExportOptions.VideoStyle = .cinematic,
+        reelsOnly: Bool = false
     ) -> Double {
         let days: [RecapBlogDay] = draft.days.compactMap { day in
             let filteredStops: [PlaceStop]
@@ -137,36 +199,47 @@ enum CinematicBlogVideoBuilder {
             } else {
                 filteredStops = day.placeStops
             }
-            guard !filteredStops.isEmpty else { return nil }
+            let stops = reelsOnly
+                ? filteredStops.filter { !exportableReelPhotos(for: $0, includedReelPhotoIDs: includedReelPhotoIDs).isEmpty }
+                : filteredStops
+            guard !stops.isEmpty else { return nil }
             var filtered = day
-            filtered.placeStops = filteredStops
+            filtered.placeStops = stops
             return filtered
+        }
+
+        if videoStyle == .simpleStitch {
+            return estimatedSimpleStitchTimelineSeconds(
+                days: days,
+                includedReelPhotoIDs: includedReelPhotoIDs
+            )
         }
 
         var total = 0.0
         total += estimatedOpeningHookSeconds(draft: draft, includedPlaceIDs: includedPlaceIDs)
 
-        // Fast path: no map segments — cover hook → photos with slide-push between places.
+        // Fast path: no map segments — cover hook → reels (or legacy photos) with slide-push between places.
         if !showMapFrames {
-            var isFirstPhotoOfVideo = true
+            var isFirstClipOfVideo = true
             for day in days {
                 for stop in day.placeStops {
-                    let photoCount = min(maxPhotosPerPlace, stop.includedPhotos.count)
-                    guard photoCount > 0 else { continue }
-                    if !isFirstPhotoOfVideo {
+                    let clips = reelsOnly
+                        ? exportableReelPhotos(for: stop, includedReelPhotoIDs: includedReelPhotoIDs)
+                        : Array(stop.includedPhotos.prefix(maxPhotosPerPlace))
+                    guard !clips.isEmpty else { continue }
+                    if !isFirstClipOfVideo {
                         total += noMapInterPlaceTransitionSeconds
                     }
-                    for photoIdx in 0..<photoCount {
-                        let photo = stop.includedPhotos[photoIdx]
+                    for (photoIdx, photo) in clips.enumerated() {
                         let clipDur = momentVideoDurationSeconds(for: photo)
                         if clipDur > 0 {
-                            if !isFirstPhotoOfVideo { total += mapToReelTransitionSeconds }
+                            if !isFirstClipOfVideo { total += mapToReelTransitionSeconds }
                             total += clipDur
-                        } else {
+                        } else if !reelsOnly {
                             if photoIdx > 0 { total += cinematicPhotoToPhotoDissolveDurationSeconds }
                             total += secondsPerPhoto
                         }
-                        isFirstPhotoOfVideo = false
+                        isFirstClipOfVideo = false
                     }
                 }
             }
@@ -195,17 +268,16 @@ enum CinematicBlogVideoBuilder {
                     total += cinematicFocusedMapHoldSeconds
                 }
 
-                let photoCount = min(maxPhotosPerPlace, stop.includedPhotos.count)
-                if photoCount > 0 {
-                    for photoIdx in 0..<photoCount {
-                        let photo = stop.includedPhotos[photoIdx]
+                let clips = reelsOnly
+                    ? exportableReelPhotos(for: stop, includedReelPhotoIDs: includedReelPhotoIDs)
+                    : Array(stop.includedPhotos.prefix(maxPhotosPerPlace))
+                if !clips.isEmpty {
+                    for (photoIdx, photo) in clips.enumerated() {
                         let clipDur = momentVideoDurationSeconds(for: photo)
                         if clipDur > 0 {
-                            // Reel replaces the photo: dissolve from previous frame + reel
                             total += mapToReelTransitionSeconds
                             total += clipDur
-                        } else {
-                            // Regular Ken-Burns photo slide
+                        } else if !reelsOnly {
                             if photoIdx == 0, coordOK {
                                 total += mapToFirstPhotoTransitionSeconds
                             }
@@ -219,7 +291,7 @@ enum CinematicBlogVideoBuilder {
 
                 let isLastPlaceOverall = (dayIdx == days.count - 1) && (placeIdx == stops.count - 1)
                 let isLastPlaceOfDay = placeIdx == stops.count - 1
-                let hasEmittedPhotos = photoCount > 0
+                let hasEmittedPhotos = !clips.isEmpty
 
                 guard !isLastPlaceOverall, hasEmittedPhotos else { continue }
 
@@ -248,6 +320,151 @@ enum CinematicBlogVideoBuilder {
         return total
     }
 
+    // MARK: - Simple stitch
+
+    private static func estimatedSimpleStitchTimelineSeconds(
+        days: [RecapBlogDay],
+        includedReelPhotoIDs: Set<UUID>?
+    ) -> Double {
+        days.reduce(0) { total, day in
+            total + day.placeStops.flatMap {
+                exportableReelPhotos(for: $0, includedReelPhotoIDs: includedReelPhotoIDs)
+            }.reduce(0) { clipTotal, photo in
+                let clipDur = momentVideoDurationSeconds(for: photo)
+                return clipTotal + (clipDur > 0 ? clipDur : 0)
+            }
+        }
+    }
+
+    /// Concatenates moment reels only — no cover, maps, title cards, captions, or transition slides.
+    private static func buildSimpleStitchFrames(
+        days: [RecapBlogDay],
+        pixelSize: CGSize,
+        includedReelPhotoIDs: Set<UUID>?,
+        progressHandler: ((Double) -> Void)? = nil,
+        momentAudioHandler: ((URL, Double, Double) -> Void)? = nil,
+        frameHandler: (UIImage, Double) async throws -> Void
+    ) async throws {
+        let totalReelClips = days.reduce(0) { dayAcc, day in
+            dayAcc + day.placeStops.reduce(0) { stopAcc, stop in
+                stopAcc + exportableReelPhotos(for: stop, includedReelPhotoIDs: includedReelPhotoIDs).count
+            }
+        }
+        var completedReelClips = 0
+
+        func reportProgress() {
+            guard totalReelClips > 0 else { return }
+            completedReelClips += 1
+            progressHandler?(0.05 + Double(completedReelClips) / Double(totalReelClips) * 0.90)
+        }
+
+        for day in days {
+            try Task.checkCancellation()
+            let clips = day.placeStops.flatMap {
+                exportableReelPhotos(for: $0, includedReelPhotoIDs: includedReelPhotoIDs)
+            }
+            guard !clips.isEmpty else { continue }
+
+            for photo in clips {
+                try Task.checkCancellation()
+                guard momentVideoDurationSeconds(for: photo) > 0,
+                      let clipURL = momentVideoURL(for: photo) else { continue }
+
+                if try await emitMomentVideoClipSimpleStitch(
+                    url: clipURL,
+                    pixelSize: pixelSize,
+                    momentAudioHandler: momentAudioHandler,
+                    frameHandler: frameHandler
+                ) != nil {
+                    reportProgress()
+                    if completedReelClips % 8 == 0 {
+                        await MainActor.run {
+                            ImageLoader.shared.clearDecodedImageMemoryCache()
+                        }
+                    }
+                    await Task.yield()
+                }
+            }
+        }
+        progressHandler?(0.95)
+    }
+
+    private static func drawSimpleStitchVideoFrame(_ frame: UIImage, pixelSize: CGSize) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
+            let cg = ctx.cgContext
+            let w = pixelSize.width, h = pixelSize.height
+
+            let photoAR = frame.size.width / max(frame.size.height, 1)
+            let frameAR = w / h
+            let baseRect: CGRect
+            if photoAR > frameAR {
+                let dh = h; let dw = dh * photoAR
+                baseRect = CGRect(x: (w - dw) / 2, y: 0, width: dw, height: dh)
+            } else {
+                let dw = w; let dh = dw / photoAR
+                baseRect = CGRect(x: 0, y: (h - dh) / 2, width: dw, height: dh)
+            }
+            prepareContextForSharpBitmapCompositing(cg)
+            frame.draw(in: integralRect(baseRect))
+        }
+    }
+
+    private static func emitMomentVideoClipSimpleStitch(
+        url: URL,
+        pixelSize: CGSize,
+        momentAudioHandler: ((URL, Double, Double) -> Void)?,
+        frameHandler: (UIImage, Double) async throws -> Void
+    ) async throws -> UIImage? {
+        do {
+            let asset = AVURLAsset(url: url)
+            let durationSec: Double
+            if #available(iOS 16.0, *) {
+                durationSec = CMTimeGetSeconds(try await asset.load(.duration))
+            } else {
+                durationSec = CMTimeGetSeconds(asset.duration)
+            }
+            guard durationSec.isFinite, durationSec > 0.02 else { return nil }
+
+            momentAudioHandler?(url, 0, durationSec)
+
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: pixelSize.width, height: pixelSize.height)
+            generator.requestedTimeToleranceBefore = CMTime(seconds: 0.02, preferredTimescale: 600)
+            generator.requestedTimeToleranceAfter = CMTime(seconds: 0.02, preferredTimescale: 600)
+            defer { generator.cancelAllCGImageGeneration() }
+
+            let frameCount = min(
+                momentVideoMaxFramesPerClip,
+                max(1, Int((durationSec * momentVideoExportFPS).rounded()))
+            )
+            let dt = durationSec / Double(frameCount)
+            let sampleFPS = Double(frameCount) / durationSec
+
+            var lastEmitted: UIImage?
+            for fi in 0..<frameCount {
+                try Task.checkCancellation()
+                let t = min(Double(fi) / sampleFPS, max(durationSec - 0.001, 0))
+                let time = CMTime(seconds: t, preferredTimescale: 600)
+                let frame = try autoreleasepool {
+                    let cg = try generator.copyCGImage(at: time, actualTime: nil)
+                    return drawSimpleStitchVideoFrame(UIImage(cgImage: cg), pixelSize: pixelSize)
+                }
+                lastEmitted = frame
+                try await frameHandler(frame, dt)
+                if fi % 30 == 29 {
+                    await Task.yield()
+                }
+            }
+            return lastEmitted
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: - Entry point
 
     /// Generates frames in order and calls `frameHandler(image, duration)` for each.
@@ -260,8 +477,11 @@ enum CinematicBlogVideoBuilder {
         showPhotoCaptions: Bool = true,
         maxPhotosPerPlace: Int = 5,
         includedPlaceIDs: Set<UUID>? = nil,
+        includedReelPhotoIDs: Set<UUID>? = nil,
         showDayItineraryCards: Bool = false,
         showMapFrames: Bool = true,
+        videoStyle: BlogVideoExportOptions.VideoStyle = .cinematic,
+        reelsOnly: Bool = false,
         progressHandler: ((Double) -> Void)? = nil,
         momentAudioHandler: ((URL, Double, Double) -> Void)? = nil,
         frameHandler: (UIImage, Double) async throws -> Void
@@ -276,12 +496,48 @@ enum CinematicBlogVideoBuilder {
             } else {
                 filteredStops = day.placeStops
             }
-            guard !filteredStops.isEmpty else { return nil }
+            let stops = reelsOnly
+                ? filteredStops.filter { !exportableReelPhotos(for: $0, includedReelPhotoIDs: includedReelPhotoIDs).isEmpty }
+                : filteredStops
+            guard !stops.isEmpty else { return nil }
             var filtered = day
-            filtered.placeStops = filteredStops
+            filtered.placeStops = stops
             return filtered
         }
+
+        if videoStyle == .simpleStitch {
+            try await buildSimpleStitchFrames(
+                days: days,
+                pixelSize: pixelSize,
+                includedReelPhotoIDs: includedReelPhotoIDs,
+                progressHandler: progressHandler,
+                momentAudioHandler: momentAudioHandler,
+                frameHandler: frameHandler
+            )
+            return
+        }
+
         let totalDays = Double(max(days.count, 1))
+        let totalReelClips = days.reduce(0) { dayAcc, day in
+            dayAcc + day.placeStops.reduce(0) { stopAcc, stop in
+                stopAcc + exportableReelPhotos(for: stop, includedReelPhotoIDs: includedReelPhotoIDs).count
+            }
+        }
+        var completedReelClips = 0
+        let useReelWeightedProgress = reelsOnly || totalReelClips >= 4
+
+        func reportReelClipFinished() {
+            guard useReelWeightedProgress, totalReelClips > 0 else { return }
+            completedReelClips += 1
+            let reelFraction = Double(completedReelClips) / Double(totalReelClips)
+            progressHandler?(0.05 + reelFraction * 0.80)
+        }
+
+        func reportMapPhaseProgress(dayIdx: Int, placeIdx: Int, stopCount: Int) {
+            guard !useReelWeightedProgress else { return }
+            let stopCountD = Double(max(stopCount, 1))
+            progressHandler?((Double(dayIdx) + Double(placeIdx + 1) / stopCountD) / totalDays)
+        }
 
         let coverImage = await loadCoverImageForVideo(draft: draft, pixelSize: pixelSize)
         let coverComposite = autoreleasepool {
@@ -293,6 +549,9 @@ enum CinematicBlogVideoBuilder {
             pixelSize: pixelSize,
             frameHandler: frameHandler
         )
+        if useReelWeightedProgress {
+            progressHandler?(0.04)
+        }
 
         if showMapFrames, let firstDay = days.first, !firstDay.placeStops.isEmpty {
             let firstStops = firstDay.placeStops
@@ -541,17 +800,18 @@ enum CinematicBlogVideoBuilder {
                         visitedTrailCoords.append(c)
                     }
 
-                    let stopCount = Double(max(stops.count, 1))
-                    progressHandler?((Double(dayIdx) + Double(placeIdx + 1) / stopCount) / totalDays)
+                    reportMapPhaseProgress(dayIdx: dayIdx, placeIdx: placeIdx, stopCount: stops.count)
                 }
 
-                // 4. Photo/reel slides — if a photo has a reel, the reel plays directly with
-                //    place/time overlay (no still shown); otherwise a Ken-Burns still is shown.
+                // 4. Reel clips (and legacy still slides when `reelsOnly` is false).
                 var lastPhotoSlide: UIImage?
                 var lastPhotoKBLastFrame: UIImage?
                 var placeCaptionAssignedToSlide = false
                 let placeStoryForSlides = showPhotoCaptions ? effectivePlaceStory(for: stop) : nil
-                for (photoIdx, photo) in stop.includedPhotos.prefix(maxPhotosPerPlace).enumerated() {
+                let slidePhotos: [RecapPhoto] = reelsOnly
+                    ? exportableReelPhotos(for: stop, includedReelPhotoIDs: includedReelPhotoIDs)
+                    : Array(stop.includedPhotos.prefix(maxPhotosPerPlace))
+                for (photoIdx, photo) in slidePhotos.enumerated() {
                     try Task.checkCancellation()
                     let timeLabel = photoSlideTimeDisplayText(for: photo, stop: stop)
 
@@ -579,10 +839,17 @@ enum CinematicBlogVideoBuilder {
                             lastPhotoKBLastFrame = clipLast
                             lastPhotoSlide = clipLast
                             emittedReel = true
+                            reportReelClipFinished()
+                            if completedReelClips % 8 == 0 {
+                                await MainActor.run {
+                                    ImageLoader.shared.clearDecodedImageMemoryCache()
+                                }
+                            }
+                            await Task.yield()
                         }
                     }
 
-                    if emittedReel { continue }
+                    if emittedReel || reelsOnly { continue }
 
                     if let img = await loadPhoto(photo, targetSize: pixelSize) {
                         let (slideCaption, usesPlaceCaptionFallback) = slideCaptionForExport(
@@ -2213,22 +2480,29 @@ enum CinematicBlogVideoBuilder {
             generator.maximumSize = CGSize(width: pixelSize.width, height: pixelSize.height)
             generator.requestedTimeToleranceBefore = CMTime(seconds: 0.02, preferredTimescale: 600)
             generator.requestedTimeToleranceAfter = CMTime(seconds: 0.02, preferredTimescale: 600)
+            defer { generator.cancelAllCGImageGeneration() }
 
-            let frameCount = max(1, Int((durationSec * momentVideoExportFPS).rounded()))
+            let frameCount = min(
+                momentVideoMaxFramesPerClip,
+                max(1, Int((durationSec * momentVideoExportFPS).rounded()))
+            )
             let dt = durationSec / Double(frameCount)
+            let sampleFPS = Double(frameCount) / durationSec
 
             func videoFrameWithOverlay(at index: Int) throws -> UIImage {
-                let t = min(Double(index) / momentVideoExportFPS, max(durationSec - 0.001, 0))
+                let t = min(Double(index) / sampleFPS, max(durationSec - 0.001, 0))
                 let time = CMTime(seconds: t, preferredTimescale: 600)
-                let cg = try generator.copyCGImage(at: time, actualTime: nil)
-                return drawPhotoSlide(
-                    UIImage(cgImage: cg),
-                    caption: caption,
-                    placeName: placeName,
-                    timestampText: timestampText,
-                    pixelSize: pixelSize,
-                    kbScale: 1.0
-                )
+                return try autoreleasepool {
+                    let cg = try generator.copyCGImage(at: time, actualTime: nil)
+                    return drawPhotoSlide(
+                        UIImage(cgImage: cg),
+                        caption: caption,
+                        placeName: placeName,
+                        timestampText: timestampText,
+                        pixelSize: pixelSize,
+                        kbScale: 1.0
+                    )
+                }
             }
 
             var lastEmitted: UIImage?
@@ -2252,6 +2526,7 @@ enum CinematicBlogVideoBuilder {
                     let frame = try videoFrameWithOverlay(at: fi)
                     lastEmitted = frame
                     try await frameHandler(frame, dt)
+                    if fi % 30 == 29 { await Task.yield() }
                 }
             } else {
                 for fi in 0..<frameCount {
@@ -2259,6 +2534,7 @@ enum CinematicBlogVideoBuilder {
                     let frame = try videoFrameWithOverlay(at: fi)
                     lastEmitted = frame
                     try await frameHandler(frame, dt)
+                    if fi % 30 == 29 { await Task.yield() }
                 }
             }
 
@@ -2645,7 +2921,7 @@ enum CinematicBlogVideoBuilder {
     /// Same rules as thumbnails (``PlaceStopRowView.photoTimeDisplayText``): prefer per-photo digitized wall
     /// clock when present so export matches map overlays and publishing; otherwise format capture `Date`
     /// with ``PlaceStop/recapThumbnailTimeZone`` (inferred offset + identifiers), not only `timeZoneIdentifier`.
-    private static func photoSlideTimeDisplayText(for photo: RecapPhoto, stop: PlaceStop) -> String {
+    static func photoSlideTimeDisplayText(for photo: RecapPhoto, stop: PlaceStop) -> String {
         if let d = formattedTimestamp(photo.digitizedTime) { return d }
         let f = DateFormatter()
         f.dateFormat = "h:mm a"

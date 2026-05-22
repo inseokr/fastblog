@@ -3,7 +3,6 @@
 //  Capper
 //
 
-import AVKit
 import SwiftUI
 import UIKit
 
@@ -220,8 +219,7 @@ struct PlaceStopRowView: View {
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
-    @State private var momentVideoPhotoId: UUID? = nil
-    @State private var momentVideoPlaybackURL: URL?
+    @EnvironmentObject private var reelAutoplay: BlogReelAutoplayCoordinator
     @StateObject private var voiceMemoPlayer = VibePlayer()
     @State private var playingVoiceMemoPhotoId: UUID? = nil
     @State private var showPlaceGoogleSearchSheet = false
@@ -319,27 +317,24 @@ struct PlaceStopRowView: View {
         return AppCapturePhotoService.shared.momentVideoFileURL(for: captureId)
     }
 
+    /// Read-mode inline reel when a moment clip exists; otherwise the still thumbnail.
     @ViewBuilder
-    private func momentVideoBottomLeftControl(for photo: RecapPhoto, compact: Bool) -> some View {
-        if momentVideoURL(for: photo) != nil {
-            Button {
-                vibePlayer.stop()
-                playingVibePhotoId = nil
-                guard let url = momentVideoURL(for: photo) else { return }
-                momentVideoPlaybackURL = url
-                momentVideoPhotoId = photo.id
-            } label: {
-                Image(systemName: "video.fill")
-                    .font(.system(size: compact ? 11 : 12, weight: .semibold))
-                    .foregroundColor(.orange)
-                    .padding(compact ? 6 : 7)
-                    .background(Color.black.opacity(0.5))
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(Color.orange.opacity(0.55), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Play moment video")
-            .padding(compact ? 5 : 8)
+    private func blogPhotoThumbnail(
+        photo: RecapPhoto,
+        cornerRadius: CGFloat,
+        targetSize: CGSize
+    ) -> some View {
+        if !isEditMode, let url = momentVideoURL(for: photo) {
+            InlineMomentReelMedia(
+                photo: photo,
+                videoURL: url,
+                cornerRadius: cornerRadius,
+                targetSize: targetSize,
+                photoId: photo.id
+            )
+            .blogReelCandidate(photoId: photo.id, isActive: true)
+        } else {
+            RecapPhotoThumbnail(photo: photo, cornerRadius: cornerRadius, showIcon: false, targetSize: targetSize)
         }
     }
 
@@ -504,7 +499,7 @@ struct PlaceStopRowView: View {
     private func stripPhotoCell(photo: RecapPhoto) -> some View {
         let thumb = photoStripThumbnailSize
         VStack(alignment: .leading, spacing: 6) {
-            RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 480, height: 480))
+            blogPhotoThumbnail(photo: photo, cornerRadius: 8, targetSize: CGSize(width: 480, height: 480))
                 .aspectRatio(1, contentMode: .fill)
                 .frame(width: thumb, height: thumb)
                 .clipped()
@@ -1023,7 +1018,7 @@ struct PlaceStopRowView: View {
                         .buttonStyle(.plain)
                     }
                     VStack(alignment: .leading, spacing: 0) {
-                        RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 960, height: 640))
+                        blogPhotoThumbnail(photo: photo, cornerRadius: 10, targetSize: CGSize(width: 960, height: 640))
                             .frame(maxWidth: .infinity, maxHeight: 260)
                             .clipped()
                             .appChromeCornerRadius(10)
@@ -1047,12 +1042,9 @@ struct PlaceStopRowView: View {
                                 }
                             }
                             .overlay(alignment: .bottomLeading) {
-                                HStack(spacing: 6) {
-                                    momentVideoBottomLeftControl(for: photo, compact: false)
-                                    vibeBottomLeftControl(for: photo, compact: false)
-                                }
-                                .padding(.leading, 6)
-                                .padding(.bottom, 6)
+                                vibeBottomLeftControl(for: photo, compact: false)
+                                    .padding(.leading, 6)
+                                    .padding(.bottom, 6)
                             }
                             .contentShape(Rectangle())
                             .onTapGesture { onPhotoTapped?(photo) }
@@ -1169,18 +1161,14 @@ struct PlaceStopRowView: View {
                 }
             }
         }
-        .fullScreenCover(isPresented: Binding(
-            get: { momentVideoPhotoId != nil },
-            set: { if !$0 {
-                momentVideoPhotoId = nil
-                momentVideoPlaybackURL = nil
-            } }
-        )) {
-            if let url = momentVideoPlaybackURL {
-                MomentVideoFullScreenPlayer(url: url) {
-                    momentVideoPhotoId = nil
-                    momentVideoPlaybackURL = nil
-                }
+        .onChange(of: playingVibePhotoId) { _, photoId in
+            reelAutoplay.setUserPlaybackSuspended(photoId != nil)
+        }
+        .onChange(of: playingVoiceMemoPhotoId) { _, photoId in
+            if photoId != nil {
+                reelAutoplay.setUserPlaybackSuspended(true)
+            } else if playingVibePhotoId == nil {
+                reelAutoplay.setUserPlaybackSuspended(false)
             }
         }
         .onDisappear {
@@ -1188,8 +1176,6 @@ struct PlaceStopRowView: View {
             voiceMemoPlayer.stop()
             playingVibePhotoId = nil
             playingVoiceMemoPhotoId = nil
-            momentVideoPhotoId = nil
-            momentVideoPlaybackURL = nil
         }
     }
 
@@ -1435,6 +1421,7 @@ struct PlaceStopRowView: View {
         )
         .padding()
     }
+    .environmentObject(BlogReelAutoplayCoordinator())
     .background(Color.black)
     .preferredColorScheme(.dark)
 }

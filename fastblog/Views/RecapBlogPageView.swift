@@ -222,6 +222,7 @@ struct RecapBlogPageView: View {
     @State private var showMissingPhotosTooltip = false
     @State private var sessionDismissedMissingPhotosTooltip = false
     @State private var missingPhotosTooltipDebounceTask: Task<Void, Never>?
+    @StateObject private var blogReelAutoplay = BlogReelAutoplayCoordinator()
 
     // Undo State
     @State private var lastUndoAction: UndoAction?
@@ -574,29 +575,43 @@ struct RecapBlogPageView: View {
         }
         .onAppear {
             refreshMissingPhotosTooltipVisibility()
+            refreshBlogReelAutoplayEnabled()
             Task { await createdRecapStore.inferTransportModesIfNeeded(for: blogId) }
         }
         .onDisappear {
+            blogReelAutoplay.setAutoplayEnabled(false)
             // Overlay blogs dismiss entirely — do not mark "initial exit" or the next open will flip to
             // read-only instead of dismissing back to Places visited (see toolbar back handling).
             if onRequestDismiss == nil {
                 createdRecapStore.markInitialRecapEditorExit(for: blogId)
             }
         }
-        .onChange(of: showStoryMode) { _, _ in refreshMissingPhotosTooltipVisibility() }
-        .onChange(of: showPanorama) { _, _ in refreshMissingPhotosTooltipVisibility() }
-        .onChange(of: isExportingPDF) { _, _ in refreshMissingPhotosTooltipVisibility() }
+        .onChange(of: showStoryMode) { _, _ in
+            refreshMissingPhotosTooltipVisibility()
+            refreshBlogReelAutoplayEnabled()
+        }
+        .onChange(of: showPanorama) { _, _ in
+            refreshMissingPhotosTooltipVisibility()
+            refreshBlogReelAutoplayEnabled()
+        }
+        .onChange(of: isExportingPDF) { _, _ in
+            refreshMissingPhotosTooltipVisibility()
+            refreshBlogReelAutoplayEnabled()
+        }
         .onChange(of: showAuth) { _, _ in refreshMissingPhotosTooltipVisibility() }
         .onChange(of: showGuestSecondSaveLimitModal) { _, _ in refreshMissingPhotosTooltipVisibility() }
         .onChange(of: createdRecapStore.guestSecondSaveBlockedSignal) { _, _ in
             showGuestSecondSaveLimitModal = true
         }
         .onChange(of: earlyAccessSheetPresented) { _, _ in refreshMissingPhotosTooltipVisibility() }
+        .onChange(of: isEditMode) { _, _ in refreshBlogReelAutoplayEnabled() }
+        .onChange(of: hasFinishedInitialLoad) { _, _ in refreshBlogReelAutoplayEnabled() }
         .onChange(of: placePhotoModalItem?.id) { _, newId in
             if newId != nil {
                 revealRecapNavigationDuringPhotoDismiss = false
             }
             refreshMissingPhotosTooltipVisibility()
+            refreshBlogReelAutoplayEnabled()
         }
     }
 
@@ -785,6 +800,7 @@ struct RecapBlogPageView: View {
 
     private func bodyContentBase(screenHeight: CGFloat) -> some View {
         coreContent(screenHeight: screenHeight)
+            .environmentObject(blogReelAutoplay)
             .overlay(alignment: .top) { firstSaveBannerOverlay }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showFirstSaveBanner)
             .overlay(alignment: .top) { uploadSuccessBannerOverlay }
@@ -996,14 +1012,21 @@ struct RecapBlogPageView: View {
                 ShareSheet(items: shareItems)
             }
             .sheet(isPresented: $showVideoExportOptions) {
-                BlogVideoExportOptionsSheet(draft: draft) { url in
-                    blogVideoShareURL = url
-                    // Brief delay lets the options sheet fully dismiss before the system share sheet appears.
-                    Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 350_000_000)
-                        showBlogVideoShareSheet = true
+                BlogVideoExportOptionsSheet(
+                    draft: draft,
+                    onShare: { url in
+                        blogVideoShareURL = url
+                        // Brief delay lets the options sheet fully dismiss before the system share sheet appears.
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 350_000_000)
+                            showBlogVideoShareSheet = true
+                        }
+                    },
+                    onRequestReelCapture: {
+                        UserDefaults.standard.set("reel", forKey: "bloggo.camera.captureMode")
+                        openCameraCaptureFromRecap()
                     }
-                }
+                )
             }
             .sheet(isPresented: $showBlogVideoShareSheet) {
                 if let url = blogVideoShareURL {
@@ -1772,6 +1795,10 @@ struct RecapBlogPageView: View {
                 dayPageScrollInner(blogDay: blogDay, index: index, screenHeight: screenHeight)
             }
             .coordinateSpace(name: "scroll")
+            .onPreferenceChange(BlogReelCandidatePreferenceKey.self) { candidates in
+                guard index == selectedDayIndex else { return }
+                blogReelAutoplay.updateCandidates(candidates)
+            }
             .onPreferenceChange(TitleMinYPreferenceKey.self) { minY in
                 guard index == selectedDayIndex else { return }
                 let shouldShow = minY < 0
@@ -3304,11 +3331,13 @@ struct RecapBlogPageView: View {
             // Check for new moments for this recent blog (if it passes the recency + cutoff checks).
             checkForNewMomentsIfRecent()
             refreshMissingPhotosTooltipVisibility()
+            refreshBlogReelAutoplayEnabled()
             return
         }
         guard let trip = initialTrip ?? createdRecapStore.tripDraft(for: blogId) else {
             hasFinishedInitialLoad = true
             refreshMissingPhotosTooltipVisibility()
+            refreshBlogReelAutoplayEnabled()
             return
         }
         Task { @MainActor in
@@ -3320,7 +3349,18 @@ struct RecapBlogPageView: View {
             // Process remaining days in background (rate limit: 50 geocode/min).
             await createdRecapStore.continueGeocodingDays(blogId: blogId)
             refreshMissingPhotosTooltipVisibility()
+            refreshBlogReelAutoplayEnabled()
         }
+    }
+
+    private func refreshBlogReelAutoplayEnabled() {
+        let enabled = hasFinishedInitialLoad
+            && !isEditMode
+            && !showStoryMode
+            && !showPanorama
+            && !isExportingPDF
+            && placePhotoModalItem == nil
+        blogReelAutoplay.setAutoplayEnabled(enabled)
     }
 
     private func refreshMissingPhotosTooltipVisibility() {
@@ -3563,8 +3603,8 @@ struct RecapBlogPageView: View {
             VStack(spacing: 14) {
                 VStack(spacing: 0) {
                     shareOptionRow(
-                        title: "Post to Social - Carousel Studio",
-                        subtitle: "Instagram, Facebook, and other apps",
+                        title: "Post to Social Media",
+                        subtitle: "TikTok, Instagram, and others..",
                         icon: "rectangle.stack",
                         iconColor: .white,
                         titleColor: .white
@@ -3574,8 +3614,8 @@ struct RecapBlogPageView: View {
                     }
                     Divider().padding(.leading, 52)
                     shareOptionRow(
-                        title: "Create video",
-                        subtitle: "Turn your blog into a video",
+                        title: "Stitch Reels",
+                        subtitle: "Video from your moments",
                         icon: "video.badge.plus"
                     ) {
                         showShareYourBlogSheet = false

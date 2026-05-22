@@ -195,7 +195,9 @@ struct BlogVideoPreviewView: View {
             playerLoopObserver = nil
         }
         player?.pause()
+        player?.replaceCurrentItem(with: nil)
         player = nil
+        Task { @MainActor in BlogVideoExportService.releaseExportWorkingSet() }
     }
 
     // MARK: - Layout helpers

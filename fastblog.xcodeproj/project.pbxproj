@@ -195,6 +195,8 @@
 		BB0002B1 /* SlideshowMusicPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B0 /* SlideshowMusicPreference.swift */; };
 		BB0002B3 /* SlideshowMusicPlaybackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */; };
 		BB000343 /* MomentVideoPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000342 /* MomentVideoPreferences.swift */; };
+		BB000345 /* BlogReelAutoplayCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000344 /* BlogReelAutoplayCoordinator.swift */; };
+		BB000347 /* InlineMomentReelMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000346 /* InlineMomentReelMedia.swift */; };
 		BB0002B5 /* SlideshowBundledMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B4 /* SlideshowBundledMusic.swift */; };
 		BB0002B7 /* BlogVideoExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B6 /* BlogVideoExportService.swift */; };
 		BB0002B9 /* BlogVideoExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B8 /* BlogVideoExportOptionsSheet.swift */; };
@@ -461,6 +463,8 @@
 		BB0002B0 /* SlideshowMusicPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowMusicPreference.swift; sourceTree = "<group>"; };
 		BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowMusicPlaybackCoordinator.swift; sourceTree = "<group>"; };
 		BB000342 /* MomentVideoPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoPreferences.swift; sourceTree = "<group>"; };
+		BB000344 /* BlogReelAutoplayCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogReelAutoplayCoordinator.swift; sourceTree = "<group>"; };
+		BB000346 /* InlineMomentReelMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineMomentReelMedia.swift; sourceTree = "<group>"; };
 		BB0002B4 /* SlideshowBundledMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowBundledMusic.swift; sourceTree = "<group>"; };
 		BB0002B6 /* BlogVideoExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogVideoExportService.swift; sourceTree = "<group>"; };
 		BB0002B8 /* BlogVideoExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoExportOptionsSheet.swift; path = StoryBook/BlogVideoExportOptionsSheet.swift; sourceTree = "<group>"; };
@@ -847,6 +851,7 @@
 				BB0001EB /* PhotoQualityScorer.swift */,
 				BB0002B0 /* SlideshowMusicPreference.swift */,
 				BB000342 /* MomentVideoPreferences.swift */,
+				BB000344 /* BlogReelAutoplayCoordinator.swift */,
 				BB0002B4 /* SlideshowBundledMusic.swift */,
 				BB0002B6 /* BlogVideoExportService.swift */,
 				BB000341 /* BlogCarouselExportService.swift */,
@@ -890,6 +895,7 @@
 			children = (
 				BB000307 /* AtmosphericWaveformView.swift */,
 				BB000313 /* MomentVideoFullScreenPlayer.swift */,
+				BB000346 /* InlineMomentReelMedia.swift */,
 				BB0001C1 /* KeyboardCaptionToolbar.swift */,
 				BB0001E8 /* PlaceCardView.swift */,
 				BB0001E0 /* RecallCard.swift */,
@@ -1139,6 +1145,8 @@
 				BB0001EC /* PhotoQualityScorer.swift in Sources */,
 				BB0002B1 /* SlideshowMusicPreference.swift in Sources */,
 				BB000343 /* MomentVideoPreferences.swift in Sources */,
+				BB000345 /* BlogReelAutoplayCoordinator.swift in Sources */,
+				BB000347 /* InlineMomentReelMedia.swift in Sources */,
 				BB0002B5 /* SlideshowBundledMusic.swift in Sources */,
 				BB0002B7 /* BlogVideoExportService.swift in Sources */,
 				BB000340 /* BlogCarouselExportService.swift in Sources */,

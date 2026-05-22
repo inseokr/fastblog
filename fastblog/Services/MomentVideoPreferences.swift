@@ -7,7 +7,7 @@ enum MomentVideoPreferences {
     static let defaultDurationSeconds: TimeInterval = 5
 
     /// Allowed reel lengths (seconds). Shown in Settings and enforced at record time.
-    static let choices: [TimeInterval] = [3, 5, 7, 10]
+    static let choices: [TimeInterval] = [5, 10, 15, 30]
 
     static var maxDurationSeconds: TimeInterval {
         let stored = UserDefaults.standard.double(forKey: userDefaultsKey)

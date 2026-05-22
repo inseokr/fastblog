@@ -1,14 +1,15 @@
 // fastblog/Views/StoryBook/BlogVideoExportOptionsSheet.swift
 import SwiftUI
 
-/// Options sheet for exporting a blog as a Cinematic Journey video.
-/// Controls captions, seconds-per-photo, photos per place, and which places to include.
+/// Options sheet for stitching moment reels into a cinematic share video.
 struct BlogVideoExportOptionsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let draft: RecapBlogDetail
     /// Called on the main actor with the exported video URL after the sheet dismisses.
     let onShare: (URL) -> Void
+    /// Opens the in-app camera in Reel mode when the blog has no reels to export.
+    let onRequestReelCapture: () -> Void
 
     @AppStorage("blogVideoExportOptions") private var optionsData: Data =
         (try? JSONEncoder().encode(BlogVideoExportOptions())) ?? Data()
@@ -18,7 +19,14 @@ struct BlogVideoExportOptionsSheet: View {
     @State private var exportError: String? = nil
     @State private var showError     = false
     @State private var showMusicPicker = false
+    @State private var showNoReelsAlert = false
     @State private var exportTask: Task<Void, Never>?
+
+    private var selectedReelCount: Int {
+        BlogVideoExportService.exportableReelCount(draft: draft, options: effectiveExportOptions())
+    }
+
+    private var canExport: Bool { selectedReelCount > 0 }
 
     private var selectedTrack: SlideshowBundledTrack? {
         if options.musicDisabled { return nil }
@@ -45,13 +53,17 @@ struct BlogVideoExportOptionsSheet: View {
                 ScrollView {
                     VStack(spacing: 20) {
                         estimatedPlayTimeSection
-                        photosPerPlaceSection
-                        durationSection
-                        photoCaptionsSection
-                        mapSegmentsSection
-                        dayItineraryCardsSection
+                        if !canExport {
+                            noReelsHintBanner
+                        }
+                        videoStyleSection
+                        if options.videoStyle == .cinematic {
+                            reelCaptionsSection
+                            mapSegmentsSection
+                            dayItineraryCardsSection
+                        }
                         musicSection
-                        placesSection
+                        reelsSection
                     }
                     .padding(20)
                     .padding(.bottom, 8)
@@ -99,6 +111,15 @@ struct BlogVideoExportOptionsSheet: View {
                 } message: {
                     Text(exportError ?? "Unknown error.")
                 }
+                .alert("No reels to stitch", isPresented: $showNoReelsAlert) {
+                    Button("Open Camera") {
+                        dismiss()
+                        onRequestReelCapture()
+                    }
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("Capture short moment reels with the in-app camera (Reel mode), then come back to create your video.")
+                }
             }
 
             if isExporting {
@@ -108,7 +129,7 @@ struct BlogVideoExportOptionsSheet: View {
                     overlayTint: .modalGrayGlass,
                     progress: progress,
                     onCancel: { cancelExport() },
-                    progressStepLabelOverride: { p in Self.exportProgressSubtitle(progress: p) },
+                    progressStepLabelOverride: { p in exportProgressSubtitle(progress: p) },
                     useCenteredLayout: true,
                     showsTopTrailingActions: false
                 )
@@ -121,13 +142,70 @@ struct BlogVideoExportOptionsSheet: View {
             options = (try? JSONDecoder().decode(BlogVideoExportOptions.self, from: optionsData))
                 ?? BlogVideoExportOptions()
             options.exportMode = .video
-            // Reset place selection if it belongs to a different blog (stale UUIDs).
-            if let ids = options.includedPlaceIDs {
-                let currentIDs = Set(draft.days.flatMap { $0.placeStops.map { $0.id } })
+            // Reset reel selection if it belongs to a different blog (stale UUIDs).
+            if let ids = options.includedReelPhotoIDs {
+                let currentIDs = CinematicBlogVideoBuilder.allExportableReelPhotoIDs(draft: draft)
                 if ids.isDisjoint(with: currentIDs) {
-                    options.includedPlaceIDs = nil
+                    options.includedReelPhotoIDs = nil
                 }
             }
+            if !canExport {
+                showNoReelsAlert = true
+            }
+        }
+    }
+
+    private var noReelsHintBanner: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "video.badge.plus")
+                .font(.title3)
+                .foregroundColor(.orange)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("No moment reels yet")
+                    .font(.subheadline.weight(.semibold))
+                Text("Use the in-app camera in Reel mode to capture short clips at each place.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(Color.orange.opacity(0.12))
+        .appChromeCornerRadius(12)
+    }
+
+    // MARK: - Video Style Section
+
+    private var isSimpleStitch: Bool { options.videoStyle == .simpleStitch }
+
+    private var videoStyleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Video Style", icon: "film.stack")
+            VStack(spacing: 0) {
+                optionRow(
+                    title: "Cinematic blog",
+                    subtitle: "Cover, maps, place names & timestamps",
+                    isSelected: options.videoStyle == .cinematic
+                ) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        options.videoStyle = .cinematic
+                    }
+                }
+                Divider().padding(.leading, 46)
+                optionRow(
+                    title: "Simple stitch",
+                    subtitle: "Selected reels concatenated — no title cards, maps, or overlays",
+                    isSelected: options.videoStyle == .simpleStitch
+                ) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        options.videoStyle = .simpleStitch
+                        options.showMapFrames = false
+                        options.showDayItineraryCards = false
+                    }
+                }
+            }
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .appChromeCornerRadius(12)
         }
     }
 
@@ -142,8 +220,8 @@ struct BlogVideoExportOptionsSheet: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.primary)
                     Text(options.showMapFrames
-                         ? "Map pan, zoom & iris transitions shown between photos"
-                         : "Photos only — slide-push transitions between places")
+                         ? "Map pan, zoom & iris transitions between reel clips"
+                         : "Reels only — no map transitions between places")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -184,17 +262,17 @@ struct BlogVideoExportOptionsSheet: View {
         }
     }
 
-    // MARK: - Photo Captions Section
+    // MARK: - Reel Captions Section
 
-    private var photoCaptionsSection: some View {
+    private var reelCaptionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Photo Captions", icon: "text.bubble")
+            sectionHeader("Reel Captions", icon: "text.bubble")
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Show captions on photos")
+                    Text("Show captions on reels")
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.primary)
-                    Text("Display photo captions as text overlays on photos and moment reels")
+                    Text("Overlay photo or place captions on each reel clip")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -208,76 +286,30 @@ struct BlogVideoExportOptionsSheet: View {
         }
     }
 
-    // MARK: - Duration Section
-
-    private var durationSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Seconds Per Photo", icon: "timer")
-            HStack(spacing: 8) {
-                ForEach([1.0, 2.0, 3.0, 5.0], id: \.self) { secs in
-                    durationPill(seconds: secs)
-                }
-            }
-        }
+    private struct ReelPickerItem: Identifiable {
+        let id: UUID
+        let photo: RecapPhoto
+        let stop: PlaceStop
+        let dayLabel: String
     }
 
-    private func durationPill(seconds: Double) -> some View {
-        let selected = options.secondsPerSlide == seconds
-        return Button { options.secondsPerSlide = seconds } label: {
-            Text("\(Int(seconds))s")
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(selected ? Color.accentColor : Color(uiColor: .secondarySystemGroupedBackground))
-                .foregroundColor(selected ? .white : .primary)
-                .appChromeCornerRadius(10)
-        }
-        .buttonStyle(.plain)
-    }
+    // MARK: - Reels Section
 
-    // MARK: - Photos Per Place Section
-
-    private var photosPerPlaceSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Maximum Photos Per Place", icon: "photo.stack")
-            HStack(spacing: 8) {
-                ForEach([1, 2, 3, 5], id: \.self) { count in
-                    photosPerPlacePill(count: count)
-                }
-            }
-        }
-    }
-
-    private func photosPerPlacePill(count: Int) -> some View {
-        let selected = options.maxPhotosPerPlace == count
-        return Button { options.maxPhotosPerPlace = count } label: {
-            Text("\(count)")
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(selected ? Color.accentColor : Color(uiColor: .secondarySystemGroupedBackground))
-                .foregroundColor(selected ? .white : .primary)
-                .appChromeCornerRadius(10)
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Places Section
-
-    private var placesSection: some View {
+    private var reelsSection: some View {
         let available = availableCategoryRawsForDraft()
-        let days = filteredDaysForPlacePicker()
-        let highlightIDs = highlightIDsForVisibleStops()
-        let highlightSelected = isHighlightsOnlySelected(highlightIDs: highlightIDs)
+        let items = visibleReelPickerItems()
+        let highlightIDs = highlightStopIDsForVisibleReels()
+        let highlightSelected = isHighlightsOnlyReelSelection(highlightStopIDs: highlightIDs)
         let isAllCategoriesSelected = options.includedPlaceCategoryRaws == nil
+        let allReelsSelected = options.includedReelPhotoIDs == nil
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                sectionHeader("Places", icon: "mappin.and.ellipse")
+                sectionHeader("Reels", icon: "film")
                 Spacer()
                 HStack(spacing: 12) {
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            selectHighlightsOnly()
+                            selectHighlightReelsOnly(highlightStopIDs: highlightIDs)
                         }
                     } label: {
                         HStack(spacing: 6) {
@@ -298,14 +330,14 @@ struct BlogVideoExportOptionsSheet: View {
                     }
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            if options.includedPlaceIDs == nil {
-                                options.includedPlaceIDs = []
+                            if allReelsSelected {
+                                options.includedReelPhotoIDs = []
                             } else {
-                                options.includedPlaceIDs = nil
+                                options.includedReelPhotoIDs = nil
                             }
                         }
                     } label: {
-                        Text(options.includedPlaceIDs == nil ? "Deselect All" : "Select All")
+                        Text(allReelsSelected ? "Deselect All" : "Select All")
                             .font(.caption.weight(.medium))
                             .foregroundColor(.accentColor)
                     }
@@ -355,16 +387,16 @@ struct BlogVideoExportOptionsSheet: View {
                 .appChromeCornerRadius(12)
             }
 
-            if !days.isEmpty {
+            if !items.isEmpty {
                 VStack(alignment: .leading, spacing: 16) {
-                    ForEach(Array(days.enumerated()), id: \.element.id) { dayOffset, day in
+                    ForEach(groupedReelPickerItems(items), id: \.dayLabel) { group in
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Day \(dayOffset + 1) · \(day.dateText)")
+                            Text(group.dayLabel)
                                 .font(.caption.weight(.semibold))
                                 .foregroundColor(.secondary)
                             VStack(spacing: 8) {
-                                ForEach(day.placeStops) { stop in
-                                    placeCheckRow(stop: stop)
+                                ForEach(group.items) { item in
+                                    reelCheckRow(item: item)
                                 }
                             }
                         }
@@ -374,199 +406,148 @@ struct BlogVideoExportOptionsSheet: View {
         }
     }
 
-    private func highlightIDsForVisibleStops() -> Set<UUID> {
+    private struct ReelDayGroup {
+        let dayLabel: String
+        let items: [ReelPickerItem]
+    }
+
+    private func visibleReelPickerItems() -> [ReelPickerItem] {
+        filteredDaysForPlacePicker().flatMap { day in
+            let dayNumber = (draft.days.firstIndex(where: { $0.id == day.id }) ?? 0) + 1
+            let dayLabel = "Day \(dayNumber) · \(day.dateText)"
+            return day.placeStops.flatMap { stop in
+                CinematicBlogVideoBuilder.exportableReelPhotos(for: stop).map { photo in
+                    ReelPickerItem(id: photo.id, photo: photo, stop: stop, dayLabel: dayLabel)
+                }
+            }
+        }
+    }
+
+    private func groupedReelPickerItems(_ items: [ReelPickerItem]) -> [ReelDayGroup] {
+        var order: [String] = []
+        var buckets: [String: [ReelPickerItem]] = [:]
+        for item in items {
+            if buckets[item.dayLabel] == nil {
+                order.append(item.dayLabel)
+                buckets[item.dayLabel] = []
+            }
+            buckets[item.dayLabel, default: []].append(item)
+        }
+        return order.map { ReelDayGroup(dayLabel: $0, items: buckets[$0] ?? []) }
+    }
+
+    private func allVisibleReelPhotoIDs() -> Set<UUID> {
+        Set(visibleReelPickerItems().map(\.id))
+    }
+
+    private func highlightStopIDsForVisibleReels() -> Set<UUID> {
         let stops = filteredDaysForPlacePicker().flatMap(\.placeStops)
         let avg = stops.map(\.highlightMomentScore).reduce(0, +) / Double(max(stops.count, 1))
         return Set(stops.filter { $0.highlightMomentScore > avg }.map(\.id))
     }
 
-    private func isHighlightsOnlySelected(highlightIDs: Set<UUID>) -> Bool {
-        guard let ids = options.includedPlaceIDs else { return false }
-        return ids == highlightIDs
+    private func isHighlightsOnlyReelSelection(highlightStopIDs: Set<UUID>) -> Bool {
+        guard let ids = options.includedReelPhotoIDs else { return false }
+        let highlightReelIDs = Set(
+            visibleReelPickerItems().filter { highlightStopIDs.contains($0.stop.id) }.map(\.id)
+        )
+        return ids == highlightReelIDs && !highlightReelIDs.isEmpty
     }
 
-    private func placeCheckRow(stop: PlaceStop) -> some View {
-        let isIncluded = isPlaceIncluded(stop.id)
-        let photos = Array(stop.includedPhotos.prefix(options.maxPhotosPerPlace))
-        let gap: CGFloat = 2
-        let cardW = UIScreen.main.bounds.width - 40
-        let cellW = floor((cardW - gap) / 2)
-        let gridH = placeGridHeight(count: photos.count, cardW: cardW, cellW: cellW, gap: gap)
-        let overflowCount = max(0, stop.includedPhotos.count - photos.count)
-        return Button { togglePlace(stop.id) } label: {
-            ZStack(alignment: .bottomLeading) {
-                placePhotoGrid(photos: photos, overflowCount: overflowCount, cardW: cardW, cellW: cellW, gap: gap)
+    private func selectHighlightReelsOnly(highlightStopIDs: Set<UUID>) {
+        let highlightReelIDs = Set(
+            visibleReelPickerItems().filter { highlightStopIDs.contains($0.stop.id) }.map(\.id)
+        )
+        options.includedReelPhotoIDs = highlightReelIDs.isEmpty ? [] : highlightReelIDs
+    }
 
-                if !isIncluded {
-                    Color.black.opacity(0.5)
-                        .frame(width: cardW, height: gridH)
-                        .allowsHitTesting(false)
+    private func isReelIncluded(_ photoID: UUID) -> Bool {
+        guard let ids = options.includedReelPhotoIDs else { return true }
+        return ids.contains(photoID)
+    }
+
+    private func toggleReel(_ photoID: UUID) {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            let visible = allVisibleReelPhotoIDs()
+            if options.includedReelPhotoIDs == nil {
+                var all = visible
+                all.remove(photoID)
+                options.includedReelPhotoIDs = all
+            } else if options.includedReelPhotoIDs!.contains(photoID) {
+                options.includedReelPhotoIDs!.remove(photoID)
+            } else {
+                options.includedReelPhotoIDs!.insert(photoID)
+                if options.includedReelPhotoIDs == visible {
+                    options.includedReelPhotoIDs = nil
                 }
+            }
+        }
+    }
 
-                LinearGradient(
-                    colors: [.black.opacity(0.65), .clear],
-                    startPoint: .bottom,
-                    endPoint: .center
-                )
-                .allowsHitTesting(false)
+    private func reelCheckRow(item: ReelPickerItem) -> some View {
+        let isIncluded = isReelIncluded(item.id)
+        let thumbSide: CGFloat = 72
+        let timeLabel = CinematicBlogVideoBuilder.photoSlideTimeDisplayText(for: item.photo, stop: item.stop)
+        return Button { toggleReel(item.id) } label: {
+            HStack(spacing: 12) {
+                ZStack(alignment: .bottomLeading) {
+                    RecapPhotoThumbnail(
+                        photo: item.photo,
+                        cornerRadius: 10,
+                        showIcon: false,
+                        targetSize: CGSize(width: thumbSide * 2, height: thumbSide * 2)
+                    )
+                    .frame(width: thumbSide, height: thumbSide)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    Image(systemName: "film.fill")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(5)
+                        .background(Circle().fill(Color.black.opacity(0.55)))
+                        .padding(6)
+                }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    if let raw = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines),
-                       !raw.isEmpty {
-                        let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
-                        HStack(spacing: 4) {
-                            Image(systemName: p.symbol)
-                                .font(.system(size: 9, weight: .semibold))
-                            Text(p.label)
-                                .font(.caption2.weight(.semibold))
-                                .lineLimit(1)
-                        }
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
-                        .background(Capsule(style: .continuous).fill(p.color.opacity(0.85)))
-                        .foregroundColor(.white)
-                    }
-                    Text(stop.placeTitle)
+                    Text(item.stop.placeTitle)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                         .lineLimit(1)
-                        .truncationMode(.tail)
-                        .padding(.trailing, 40)
+                    Text(timeLabel)
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                    if let caption = item.photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !caption.isEmpty {
+                        Text(caption)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
                 }
-                .padding(10)
-
+                Spacer(minLength: 0)
                 ZStack {
                     Circle()
-                        .fill(isIncluded ? Color.accentColor : Color.black.opacity(0.4))
+                        .fill(isIncluded ? Color.accentColor : Color(uiColor: .tertiarySystemGroupedBackground))
                         .frame(width: 26, height: 26)
-                        .overlay(
-                            Circle()
-                                .strokeBorder(Color.white.opacity(isIncluded ? 0 : 0.6), lineWidth: 1.5)
-                        )
                     if isIncluded {
                         Image(systemName: "checkmark")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.white)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .padding(10)
             }
-            .frame(width: cardW, height: gridH)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(12)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .opacity(isIncluded ? 1 : 0.55)
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(isIncluded ? Color.accentColor : Color.clear, lineWidth: 2)
             )
+            .appChromeCornerRadius(12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private func placeGridHeight(count: Int, cardW: CGFloat, cellW: CGFloat, gap: CGFloat) -> CGFloat {
-        switch count {
-        case 0:       return 120
-        case 1:       return cardW
-        case 2:       return cellW
-        case 3, 4:    return cellW * 2 + gap
-        default:      return cellW * 3 + gap * 2
-        }
-    }
-
-    @ViewBuilder
-    private func placePhotoGrid(photos: [RecapPhoto], overflowCount: Int, cardW: CGFloat, cellW: CGFloat, gap: CGFloat) -> some View {
-        switch photos.count {
-        case 0:
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-                .frame(width: cardW, height: 120)
-        case 1:
-            placePhotoCell(photos[0], width: cardW, height: cardW)
-        case 2:
-            HStack(spacing: gap) {
-                placePhotoCell(photos[0], width: cellW, height: cellW)
-                placePhotoCell(photos[1], width: cellW, height: cellW)
-            }
-        case 3:
-            VStack(spacing: gap) {
-                HStack(spacing: gap) {
-                    placePhotoCell(photos[0], width: cellW, height: cellW)
-                    placePhotoCell(photos[1], width: cellW, height: cellW)
-                }
-                placePhotoCell(photos[2], width: cardW, height: cellW)
-            }
-        case 4:
-            VStack(spacing: gap) {
-                HStack(spacing: gap) {
-                    placePhotoCell(photos[0], width: cellW, height: cellW)
-                    placePhotoCell(photos[1], width: cellW, height: cellW)
-                }
-                HStack(spacing: gap) {
-                    placePhotoCell(photos[2], width: cellW, height: cellW)
-                    placePhotoCell(photos[3], width: cellW, height: cellW)
-                }
-            }
-        default:
-            VStack(spacing: gap) {
-                HStack(spacing: gap) {
-                    placePhotoCell(photos[0], width: cellW, height: cellW)
-                    placePhotoCell(photos[1], width: cellW, height: cellW)
-                }
-                HStack(spacing: gap) {
-                    placePhotoCell(photos[2], width: cellW, height: cellW)
-                    placePhotoCell(photos[3], width: cellW, height: cellW)
-                }
-                ZStack {
-                    placePhotoCell(photos[4], width: cardW, height: cellW)
-                    if overflowCount > 0 {
-                        Color.black.opacity(0.45)
-                            .frame(width: cardW, height: cellW)
-                        Text("+\(overflowCount)")
-                            .font(.title2.weight(.bold))
-                            .foregroundColor(.white)
-                    }
-                }
-            }
-        }
-    }
-
-    private func placePhotoCell(_ photo: RecapPhoto, width: CGFloat, height: CGFloat) -> some View {
-        RecapPhotoThumbnail(
-            photo: photo,
-            cornerRadius: 0,
-            showIcon: false,
-            targetSize: CGSize(width: 300, height: 300)
-        )
-        .frame(width: width, height: height)
-        .clipped()
-    }
-
-    private func selectHighlightsOnly() {
-        let highlightIDs = highlightIDsForVisibleStops()
-        options.includedPlaceIDs = highlightIDs.isEmpty ? nil : highlightIDs
-    }
-
-    private func isPlaceIncluded(_ id: UUID) -> Bool {
-        guard let ids = options.includedPlaceIDs else { return true }
-        return ids.contains(id)
-    }
-
-    private func togglePlace(_ id: UUID) {
-        withAnimation(.easeInOut(duration: 0.15)) {
-            if options.includedPlaceIDs == nil {
-                var all = Set(draft.days.flatMap { $0.placeStops.map { $0.id } })
-                all.remove(id)
-                options.includedPlaceIDs = all.isEmpty ? nil : all
-            } else if options.includedPlaceIDs!.contains(id) {
-                options.includedPlaceIDs!.remove(id)
-            } else {
-                options.includedPlaceIDs!.insert(id)
-                let allIDs = Set(draft.days.flatMap { $0.placeStops.map { $0.id } })
-                if options.includedPlaceIDs == allIDs {
-                    options.includedPlaceIDs = nil
-                }
-            }
-        }
     }
 
     // MARK: - Music Section
@@ -594,16 +575,45 @@ struct BlogVideoExportOptionsSheet: View {
                 .appChromeCornerRadius(12)
             }
             .buttonStyle(.plain)
+
+            if !options.musicDisabled {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Music volume")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Text("\(Int((options.musicVolume * 100).rounded()))%")
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(.secondary)
+                    }
+                    Slider(
+                        value: Binding(
+                            get: { Double(options.musicVolume) },
+                            set: { options.musicVolume = Float(min(1, max(0, $0))) }
+                        ),
+                        in: 0...1
+                    )
+                    .tint(.accentColor)
+                }
+                .padding(14)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .appChromeCornerRadius(12)
+            }
         }
     }
 
     // MARK: - Export Button
 
-    private static func exportProgressSubtitle(progress p: Double) -> String {
-        if p < 0.1  { return "Building journey…" }
-        if p < 0.50 { return "Loading places & photos…" }
+    private func exportProgressSubtitle(progress p: Double) -> String {
+        if p < 0.1  { return "Preparing reel video…" }
+        if p < 0.50 { return "Loading reels…" }
+        if isSimpleStitch {
+            if p < 0.86 { return "Stitching reels…" }
+            return "Adding music…"
+        }
         if p < 0.72 { return "Rendering map frames…" }
-        if p < 0.86 { return "Writing video…" }
+        if p < 0.86 { return "Stitching reels…" }
         return "Adding music…"
     }
 
@@ -616,12 +626,12 @@ struct BlogVideoExportOptionsSheet: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
-            .background(Color.accentColor.opacity(isExporting ? 0.45 : 1))
+            .background(Color.accentColor.opacity(isExporting || !canExport ? 0.45 : 1))
             .foregroundColor(.white)
             .appChromeCornerRadius(12)
         }
         .buttonStyle(.plain)
-        .disabled(isExporting)
+        .disabled(isExporting || !canExport)
     }
 
     // MARK: - Export Action
@@ -637,6 +647,10 @@ struct BlogVideoExportOptionsSheet: View {
 
     @MainActor
     private func startExport() {
+        guard canExport else {
+            showNoReelsAlert = true
+            return
+        }
         options.exportMode = .video
         if let data = try? JSONEncoder().encode(options) { optionsData = data }
         exportTask?.cancel()
@@ -648,7 +662,10 @@ struct BlogVideoExportOptionsSheet: View {
     @MainActor
     private func startVideoExport() {
         exportTask = Task { @MainActor in
-            defer { exportTask = nil }
+            defer {
+                exportTask = nil
+                BlogVideoExportService.releaseExportWorkingSet()
+            }
             do {
                 progress = 0.1
                 let effective = effectiveExportOptions()
@@ -697,7 +714,7 @@ struct BlogVideoExportOptionsSheet: View {
                     .foregroundColor(.white)
             }
             Spacer()
-            Text("\(stats.includedPlaceCount) places · \(stats.includedPhotoCount) photos")
+            Text("\(stats.includedPlaceCount) places · \(stats.includedReelCount) reels")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.trailing)
@@ -714,16 +731,20 @@ struct BlogVideoExportOptionsSheet: View {
         )
     }
 
-    private func estimatedPlaybackStats() -> (includedPlaceCount: Int, includedPhotoCount: Int, estimatedSeconds: Double, estimatedDurationText: String) {
-        let stops = filteredDaysForPlacePicker().flatMap(\.placeStops).filter { isPlaceIncluded($0.id) }
-        let photoCount = stops.reduce(0) { acc, stop in
-            acc + min(options.maxPhotosPerPlace, stop.includedPhotos.count)
-        }
+    private func estimatedPlaybackStats() -> (includedPlaceCount: Int, includedReelCount: Int, estimatedSeconds: Double, estimatedDurationText: String) {
         let resolved = effectiveExportOptions()
+        let placeCount = filteredDaysForPlacePicker().flatMap(\.placeStops).filter { stop in
+            if let placeIDs = resolved.includedPlaceIDs, !placeIDs.contains(stop.id) { return false }
+            return !CinematicBlogVideoBuilder.exportableReelPhotos(
+                for: stop,
+                includedReelPhotoIDs: resolved.includedReelPhotoIDs
+            ).isEmpty
+        }.count
+        let reelCount = BlogVideoExportService.exportableReelCount(draft: draft, options: resolved)
         let seconds = BlogVideoExportService.estimatedExportedVideoDurationSeconds(draft: draft, options: resolved)
         return (
-            includedPlaceCount: stops.count,
-            includedPhotoCount: photoCount,
+            includedPlaceCount: placeCount,
+            includedReelCount: reelCount,
             estimatedSeconds: seconds,
             estimatedDurationText: formatDuration(seconds: seconds)
         )
