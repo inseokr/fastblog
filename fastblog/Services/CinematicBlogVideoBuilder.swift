@@ -379,61 +379,46 @@ enum CinematicBlogVideoBuilder {
 
         for day in days {
             try Task.checkCancellation()
-            let clips = day.placeStops.flatMap {
-                exportableReelPhotos(for: $0, includedReelPhotoIDs: includedReelPhotoIDs)
-            }
-            guard !clips.isEmpty else { continue }
+            for stop in day.placeStops {
+                let clips = exportableReelPhotos(
+                    for: stop,
+                    includedReelPhotoIDs: includedReelPhotoIDs
+                )
+                guard !clips.isEmpty else { continue }
 
-            for photo in clips {
-                try Task.checkCancellation()
-                guard momentVideoDurationSeconds(for: photo) > 0,
-                      let clipURL = momentVideoURL(for: photo) else { continue }
+                for photo in clips {
+                    try Task.checkCancellation()
+                    guard momentVideoDurationSeconds(for: photo) > 0,
+                          let clipURL = momentVideoURL(for: photo) else { continue }
 
-                if try await emitMomentVideoClipSimpleStitch(
-                    url: clipURL,
-                    pixelSize: pixelSize,
-                    momentAudioHandler: momentAudioHandler,
-                    frameHandler: frameHandler
-                ) != nil {
-                    reportProgress()
-                    if completedReelClips % 8 == 0 {
-                        await MainActor.run {
-                            ImageLoader.shared.clearDecodedImageMemoryCache()
+                    let timeLabel = photoSlideTimeDisplayText(for: photo, stop: stop)
+                    if try await emitMomentVideoClipSimpleStitch(
+                        url: clipURL,
+                        pixelSize: pixelSize,
+                        placeName: stop.placeTitle,
+                        timestampText: timeLabel,
+                        momentAudioHandler: momentAudioHandler,
+                        frameHandler: frameHandler
+                    ) != nil {
+                        reportProgress()
+                        if completedReelClips % 8 == 0 {
+                            await MainActor.run {
+                                ImageLoader.shared.clearDecodedImageMemoryCache()
+                            }
                         }
+                        await Task.yield()
                     }
-                    await Task.yield()
                 }
             }
         }
         progressHandler?(0.95)
     }
 
-    private static func drawSimpleStitchVideoFrame(_ frame: UIImage, pixelSize: CGSize) -> UIImage {
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = true
-        return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
-            let cg = ctx.cgContext
-            let w = pixelSize.width, h = pixelSize.height
-
-            let photoAR = frame.size.width / max(frame.size.height, 1)
-            let frameAR = w / h
-            let baseRect: CGRect
-            if photoAR > frameAR {
-                let dh = h; let dw = dh * photoAR
-                baseRect = CGRect(x: (w - dw) / 2, y: 0, width: dw, height: dh)
-            } else {
-                let dw = w; let dh = dw / photoAR
-                baseRect = CGRect(x: 0, y: (h - dh) / 2, width: dw, height: dh)
-            }
-            prepareContextForSharpBitmapCompositing(cg)
-            frame.draw(in: integralRect(baseRect))
-        }
-    }
-
     private static func emitMomentVideoClipSimpleStitch(
         url: URL,
         pixelSize: CGSize,
+        placeName: String,
+        timestampText: String,
         momentAudioHandler: ((URL, Double, Double) -> Void)?,
         frameHandler: (UIImage, Double) async throws -> Void
     ) async throws -> UIImage? {
@@ -470,7 +455,14 @@ enum CinematicBlogVideoBuilder {
                 let time = CMTime(seconds: t, preferredTimescale: 600)
                 let frame = try autoreleasepool {
                     let cg = try generator.copyCGImage(at: time, actualTime: nil)
-                    return drawSimpleStitchVideoFrame(UIImage(cgImage: cg), pixelSize: pixelSize)
+                    return drawPhotoSlide(
+                        UIImage(cgImage: cg),
+                        caption: nil,
+                        placeName: placeName,
+                        timestampText: timestampText,
+                        pixelSize: pixelSize,
+                        kbScale: 1.0
+                    )
                 }
                 lastEmitted = frame
                 try await frameHandler(frame, dt)
