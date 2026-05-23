@@ -21,7 +21,7 @@ struct MomentVideoFullScreenPlayer: View {
             Color.black.ignoresSafeArea()
 
             if let player {
-                VideoPlayer(player: player)
+                FillVideoPlayerView(player: player)
                     .ignoresSafeArea()
             }
 
@@ -58,5 +58,36 @@ struct MomentVideoFullScreenPlayer: View {
     private func stopPlayback() {
         player?.pause()
         player = nil
+    }
+}
+
+/// UIViewRepresentable that renders an AVPlayer edge-to-edge using resizeAspectFill.
+private struct FillVideoPlayerView: UIViewRepresentable {
+    let player: AVPlayer
+
+    func makeUIView(context: Context) -> FillPlayerUIView {
+        FillPlayerUIView(player: player)
+    }
+
+    func updateUIView(_ uiView: FillPlayerUIView, context: Context) {
+        uiView.playerLayer.player = player
+    }
+}
+
+private final class FillPlayerUIView: UIView {
+    let playerLayer = AVPlayerLayer()
+
+    init(player: AVPlayer) {
+        super.init(frame: .zero)
+        playerLayer.player = player
+        playerLayer.videoGravity = .resizeAspectFill
+        layer.addSublayer(playerLayer)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        playerLayer.frame = bounds
     }
 }

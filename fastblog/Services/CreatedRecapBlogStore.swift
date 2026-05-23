@@ -2596,14 +2596,21 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Builds blog detail with structure for all days but only processes day 0 (geocode, title, visitedTime, photo quality).
     /// Use before navigating to recap; then call continueGeocodingDays(blogId:) when the recap page loads.
-    func buildBlogDetailFirstDayOnly(from trip: TripDraft) async -> RecapBlogDetail {
+    func buildBlogDetailFirstDayOnly(from trip: TripDraft, onProgress: ((Double) -> Void)? = nil) async -> RecapBlogDetail {
+        // Progress budget: geocoding 0→0.30, visitedTime 0.30→0.45, scoring 0.45→0.75, cover 0.75→0.80, weather 0.80→0.97
         var detail = buildBlogDetail(from: trip)
+        onProgress?(0.05)
         guard let firstDayIdx = detail.days.indices.first else { return detail }
 
         // Process only day 0: geocode, then title/country from day 0, visitedTime for day 0, photo quality for day 0.
         var cityCandidates: [(city: String, order: Int)] = []
         var countryCandidates: [(country: String, order: Int)] = []
         var order = 0
+        let geocodableStops = detail.days[firstDayIdx].placeStops.indices.filter {
+            detail.days[firstDayIdx].placeStops[$0].representativeLocation != nil
+        }
+        let stopTotal = max(1, geocodableStops.count)
+        var stopsDone = 0
         for stopIdx in detail.days[firstDayIdx].placeStops.indices {
             applySavedAppCapturePlaceMetadata(to: &detail.days[firstDayIdx].placeStops[stopIdx])
             let stop = detail.days[firstDayIdx].placeStops[stopIdx]
@@ -2627,6 +2634,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                 }
                 dayCopy.placeStops[stopIdx] = stopCopy
                 detail.days[firstDayIdx] = dayCopy
+                stopsDone += 1
+                onProgress?(0.05 + 0.25 * Double(stopsDone) / Double(stopTotal))
             }
         }
         detail.days[firstDayIdx].isPlaceNamesResolved = true
@@ -2645,10 +2654,16 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
 
         detail = await applyVisitedTimeDigitized(to: detail, dayIndices: [firstDayIdx])
+        onProgress?(0.45)
         if Task.isCancelled { return detail }
         detail = await applyPhotoQualitySelection(to: detail, dayIndices: [firstDayIdx])
+        onProgress?(0.75)
         updateCoverPhotoFromQualityScores(&detail)
-        detail = await applyWeather(to: detail)
+        onProgress?(0.80)
+        detail = await applyWeather(to: detail) { fraction in
+            onProgress?(0.80 + 0.17 * fraction)
+        }
+        onProgress?(0.97)
         return detail
     }
 
@@ -2892,8 +2907,15 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Fetches Open-Meteo weather for each day using the first available coordinate.
     /// Days that already have weather or have no location data are skipped.
-    private func applyWeather(to detail: RecapBlogDetail) async -> RecapBlogDetail {
+    private func applyWeather(to detail: RecapBlogDetail, onProgress: ((Double) -> Void)? = nil) async -> RecapBlogDetail {
         var updated = detail
+        let fetchableIndices = updated.days.indices.filter {
+            !updated.days[$0].weatherIsManual
+                && updated.days[$0].weather == nil
+                && updated.days[$0].placeStops.compactMap(\.representativeLocation).first != nil
+        }
+        let total = max(1, fetchableIndices.count)
+        var done = 0
         for dayIdx in updated.days.indices {
             if Task.isCancelled { return updated }
             // Skip if manually overridden or already fetched.
@@ -2912,6 +2934,8 @@ final class CreatedRecapBlogStore: ObservableObject {
             } else {
                 print("[WeatherService] ⚠️ Day \(updated.days[dayIdx].dayIndex): no weather data")
             }
+            done += 1
+            onProgress?(Double(done) / Double(total))
         }
         return updated
     }

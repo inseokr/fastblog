@@ -8,6 +8,9 @@ import SwiftUI
 struct CreatingRecapView: View {
     /// Optional cancel handler — if nil, the Cancel button is hidden.
     var onCancel: (() -> Void)? = nil
+    /// When non-nil, drives the displayed percentage from real build progress (0.0–1.0).
+    /// When nil, a time-based simulated animation is used instead.
+    var externalProgress: Double? = nil
 
     @State private var ringTrim: CGFloat = 0
     @State private var ringRotation: Double = 0
@@ -15,11 +18,11 @@ struct CreatingRecapView: View {
     @State private var pulseScale: CGFloat = 1
     @State private var stepLabelIndex: Int = 0
     @State private var colorProgress: CGFloat = 0
-    /// Simulated progress percentage (0-100) shown in the last step.
+    /// Displayed progress percentage (0-100). Driven by externalProgress when available.
     @State private var progressPercent: Int = 0
 
     private let navyBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
-    /// Total animation duration (should match CreateBlogFlowView.creatingAnimationDuration)
+    /// Total animation duration for the simulated-progress fallback path.
     private let totalDuration: TimeInterval = 5.0
 
     private let earlyStepLabels = [
@@ -60,6 +63,17 @@ struct CreatingRecapView: View {
         .preferredColorScheme(.dark)
         .onAppear {
             startAnimations()
+        }
+        .onChange(of: externalProgress) { _, newValue in
+            guard let p = newValue else { return }
+            let target = min(Int(p * 100), 99)
+            withAnimation(.easeOut(duration: 0.25)) {
+                progressPercent = target
+            }
+            // Advance the step label when real progress crosses the early-label threshold
+            if stepLabelIndex < 2 && p >= 0.1 {
+                withAnimation(.easeInOut(duration: 0.25)) { stepLabelIndex = 2 }
+            }
         }
     }
 
@@ -174,7 +188,8 @@ struct CreatingRecapView: View {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
             withAnimation(.easeInOut(duration: 0.25)) { stepLabelIndex = 2 }
-            // Animate percentage from 0 → 99 over the remaining duration
+            // Only run the simulated counter when no real progress signal is wired up
+            guard externalProgress == nil else { return }
             let tickInterval = 0.05
             let steps = Int((totalDuration - 2.2) / tickInterval)
             for i in 0..<steps {

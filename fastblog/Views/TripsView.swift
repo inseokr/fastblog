@@ -1917,10 +1917,12 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
             self.momentVideoCompletion = completion
             self.momentVideoStopWorkItem?.cancel()
+            let clipDuration = Self.momentVideoClipDuration
             let stopWork = DispatchWorkItem { [weak self] in
                 self?.stopMomentVideoRecordingLocked()
             }
             self.momentVideoStopWorkItem = stopWork
+            self.movieOutput.maxRecordedDuration = CMTime(seconds: clipDuration, preferredTimescale: 600)
 
             if let connection = self.movieOutput.connection(with: .video),
                connection.isVideoRotationAngleSupported(90) {
@@ -1931,7 +1933,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                 self.isRecordingMomentVideo = true
             }
             self.movieOutput.startRecording(to: url, recordingDelegate: self)
-            self.sessionQueue.asyncAfter(deadline: .now() + Self.momentVideoClipDuration, execute: stopWork)
+            self.sessionQueue.asyncAfter(deadline: .now() + clipDuration, execute: stopWork)
         }
     }
 
@@ -2207,6 +2209,9 @@ struct CameraCaptureView: View {
     @StateObject private var vibeRecorder = VibeRecorder()
     /// Photo / Vibe / Reel — persisted across camera sessions.
     @AppStorage("bloggo.camera.captureMode") private var captureModeRaw: String = CameraCaptureMode.photo.rawValue
+    /// Max reel clip length — settable directly from the camera in Reel mode.
+    @AppStorage(MomentVideoPreferences.userDefaultsKey) private var reelMaxDurationSeconds: Double =
+        MomentVideoPreferences.defaultDurationSeconds
     /// When enabled, each in-app camera capture is also saved to the user's Photos library.
     @AppStorage("bloggo.camera.saveToPhotosEnabled") private var saveToPhotosEnabled: Bool = false
     @AppStorage("bloggo.camera.hasSeenSaveToPhotosTooltip") private var hasSeenSaveToPhotosTooltip = false
@@ -2825,7 +2830,13 @@ struct CameraCaptureView: View {
                     .overlay(Circle().stroke(saveToPhotosEnabled ? Color.cyan.opacity(0.5) : Color.clear, lineWidth: 1))
             }
             .accessibilityLabel(saveToPhotosEnabled ? "Save to Photos on, tap to disable" : "Save to Photos off, tap to enable")
+
+            if isReelCaptureMode {
+                reelMaxDurationButton
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: isReelCaptureMode)
         .padding(.top, 8)
         .padding(.trailing, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -2847,14 +2858,14 @@ struct CameraCaptureView: View {
                 Color.black.ignoresSafeArea()
                 Image(uiImage: frozen)
                     .resizable()
-                    .scaledToFit()
+                    .scaledToFill()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .offset(y: -16)
+                    .clipped()
+                    .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture {
                         beginPreviewCaptionEditing()
                     }
-                    .ignoresSafeArea()
             }
 
             Color.black
@@ -2946,18 +2957,6 @@ struct CameraCaptureView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel(isPlaying ? "Stop vibe playback" : "Play vibe")
 
-                        Button {
-                            showRemoveVibeConfirm = true
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(width: 36, height: 36)
-                                .background(Color.red.opacity(0.8))
-                                .clipShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Remove vibe audio")
                     }
                 }
             }
@@ -4219,6 +4218,33 @@ struct CameraCaptureView: View {
         case .auto: return "Flash auto"
         @unknown default: return "Flash"
         }
+    }
+
+    /// Timer icon that opens a menu to select the max reel clip duration.
+    private var reelMaxDurationButton: some View {
+        Menu {
+            ForEach(MomentVideoPreferences.choices, id: \.self) { seconds in
+                Button {
+                    reelMaxDurationSeconds = seconds
+                } label: {
+                    if seconds == reelMaxDurationSeconds {
+                        Label(MomentVideoPreferences.label(for: seconds), systemImage: "checkmark")
+                    } else {
+                        Text(MomentVideoPreferences.label(for: seconds))
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "timer")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 44, height: 44)
+                .background(.ultraThinMaterial)
+                .clipShape(Circle())
+        }
+        .accessibilityLabel("Reel max duration: \(MomentVideoPreferences.label(for: reelMaxDurationSeconds)). Tap to change.")
+        .disabled(cameraController.isRecordingMomentVideo)
+        .opacity(cameraController.isRecordingMomentVideo ? 0.4 : 1)
     }
 
     private var shutterBar: some View {

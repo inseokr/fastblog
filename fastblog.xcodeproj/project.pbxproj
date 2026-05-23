@@ -194,9 +194,6 @@
 		BB0002A1 /* StoryWritingStyleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002A2 /* StoryWritingStyleSheet.swift */; };
 		BB0002B1 /* SlideshowMusicPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B0 /* SlideshowMusicPreference.swift */; };
 		BB0002B3 /* SlideshowMusicPlaybackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */; };
-		BB000343 /* MomentVideoPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000342 /* MomentVideoPreferences.swift */; };
-		BB000345 /* BlogReelAutoplayCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000344 /* BlogReelAutoplayCoordinator.swift */; };
-		BB000347 /* InlineMomentReelMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000346 /* InlineMomentReelMedia.swift */; };
 		BB0002B5 /* SlideshowBundledMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B4 /* SlideshowBundledMusic.swift */; };
 		BB0002B7 /* BlogVideoExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B6 /* BlogVideoExportService.swift */; };
 		BB0002B9 /* BlogVideoExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B8 /* BlogVideoExportOptionsSheet.swift */; };
@@ -224,6 +221,9 @@
 		BB000310 /* CinematicTravelSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000311 /* CinematicTravelSegment.swift */; };
 		BB000312 /* MomentVideoFullScreenPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000313 /* MomentVideoFullScreenPlayer.swift */; };
 		BB000340 /* BlogCarouselExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000341 /* BlogCarouselExportService.swift */; };
+		BB000343 /* MomentVideoPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000342 /* MomentVideoPreferences.swift */; };
+		BB000345 /* BlogReelAutoplayCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000344 /* BlogReelAutoplayCoordinator.swift */; };
+		BB000347 /* InlineMomentReelMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000346 /* InlineMomentReelMedia.swift */; };
 		BB0003A1 /* PDFExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003A2 /* PDFExportOptionsSheet.swift */; };
 		BB0003B1 /* VisitedCitiesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B0 /* VisitedCitiesService.swift */; };
 		BB0003B3 /* VisitedCitiesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B2 /* VisitedCitiesSheet.swift */; };
@@ -462,9 +462,6 @@
 		BB0002A2 /* StoryWritingStyleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryWritingStyleSheet.swift; sourceTree = "<group>"; };
 		BB0002B0 /* SlideshowMusicPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowMusicPreference.swift; sourceTree = "<group>"; };
 		BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowMusicPlaybackCoordinator.swift; sourceTree = "<group>"; };
-		BB000342 /* MomentVideoPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoPreferences.swift; sourceTree = "<group>"; };
-		BB000344 /* BlogReelAutoplayCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogReelAutoplayCoordinator.swift; sourceTree = "<group>"; };
-		BB000346 /* InlineMomentReelMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineMomentReelMedia.swift; sourceTree = "<group>"; };
 		BB0002B4 /* SlideshowBundledMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowBundledMusic.swift; sourceTree = "<group>"; };
 		BB0002B6 /* BlogVideoExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogVideoExportService.swift; sourceTree = "<group>"; };
 		BB0002B8 /* BlogVideoExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoExportOptionsSheet.swift; path = StoryBook/BlogVideoExportOptionsSheet.swift; sourceTree = "<group>"; };
@@ -492,6 +489,9 @@
 		BB000311 /* CinematicTravelSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicTravelSegment.swift; sourceTree = "<group>"; };
 		BB000313 /* MomentVideoFullScreenPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoFullScreenPlayer.swift; sourceTree = "<group>"; };
 		BB000341 /* BlogCarouselExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogCarouselExportService.swift; sourceTree = "<group>"; };
+		BB000342 /* MomentVideoPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoPreferences.swift; sourceTree = "<group>"; };
+		BB000344 /* BlogReelAutoplayCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogReelAutoplayCoordinator.swift; sourceTree = "<group>"; };
+		BB000346 /* InlineMomentReelMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineMomentReelMedia.swift; sourceTree = "<group>"; };
 		BB0003A2 /* PDFExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFExportOptionsSheet.swift; sourceTree = "<group>"; };
 		BB0003B0 /* VisitedCitiesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesService.swift; sourceTree = "<group>"; };
 		BB0003B2 /* VisitedCitiesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesSheet.swift; sourceTree = "<group>"; };
@@ -1362,7 +1362,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Debug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
@@ -1377,7 +1377,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fastblog.fastblog;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1398,7 +1398,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Release.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
@@ -1413,7 +1413,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fastblog.fastblog;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

@@ -20,9 +20,10 @@ struct CreateBlogFlowView: View {
     @State private var flowTitle: String = ""
     @State private var flowCoverTheme: String = ""
     @State private var flowCoverAssetIdentifier: String?
+    @State private var blogBuildProgress: Double = 0
 
-    /// Duration to show the Creating Recap animation before navigating home.
-    private let creatingAnimationDuration: TimeInterval = 5.0
+    /// Minimum duration to show the Creating animation (so it doesn't flash away instantly for fast builds).
+    private let minAnimationDuration: TimeInterval = 2.0
 
     @State private var showExitConfirmation = false
 
@@ -46,10 +47,13 @@ struct CreateBlogFlowView: View {
                     primaryButtonTitle: existingBlogId != nil ? "Update" : nil
                 )
             case .creating:
-                CreatingRecapView(onCancel: {
-                    createdRecapStore.removeLocalCopy(sourceTripId: trip.id)
-                    dismiss()
-                })
+                CreatingRecapView(
+                    onCancel: {
+                        createdRecapStore.removeLocalCopy(sourceTripId: trip.id)
+                        dismiss()
+                    },
+                    externalProgress: blogBuildProgress
+                )
                 .task {
                     do {
                         let animationStart = Date()
@@ -74,13 +78,15 @@ struct CreateBlogFlowView: View {
                         }
 
                         // Build first day only (rate limit: 50 geocode/min); remaining days process on recap page
-                        let detail = await createdRecapStore.buildBlogDetailFirstDayOnly(from: tripForBuild)
+                        let detail = await createdRecapStore.buildBlogDetailFirstDayOnly(from: tripForBuild) { value in
+                            Task { @MainActor in blogBuildProgress = value }
+                        }
 
                         try Task.checkCancellation()
 
-                        // Ensure minimum animation duration has elapsed
+                        // Ensure a minimum display duration so the animation isn't jarring on fast builds
                         let elapsed = Date().timeIntervalSince(animationStart)
-                        let remaining = creatingAnimationDuration - elapsed
+                        let remaining = minAnimationDuration - elapsed
                         if remaining > 0 {
                             try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
                         }
@@ -93,7 +99,7 @@ struct CreateBlogFlowView: View {
                     } catch is CancellationError {
                         print("Blog creation was cancelled.")
                     } catch {
-                        print("Unknown error during blog creation: \\(error)")
+                        print("Unknown error during blog creation: \(error)")
                     }
                 }
             }
