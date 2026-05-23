@@ -220,6 +220,10 @@ enum BlogVideoExportService {
         static let logicalWidth: CGFloat = 540
         static let logicalHeight: CGFloat = 960
         static var logicalSize: CGSize { CGSize(width: logicalWidth, height: logicalHeight) }
+        /// @2× logical canvas — matches cinematic export and 9:16 social targets.
+        static var exportPixelSize: CGSize {
+            CGSize(width: logicalWidth * 2, height: logicalHeight * 2)
+        }
     }
 
     enum ExportError: Error, LocalizedError {
@@ -474,37 +478,152 @@ enum BlogVideoExportService {
         return finalURL
     }
 
-    // MARK: - Simple stitch (composition — no per-frame UIImage decode)
+    // MARK: - Simple stitch (frame export with place / time overlay)
 
-    /// Concatenates moment `.mov` files via `AVMutableComposition` instead of decoding every frame to bitmaps.
+    /// Stitches moment reels at 9:16 with the same top-center place + timestamp chrome as cinematic reels.
     @MainActor
     private static func exportSimpleStitchVideo(
         draft: RecapBlogDetail,
         options: BlogVideoExportOptions,
         progressHandler: ((Double) -> Void)? = nil
     ) async throws -> URL {
-        let clipURLs = CinematicBlogVideoBuilder.orderedExportableMomentVideoClipURLs(
-            draft: draft,
-            includedPlaceIDs: options.includedPlaceIDs,
-            includedReelPhotoIDs: options.includedReelPhotoIDs
-        )
-        guard !clipURLs.isEmpty else { throw ExportError.noReelsToExport }
+        defer { releaseExportWorkingSet() }
 
-        let stitchedURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString + "-stitch.mp4")
-        var removeStitchedOnExit = true
+        let logicalSize = SocialVerticalVideoExportMetrics.logicalSize
+        let pixelSize = SocialVerticalVideoExportMetrics.exportPixelSize
+
+        let tempVideoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".mp4")
+
+        guard let writer = try? AVAssetWriter(outputURL: tempVideoURL, fileType: .mp4) else {
+            throw ExportError.writerSetupFailed
+        }
+
+        let videoSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: Int(pixelSize.width),
+            AVVideoHeightKey: Int(pixelSize.height),
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: 16_000_000,
+                AVVideoMaxKeyFrameIntervalKey: 60,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                AVVideoAllowFrameReorderingKey: false
+            ] as [String: Any]
+        ]
+        let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        videoInput.expectsMediaDataInRealTime = false
+
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: videoInput,
+            sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: Int(pixelSize.width),
+                kCVPixelBufferHeightKey as String: Int(pixelSize.height)
+            ]
+        )
+        guard writer.canAdd(videoInput) else { throw ExportError.writerSetupFailed }
+        writer.add(videoInput)
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
+
+        var removeTempVideoOnExit = true
         defer {
-            if removeStitchedOnExit {
-                try? FileManager.default.removeItem(at: stitchedURL)
+            if removeTempVideoOnExit {
+                try? FileManager.default.removeItem(at: tempVideoURL)
+            }
+            if writer.status == .writing {
+                writer.cancelWriting()
             }
         }
 
-        progressHandler?(0.05)
-        try await composeMomentClipsIntoVideo(clipURLs: clipURLs, outputURL: stitchedURL) { p in
-            progressHandler?(0.05 + p * 0.80)
+        let timescale: CMTimeScale = 600
+        let staticSegmentTimelineFPS: Double = 30
+        var currentPTS = CMTime.zero
+        var frameIdx = 0
+        var lastImageWritten: UIImage?
+        var videoTimelineSeconds: Double = 0
+        var momentAudioSegments = [MomentVideoAudioSegment]()
+        momentAudioSegments.reserveCapacity(32)
+
+        func appendFrame(_ image: UIImage, duration: Double) async throws {
+            let minSlice = 1.0 / staticSegmentTimelineFPS
+            let sliceCount: Int
+            let sliceDuration: Double
+            if duration <= minSlice * 1.000_001 {
+                sliceCount = 1
+                sliceDuration = duration
+            } else {
+                sliceCount = max(1, Int((duration * staticSegmentTimelineFPS).rounded()))
+                sliceDuration = duration / Double(sliceCount)
+            }
+            for slice in 0..<sliceCount {
+                while !videoInput.isReadyForMoreMediaData {
+                    try Task.checkCancellation()
+                    await Task.yield()
+                }
+                if slice > 0, slice % 90 == 0 {
+                    await Task.yield()
+                }
+                let appended = autoreleasepool { () -> Bool in
+                    guard let pb = pixelBuffer(from: image, size: pixelSize) else { return false }
+                    return adaptor.append(pb, withPresentationTime: currentPTS)
+                }
+                guard appended else { throw ExportError.failedToRenderPage(frameIdx) }
+                let delta = CMTime(
+                    value: CMTimeValue((sliceDuration * Double(timescale)).rounded()),
+                    timescale: timescale
+                )
+                currentPTS = CMTimeAdd(currentPTS, delta)
+                frameIdx += 1
+            }
+            lastImageWritten = image
+            videoTimelineSeconds += duration
         }
-        removeStitchedOnExit = false
+
+        try await CinematicBlogVideoBuilder.buildFrames(
+            from: draft,
+            logicalSize: logicalSize,
+            secondsPerPhoto: options.secondsPerSlide,
+            showPhotoCaptions: false,
+            maxPhotosPerPlace: options.maxPhotosPerPlace,
+            includedPlaceIDs: options.includedPlaceIDs,
+            includedReelPhotoIDs: options.includedReelPhotoIDs,
+            showDayItineraryCards: false,
+            showMapFrames: false,
+            videoStyle: .simpleStitch,
+            reelsOnly: true,
+            progressHandler: { p in progressHandler?(p * 0.85) },
+            momentAudioHandler: { url, transitionSeconds, clipSeconds in
+                momentAudioSegments.append(
+                    MomentVideoAudioSegment(
+                        url: url,
+                        timelineStart: videoTimelineSeconds + transitionSeconds,
+                        duration: clipSeconds
+                    )
+                )
+            },
+            frameHandler: { img, dur in try await appendFrame(img, duration: dur) }
+        )
+
+        if frameIdx == 0 {
+            try Task.checkCancellation()
+            throw ExportError.noReelsToExport
+        }
+
+        let endPadSeconds = 1.0 / 30.0
+        if let padImage = lastImageWritten {
+            try await appendFrame(padImage, duration: endPadSeconds)
+        }
+        lastImageWritten = nil
         releaseExportWorkingSet()
+
+        videoInput.markAsFinished()
+        await writer.finishWriting()
+        if writer.status == .failed {
+            throw ExportError.writerFailed(writer.error?.localizedDescription ?? "unknown")
+        }
+        progressHandler?(0.85)
+        try Task.checkCancellation()
 
         let safeTitle = draft.title.replacingOccurrences(of: "/", with: "-")
         let finalURL = URL.documentsDirectory
@@ -518,12 +637,12 @@ enum BlogVideoExportService {
             return track.fileURL
         }()
 
-        if musicURL != nil {
+        if musicURL != nil || !momentAudioSegments.isEmpty {
             do {
                 try await muxAudioOntoVideo(
-                    videoURL: stitchedURL,
+                    videoURL: tempVideoURL,
                     musicURL: musicURL,
-                    momentSegments: [],
+                    momentSegments: momentAudioSegments,
                     musicVolume: options.musicVolume,
                     outputURL: finalURL,
                     progressHandler: { muxProgress in
@@ -532,15 +651,79 @@ enum BlogVideoExportService {
                 )
             } catch {
                 try? FileManager.default.removeItem(at: finalURL)
-                try FileManager.default.copyItem(at: stitchedURL, to: finalURL)
+                try FileManager.default.moveItem(at: tempVideoURL, to: finalURL)
             }
-            try? FileManager.default.removeItem(at: stitchedURL)
+            removeTempVideoOnExit = false
+            try? FileManager.default.removeItem(at: tempVideoURL)
         } else {
-            try FileManager.default.moveItem(at: stitchedURL, to: finalURL)
+            try FileManager.default.moveItem(at: tempVideoURL, to: finalURL)
+            removeTempVideoOnExit = false
         }
 
+        momentAudioSegments.removeAll(keepingCapacity: false)
         progressHandler?(1.0)
         return finalURL
+    }
+
+    /// One stitched reel segment on the composition timeline (for per-clip portrait transforms).
+    private struct StitchedClipSegment {
+        let start: CMTime
+        let duration: CMTime
+        let layerTransform: CGAffineTransform
+    }
+
+    /// Aspect-fills source video into a fixed 9:16 canvas, honoring `preferredTransform`.
+    private static func layerTransformFillingVerticalCanvas(
+        naturalSize: CGSize,
+        preferredTransform: CGAffineTransform,
+        renderSize: CGSize
+    ) -> CGAffineTransform {
+        var displayRect = CGRect(origin: .zero, size: naturalSize).applying(preferredTransform)
+        let displayW = abs(displayRect.width)
+        let displayH = abs(displayRect.height)
+        guard displayW > 0, displayH > 0 else { return preferredTransform }
+
+        let scale = max(renderSize.width / displayW, renderSize.height / displayH)
+        var transform = preferredTransform.concatenating(CGAffineTransform(scaleX: scale, y: scale))
+        displayRect = CGRect(origin: .zero, size: naturalSize).applying(transform)
+        let dx = (renderSize.width - abs(displayRect.width)) / 2 - displayRect.minX
+        let dy = (renderSize.height - abs(displayRect.height)) / 2 - displayRect.minY
+        return transform.concatenating(CGAffineTransform(translationX: dx, y: dy))
+    }
+
+    private static func makePortraitFillVideoComposition(
+        renderSize: CGSize,
+        compositionTrack: AVCompositionTrack,
+        segments: [StitchedClipSegment],
+        timelineDuration: CMTime
+    ) -> AVMutableVideoComposition {
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.renderSize = renderSize
+        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+
+        var instructions = [AVMutableVideoCompositionInstruction]()
+        instructions.reserveCapacity(segments.count)
+
+        for segment in segments {
+            let instruction = AVMutableVideoCompositionInstruction()
+            instruction.timeRange = CMTimeRange(start: segment.start, duration: segment.duration)
+            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
+            layer.setTransform(segment.layerTransform, at: segment.start)
+            instruction.layerInstructions = [layer]
+            instructions.append(instruction)
+        }
+
+        if instructions.isEmpty {
+            let fallback = AVMutableVideoCompositionInstruction()
+            fallback.timeRange = CMTimeRange(start: .zero, duration: timelineDuration)
+            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
+            layer.setTransform(.identity, at: .zero)
+            fallback.layerInstructions = [layer]
+            instructions = [fallback]
+        }
+
+        videoComposition.instructions = instructions
+        return videoComposition
     }
 
     /// Inserts each clip’s video (and clip audio when present) back-to-back, then exports once.
@@ -562,7 +745,10 @@ enum BlogVideoExportService {
             preferredTrackID: kCMPersistentTrackID_Invalid
         )
 
+        let renderSize = SocialVerticalVideoExportMetrics.exportPixelSize
         var cursor = CMTime.zero
+        var segments = [StitchedClipSegment]()
+        segments.reserveCapacity(clipURLs.count)
         let clipCount = clipURLs.count
 
         for (index, url) in clipURLs.enumerated() {
@@ -577,10 +763,25 @@ enum BlogVideoExportService {
 
             let sourceVideoTracks = try await asset.loadTracks(withMediaType: .video)
             if let sourceVideo = sourceVideoTracks.first {
+                let segmentStart = cursor
                 try compositionVideoTrack.insertTimeRange(
                     CMTimeRange(start: .zero, duration: duration),
                     of: sourceVideo,
                     at: cursor
+                )
+                let naturalSize = try await sourceVideo.load(.naturalSize)
+                let preferredTransform = try await sourceVideo.load(.preferredTransform)
+                let layerTransform = layerTransformFillingVerticalCanvas(
+                    naturalSize: naturalSize,
+                    preferredTransform: preferredTransform,
+                    renderSize: renderSize
+                )
+                segments.append(
+                    StitchedClipSegment(
+                        start: segmentStart,
+                        duration: duration,
+                        layerTransform: layerTransform
+                    )
                 )
             }
 
@@ -602,11 +803,19 @@ enum BlogVideoExportService {
 
         guard CMTimeCompare(cursor, .zero) > 0 else { throw ExportError.noReelsToExport }
 
+        let videoComposition = makePortraitFillVideoComposition(
+            renderSize: renderSize,
+            compositionTrack: compositionVideoTrack,
+            segments: segments,
+            timelineDuration: cursor
+        )
+
         try await runAssetExportSession(
             asset: composition,
             outputURL: outputURL,
             fileType: .mp4,
-            presetName: AVAssetExportPresetHighestQuality
+            presetName: AVAssetExportPresetHighestQuality,
+            videoComposition: videoComposition
         )
     }
 
@@ -616,7 +825,8 @@ enum BlogVideoExportService {
         fileType: AVFileType,
         presetName: String,
         timeRange: CMTimeRange? = nil,
-        audioMix: AVAudioMix? = nil
+        audioMix: AVAudioMix? = nil,
+        videoComposition: AVVideoComposition? = nil
     ) async throws {
         guard let session = AVAssetExportSession(asset: asset, presetName: presetName) else {
             throw ExportError.writerFailed("Could not create export session.")
@@ -626,6 +836,7 @@ enum BlogVideoExportService {
         session.shouldOptimizeForNetworkUse = true
         if let timeRange { session.timeRange = timeRange }
         session.audioMix = audioMix
+        session.videoComposition = videoComposition
         try Task.checkCancellation()
 
         let sessionBox = ExportSessionBox(session: session)

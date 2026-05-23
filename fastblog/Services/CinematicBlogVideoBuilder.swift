@@ -13,8 +13,23 @@ import MapKit
 ///   2. Zoom-in        — `MapAnimationQuality.efficient`: cross-dissolve at cinematicZoomSegmentTargetFPS.
 ///                       `.highFidelity`: interpolated MKMapSnapshotter frames (true tile zoom; slower export).
 ///   3. Focused reveal — 0.003° with place info overlaid at bottom (2.5 s wall; bottom chrome fades in over the first ~0.5 s)
-///   4. Photo/reel slides — if a moment-video reel exists for a photo, the reel plays directly (with place/time overlay) instead of a Ken-Burns still; otherwise the still is shown with Ken Burns
+///   4. Photo/reel slides — if a moment-video reel exists for a photo, the reel plays directly (with place/time overlay) instead of a Ken-Burns still; otherwise the still is shown with Ken Burns.
+///      Consecutive reels at the same stop cross-dissolve; the first reel after a map uses the zoom-burst map→reel transition.
 enum CinematicBlogVideoBuilder {
+
+    private enum MomentClipEntryTransition {
+        case none
+        case mapToReel(from: UIImage)
+        case crossDissolve(from: UIImage)
+
+        var leadingSeconds: Double {
+            switch self {
+            case .none: return 0
+            case .mapToReel: return mapToReelTransitionSeconds
+            case .crossDissolve: return cinematicPhotoToPhotoDissolveDurationSeconds
+            }
+        }
+    }
 
     /// Target temporal sampling for the wide→tight zoom dissolve (no extra MapKit work).
     private static let cinematicZoomSegmentTargetFPS: Double = 30
@@ -236,7 +251,7 @@ enum CinematicBlogVideoBuilder {
                     for (photoIdx, photo) in clips.enumerated() {
                         let clipDur = momentVideoDurationSeconds(for: photo)
                         if clipDur > 0 {
-                            if !isFirstClipOfVideo { total += mapToReelTransitionSeconds }
+                            if photoIdx > 0 { total += cinematicPhotoToPhotoDissolveDurationSeconds }
                             total += clipDur
                         } else if !reelsOnly {
                             if photoIdx > 0 { total += cinematicPhotoToPhotoDissolveDurationSeconds }
@@ -278,7 +293,11 @@ enum CinematicBlogVideoBuilder {
                     for (photoIdx, photo) in clips.enumerated() {
                         let clipDur = momentVideoDurationSeconds(for: photo)
                         if clipDur > 0 {
-                            total += mapToReelTransitionSeconds
+                            if photoIdx == 0, coordOK {
+                                total += mapToReelTransitionSeconds
+                            } else if photoIdx > 0 {
+                                total += cinematicPhotoToPhotoDissolveDurationSeconds
+                            }
                             total += clipDur
                         } else if !reelsOnly {
                             if photoIdx == 0, coordOK {
@@ -363,61 +382,46 @@ enum CinematicBlogVideoBuilder {
 
         for day in days {
             try Task.checkCancellation()
-            let clips = day.placeStops.flatMap {
-                exportableReelPhotos(for: $0, includedReelPhotoIDs: includedReelPhotoIDs)
-            }
-            guard !clips.isEmpty else { continue }
+            for stop in day.placeStops {
+                let clips = exportableReelPhotos(
+                    for: stop,
+                    includedReelPhotoIDs: includedReelPhotoIDs
+                )
+                guard !clips.isEmpty else { continue }
 
-            for photo in clips {
-                try Task.checkCancellation()
-                guard momentVideoDurationSeconds(for: photo) > 0,
-                      let clipURL = momentVideoURL(for: photo) else { continue }
+                for photo in clips {
+                    try Task.checkCancellation()
+                    guard momentVideoDurationSeconds(for: photo) > 0,
+                          let clipURL = momentVideoURL(for: photo) else { continue }
 
-                if try await emitMomentVideoClipSimpleStitch(
-                    url: clipURL,
-                    pixelSize: pixelSize,
-                    momentAudioHandler: momentAudioHandler,
-                    frameHandler: frameHandler
-                ) != nil {
-                    reportProgress()
-                    if completedReelClips % 8 == 0 {
-                        await MainActor.run {
-                            ImageLoader.shared.clearDecodedImageMemoryCache()
+                    let timeLabel = photoSlideTimeDisplayText(for: photo, stop: stop)
+                    if try await emitMomentVideoClipSimpleStitch(
+                        url: clipURL,
+                        pixelSize: pixelSize,
+                        placeName: stop.placeTitle,
+                        timestampText: timeLabel,
+                        momentAudioHandler: momentAudioHandler,
+                        frameHandler: frameHandler
+                    ) != nil {
+                        reportProgress()
+                        if completedReelClips % 8 == 0 {
+                            await MainActor.run {
+                                ImageLoader.shared.clearDecodedImageMemoryCache()
+                            }
                         }
+                        await Task.yield()
                     }
-                    await Task.yield()
                 }
             }
         }
         progressHandler?(0.95)
     }
 
-    private static func drawSimpleStitchVideoFrame(_ frame: UIImage, pixelSize: CGSize) -> UIImage {
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = true
-        return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
-            let cg = ctx.cgContext
-            let w = pixelSize.width, h = pixelSize.height
-
-            let photoAR = frame.size.width / max(frame.size.height, 1)
-            let frameAR = w / h
-            let baseRect: CGRect
-            if photoAR > frameAR {
-                let dh = h; let dw = dh * photoAR
-                baseRect = CGRect(x: (w - dw) / 2, y: 0, width: dw, height: dh)
-            } else {
-                let dw = w; let dh = dw / photoAR
-                baseRect = CGRect(x: 0, y: (h - dh) / 2, width: dw, height: dh)
-            }
-            prepareContextForSharpBitmapCompositing(cg)
-            frame.draw(in: integralRect(baseRect))
-        }
-    }
-
     private static func emitMomentVideoClipSimpleStitch(
         url: URL,
         pixelSize: CGSize,
+        placeName: String,
+        timestampText: String,
         momentAudioHandler: ((URL, Double, Double) -> Void)?,
         frameHandler: (UIImage, Double) async throws -> Void
     ) async throws -> UIImage? {
@@ -454,7 +458,14 @@ enum CinematicBlogVideoBuilder {
                 let time = CMTime(seconds: t, preferredTimescale: 600)
                 let frame = try autoreleasepool {
                     let cg = try generator.copyCGImage(at: time, actualTime: nil)
-                    return drawSimpleStitchVideoFrame(UIImage(cgImage: cg), pixelSize: pixelSize)
+                    return drawPhotoSlide(
+                        UIImage(cgImage: cg),
+                        caption: nil,
+                        placeName: placeName,
+                        timestampText: timestampText,
+                        pixelSize: pixelSize,
+                        kbScale: 1.0
+                    )
                 }
                 lastEmitted = frame
                 try await frameHandler(frame, dt)
@@ -822,7 +833,15 @@ enum CinematicBlogVideoBuilder {
                     if momentVideoDurationSeconds(for: photo) > 0,
                        let clipURL = momentVideoURL(for: photo) {
                         // Reel with valid duration: decode frames with overlays; fall back to still if decode fails.
-                        let dissolveFrom: UIImage? = lastPhotoKBLastFrame ?? lastFocusedMapCompositeForPhotoTransition
+                        let leadingTransition: MomentClipEntryTransition = {
+                            if let prevSlide = lastPhotoKBLastFrame {
+                                return .crossDissolve(from: prevSlide)
+                            }
+                            if let mapFrame = lastFocusedMapCompositeForPhotoTransition {
+                                return .mapToReel(from: mapFrame)
+                            }
+                            return .none
+                        }()
                         let (slideCaption, usesPlaceCaptionFallback) = slideCaptionForExport(
                             photo: photo,
                             placeStory: placeStoryForSlides,
@@ -831,7 +850,7 @@ enum CinematicBlogVideoBuilder {
                         if let clipLast = try await emitMomentVideoClipWithPlaceOverlay(
                             url: clipURL,
                             pixelSize: pixelSize,
-                            dissolveFrom: dissolveFrom,
+                            leadingTransition: leadingTransition,
                             caption: slideCaption,
                             placeName: stop.placeTitle,
                             timestampText: timeLabel,
@@ -2459,12 +2478,12 @@ enum CinematicBlogVideoBuilder {
     }
 
     /// Decodes `moment_video.mov` at export FPS, overlays caption (when provided), place name + timestamp on every frame,
-    /// and streams through `frameHandler`. Cross-dissolves from `dissolveFrom` when provided.
+    /// and streams through `frameHandler`. Applies `leadingTransition` before the clip body when not `.none`.
     /// Returns the last emitted frame (for dissolves into the next slide).
     private static func emitMomentVideoClipWithPlaceOverlay(
         url: URL,
         pixelSize: CGSize,
-        dissolveFrom previousFrame: UIImage?,
+        leadingTransition: MomentClipEntryTransition,
         caption: String?,
         placeName: String,
         timestampText: String,
@@ -2481,8 +2500,7 @@ enum CinematicBlogVideoBuilder {
             }
             guard durationSec.isFinite, durationSec > 0.02 else { return nil }
 
-            let transitionSeconds = previousFrame != nil ? mapToReelTransitionSeconds : 0
-            momentAudioHandler?(url, transitionSeconds, durationSec)
+            momentAudioHandler?(url, leadingTransition.leadingSeconds, durationSec)
 
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
@@ -2517,7 +2535,17 @@ enum CinematicBlogVideoBuilder {
 
             var lastEmitted: UIImage?
 
-            if let prev = previousFrame {
+            switch leadingTransition {
+            case .none:
+                for fi in 0..<frameCount {
+                    try Task.checkCancellation()
+                    let frame = try videoFrameWithOverlay(at: fi)
+                    lastEmitted = frame
+                    try await frameHandler(frame, dt)
+                    if fi % 30 == 29 { await Task.yield() }
+                }
+
+            case .mapToReel(let prev):
                 let firstVF = try videoFrameWithOverlay(at: 0)
                 let nD = max(10, Int(round(mapToReelTransitionSeconds * mapToReelTransitionFPS)))
                 let dDt = mapToReelTransitionSeconds / Double(nD)
@@ -2526,7 +2554,9 @@ enum CinematicBlogVideoBuilder {
                     try Task.checkCancellation()
                     let t = CGFloat(fi) / CGFloat(denom)
                     let blended = autoreleasepool {
-                        drawMapToReelTransitionFrame(mapFrame: prev, reelFrame: firstVF, progress: t, pixelSize: pixelSize)
+                        drawMapToReelTransitionFrame(
+                            mapFrame: prev, reelFrame: firstVF, progress: t, pixelSize: pixelSize
+                        )
                     }
                     try await frameHandler(blended, dDt)
                 }
@@ -2538,8 +2568,22 @@ enum CinematicBlogVideoBuilder {
                     try await frameHandler(frame, dt)
                     if fi % 30 == 29 { await Task.yield() }
                 }
-            } else {
-                for fi in 0..<frameCount {
+
+            case .crossDissolve(let prev):
+                let firstVF = try videoFrameWithOverlay(at: 0)
+                let nD = max(8, Int(round(cinematicPhotoToPhotoDissolveDurationSeconds * cinematicPhotoToPhotoDissolveTargetFPS)))
+                let dDt = cinematicPhotoToPhotoDissolveDurationSeconds / Double(nD)
+                let denom = max(nD - 1, 1)
+                for fi in 0..<nD {
+                    try Task.checkCancellation()
+                    let t = easeInOutCubic(CGFloat(fi) / CGFloat(denom))
+                    let blended = autoreleasepool {
+                        blendCoverToMap(from: prev, to: firstVF, progress: t, size: pixelSize)
+                    }
+                    try await frameHandler(blended, dDt)
+                }
+                lastEmitted = firstVF
+                for fi in 1..<frameCount {
                     try Task.checkCancellation()
                     let frame = try videoFrameWithOverlay(at: fi)
                     lastEmitted = frame
