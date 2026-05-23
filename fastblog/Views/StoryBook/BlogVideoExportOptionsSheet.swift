@@ -272,7 +272,7 @@ struct BlogVideoExportOptionsSheet: View {
                     Text("Show captions on reels")
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.primary)
-                    Text("Overlay photo or place captions on each reel clip")
+                    Text("Shows photo or place captions for the first 3 seconds of each clip")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

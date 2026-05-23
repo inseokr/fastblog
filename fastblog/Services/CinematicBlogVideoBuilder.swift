@@ -61,6 +61,9 @@ enum CinematicBlogVideoBuilder {
     private static let cinematicPhotoToPhotoDissolveDurationSeconds: Double = 0.40
     private static let cinematicPhotoToPhotoDissolveTargetFPS: Double = 30
 
+    /// Story/caption overlay visible only for this long after each reel or photo slide starts.
+    private static let cinematicCaptionVisibleSeconds: Double = 3.0
+
     /// Map → moment-video reel transition (zoom-burst reveal).
     private static let mapToReelTransitionSeconds: Double = 0.50
     private static let mapToReelTransitionFPS: Double = 30
@@ -884,9 +887,12 @@ enum CinematicBlogVideoBuilder {
                             } else if !showMapFrames, let prevSlide = noMapInterPlaceLastSlide {
                                 // Slide-push from the previous place's last photo into this one.
                                 let firstKBForSlide = autoreleasepool {
-                                    drawPhotoSlide(img, caption: slideCaption, placeName: stop.placeTitle,
-                                                   timestampText: timeLabel,
-                                                   pixelSize: pixelSize, kbScale: 1.0)
+                                    drawPhotoSlide(
+                                        img, caption: slideCaption, placeName: stop.placeTitle,
+                                        timestampText: timeLabel,
+                                        pixelSize: pixelSize, kbScale: 1.0,
+                                        captionElapsedSeconds: 0
+                                    )
                                 }
                                 let nFrames = max(8, Int(round(noMapInterPlaceTransitionSeconds * noMapInterPlaceTransitionFPS)))
                                 let transitionDt = noMapInterPlaceTransitionSeconds / Double(nFrames)
@@ -918,7 +924,8 @@ enum CinematicBlogVideoBuilder {
                                 placeName: stop.placeTitle,
                                 timestampText: timeLabel,
                                 pixelSize: pixelSize,
-                                kbScale: kbStart
+                                kbScale: kbStart,
+                                captionElapsedSeconds: 0
                             )
                         }
 
@@ -942,6 +949,7 @@ enum CinematicBlogVideoBuilder {
                             try Task.checkCancellation()
                             let t = kbFrameCount > 1 ? CGFloat(fi) / CGFloat(kbFrameCount - 1) : 0
                             let kbScale = kbStart + (kbEnd - kbStart) * t
+                            let captionElapsed = kbDt * Double(fi)
                             let frame = autoreleasepool {
                                 drawPhotoSlide(
                                     img,
@@ -949,7 +957,8 @@ enum CinematicBlogVideoBuilder {
                                     placeName: stop.placeTitle,
                                     timestampText: timeLabel,
                                     pixelSize: pixelSize,
-                                    kbScale: kbScale
+                                    kbScale: kbScale,
+                                    captionElapsedSeconds: captionElapsed
                                 )
                             }
                             kbLastFrame = frame
@@ -2500,7 +2509,8 @@ enum CinematicBlogVideoBuilder {
                         placeName: placeName,
                         timestampText: timestampText,
                         pixelSize: pixelSize,
-                        kbScale: 1.0
+                        kbScale: 1.0,
+                        captionElapsedSeconds: t
                     )
                 }
             }
@@ -2552,9 +2562,11 @@ enum CinematicBlogVideoBuilder {
         placeName: String,
         timestampText: String,
         pixelSize: CGSize,
-        kbScale: CGFloat = 1.0
+        kbScale: CGFloat = 1.0,
+        captionElapsedSeconds: Double = 0
     ) -> UIImage {
-        let hasStory = !(caption?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        let showCaption = captionElapsedSeconds < cinematicCaptionVisibleSeconds
+        let hasStory = showCaption && !(caption?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
