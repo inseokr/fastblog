@@ -25,4 +25,17 @@ struct TripDay: Identifiable, Equatable, Hashable, Codable, Sendable {
         self.countryName = countryName
         self.cityName = cityName
     }
+
+    /// Calendar date aligned with `dateText` for range formatting (local noon avoids timezone day shifts).
+    var dateAlignedForRange: Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.dateStyle = .medium
+        guard let parsed = formatter.date(from: dateText) else { return nil }
+        var comps = Calendar.current.dateComponents([.year, .month, .day], from: parsed)
+        comps.hour = 12
+        comps.minute = 0
+        comps.second = 0
+        return Calendar.current.date(from: comps)
+    }
 }

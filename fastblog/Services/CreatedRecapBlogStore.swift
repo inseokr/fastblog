@@ -9,6 +9,11 @@ import Foundation
 import Photos
 import SwiftUI
 
+extension Notification.Name {
+    /// Posted when persisted trip drafts change (e.g. after split) so TripsViewModel can refresh in-memory drafts.
+    static let tripDraftsDidChangeInStore = Notification.Name("tripDraftsDidChangeInStore")
+}
+
 // MARK: - Blog Ownership & Sync Enums
 
 /// Whether the blog belongs to an anonymous (logged-out) session or a signed-in account.
@@ -344,6 +349,27 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
         }
         if didMigrateCommittedSave { persistRecents() }
+
+        refreshRecentsDateMetadataFromBlogDetails()
+    }
+
+    /// Realigns landing-page date ranges with day row headers (fixes legacy off-by-one tripStartDate/tripEndDate).
+    private func refreshRecentsDateMetadataFromBlogDetails() {
+        var didChange = false
+        for idx in recents.indices {
+            guard let detail = blogDetailsBySourceId[recents[idx].sourceTripId],
+                  !detail.days.isEmpty else { continue }
+            let start = RecapBlogDay.alignedTripStartDate(from: detail.days)
+            let end = RecapBlogDay.alignedTripEndDate(from: detail.days)
+            let range = Self.formatDateRange(start: start, end: end)
+            if recents[idx].tripStartDate != start || recents[idx].tripEndDate != end || recents[idx].tripDateRangeText != range {
+                recents[idx].tripStartDate = start
+                recents[idx].tripEndDate = end
+                recents[idx].tripDateRangeText = range
+                didChange = true
+            }
+        }
+        if didChange { persistRecents() }
     }
 
     private func persistRecents() {
@@ -635,6 +661,11 @@ final class CreatedRecapBlogStore: ObservableObject {
         tripDraftsBySourceId[sourceTripId]
     }
 
+    /// All persisted trip drafts (e.g. split parts stored after `splitUnsavedTrip`).
+    func allTripDrafts() -> [TripDraft] {
+        Array(tripDraftsBySourceId.values)
+    }
+
     /// Returns a trip draft with photo selection matching the current blog content (for Edit → photo selection flow). Nil if no draft.
     func tripDraftApplyingBlogSelection(blogId: UUID) -> TripDraft? {
         guard var trip = tripDraftsBySourceId[blogId] else { return nil }
@@ -924,12 +955,13 @@ final class CreatedRecapBlogStore: ObservableObject {
 
         // Update blog metadata to reflect newly injected photos.
         if let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) {
-            let allDayDates = detail.days.map(\.date)
-            if let minDate = allDayDates.min(),
+            let newStart = RecapBlogDay.alignedTripStartDate(from: detail.days)
+            let newEnd = RecapBlogDay.alignedTripEndDate(from: detail.days)
+            if let minDate = newStart,
                (recents[idx].tripStartDate == nil || minDate < recents[idx].tripStartDate!) {
                 recents[idx].tripStartDate = minDate
             }
-            if let maxDate = allDayDates.max(),
+            if let maxDate = newEnd,
                (recents[idx].tripEndDate == nil || maxDate > recents[idx].tripEndDate!) {
                 recents[idx].tripEndDate = maxDate
             }
@@ -997,9 +1029,9 @@ final class CreatedRecapBlogStore: ObservableObject {
         let old = recents[idx]
         let country = (detail.countryName.flatMap { $0.isEmpty || $0 == "Unknown" ? nil : $0 }) ?? old.countryName
 
-        // Use the dates from detail to accurately reflect removals/splits
-        let newStart = detail.days.first?.date ?? old.tripStartDate
-        let newEnd = detail.days.last?.date ?? old.tripEndDate
+        // Use EXIF-aligned dates so recents / scan ranges match day row headers.
+        let newStart = RecapBlogDay.alignedTripStartDate(from: detail.days) ?? old.tripStartDate
+        let newEnd = RecapBlogDay.alignedTripEndDate(from: detail.days) ?? old.tripEndDate
         let newDateRange = Self.formatDateRange(start: newStart, end: newEnd) ?? old.tripDateRangeText
         let newSelectedCount = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
 
@@ -1948,9 +1980,9 @@ final class CreatedRecapBlogStore: ObservableObject {
             removedPlaceStops: part2Removed
         )
 
-        // 6. Update Part 1 metadata
-        let start1 = part1Days.first?.date
-        let end1 = part1Days.last?.date
+        // 6. Update Part 1 metadata (EXIF-aligned dates so range matches day row headers)
+        let start1 = part1Days.first?.dateAlignedWithShortDateText
+        let end1 = part1Days.last?.dateAlignedWithShortDateText
         let places1 = part1Days.reduce(0) { $0 + $1.placeStops.count }
         let photos1 = part1Days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
 
@@ -1966,8 +1998,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         recents[recentIdx].hasCommittedRecapSave = oldRecent.hasCommittedRecapSave
 
         // 7. Create Part 2 recents entry
-        let start2 = part2Days.first?.date
-        let end2 = part2Days.last?.date
+        let start2 = part2Days.first?.dateAlignedWithShortDateText
+        let end2 = part2Days.last?.dateAlignedWithShortDateText
         let places2 = part2Days.reduce(0) { $0 + $1.placeStops.count }
         let photos2 = part2Days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
 
@@ -1999,6 +2031,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                 trip1.days = Array(trip.days[0...splitIdx])
                 for i in trip1.days.indices { trip1.days[i].dayIndex = i + 1 }
                 trip1.title = title1
+                trip1.dateRangeText = Self.formatDateRange(start: start1, end: end1) ?? ""
                 tripDraftsBySourceId[blogId] = trip1
 
                 var trip2Days = Array(trip.days[(splitIdx + 1)...])
@@ -2028,6 +2061,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         persistBlogDetails()
         persistTripDrafts()
         needsRescan = true
+        NotificationCenter.default.post(name: .tripDraftsDidChangeInStore, object: nil)
     }
 
     /// Splits an unsaved trip draft into two, keeping one part for the current editor and preserving the other part as a new TripDraft.
@@ -2050,9 +2084,9 @@ final class CreatedRecapBlogStore: ObservableObject {
         let title1 = "\(baseTitle) (Part 1 of 2)"
         let title2 = "\(baseTitle) (Part 2 of 2)"
         
-        // 2. Formulate the two TripDrafts
-        let start1 = part1Days.first?.photos.first?.timestamp
-        let end1 = part1Days.last?.photos.last?.timestamp
+        // 2. Formulate the two TripDrafts (dateText-aligned ranges match day rows / landing cards)
+        let start1 = part1Days.first?.dateAlignedForRange
+        let end1 = part1Days.last?.dateAlignedForRange
         let dateRange1 = Self.formatDateRange(start: start1, end: end1) ?? ""
         
         var trip1 = trip
@@ -2060,8 +2094,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         trip1.days = part1Days
         trip1.dateRangeText = dateRange1
         
-        let start2 = part2Days.first?.photos.first?.timestamp
-        let end2 = part2Days.last?.photos.last?.timestamp
+        let start2 = part2Days.first?.dateAlignedForRange
+        let end2 = part2Days.last?.dateAlignedForRange
         let dateRange2 = Self.formatDateRange(start: start2, end: end2) ?? ""
         
         // Provide a cover image fallback for the second part
@@ -2098,6 +2132,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         
         persistTripDrafts()
         needsRescan = true
+        NotificationCenter.default.post(name: .tripDraftsDidChangeInStore, object: nil)
     }
 
     /// Undoes the last split operation by re-merging the two resulting blogs back into one.
@@ -2963,13 +2998,17 @@ final class CreatedRecapBlogStore: ObservableObject {
         var newStopsToGeocode: [(dayIdx: Int, stopId: UUID)] = []
 
         for (dayStart, dayPhotos) in byDay.sorted(by: { $0.key < $1.key }) {
-            var dayIdx = detail.days.firstIndex(where: { cal.startOfDay(for: $0.date) == dayStart })
+            var dayIdx = detail.days.firstIndex(where: {
+                cal.startOfDay(for: $0.dateAlignedWithShortDateText) == dayStart
+            })
             if dayIdx == nil {
                 let newDay = RecapBlogDay(dayIndex: 0, date: dayStart, placeStops: [])
                 detail.days.append(newDay)
-                detail.days.sort { $0.date < $1.date }
+                detail.days.sort { $0.dateAlignedWithShortDateText < $1.dateAlignedWithShortDateText }
                 for i in detail.days.indices { detail.days[i].dayIndex = i + 1 }
-                dayIdx = detail.days.firstIndex(where: { cal.startOfDay(for: $0.date) == dayStart })!
+                dayIdx = detail.days.firstIndex(where: {
+                    cal.startOfDay(for: $0.dateAlignedWithShortDateText) == dayStart
+                })!
             }
             guard let di = dayIdx else { continue }
 
@@ -3092,12 +3131,13 @@ final class CreatedRecapBlogStore: ObservableObject {
 
         // Update blog metadata.
         if let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) {
-            let allDayDates = detail.days.map(\.date)
-            if let minDate = allDayDates.min(),
+            let newStart = RecapBlogDay.alignedTripStartDate(from: detail.days)
+            let newEnd = RecapBlogDay.alignedTripEndDate(from: detail.days)
+            if let minDate = newStart,
                (recents[idx].tripStartDate == nil || minDate < recents[idx].tripStartDate!) {
                 recents[idx].tripStartDate = minDate
             }
-            if let maxDate = allDayDates.max(),
+            if let maxDate = newEnd,
                (recents[idx].tripEndDate == nil || maxDate > recents[idx].tripEndDate!) {
                 recents[idx].tripEndDate = maxDate
             }

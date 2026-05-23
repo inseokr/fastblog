@@ -746,6 +746,13 @@ final class TripsViewModel: ObservableObject {
                 startDefaultScan(forceFullScan: true, openTripsWhenFinished: true)
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .tripDraftsDidChangeInStore)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.syncTripDraftsFromStore()
+            }
+            .store(in: &cancellables)
     }
 
     func onAppear() {
@@ -817,6 +824,7 @@ final class TripsViewModel: ObservableObject {
     /// When true, skips incremental scan and runs a full-window scan (e.g. after user selects more photos in Limited Library picker).
     /// Set `openTripsWhenFinished` when the scan was user-initiated from Settings (home radius) so the Trips overlay appears when the scan completes.
     func startDefaultScan(forceFullScan: Bool = false, openTripsWhenFinished: Bool = false) {
+        syncTripDraftsFromStore()
         if forceFullScan {
             PhotoLibraryTripService.invalidateScanCache()
         }
@@ -1230,8 +1238,8 @@ final class TripsViewModel: ObservableObject {
                 }
             }
 
-            // 2. Check existing drafts — merge photos into matching trip.
-            if let idx = tripDrafts.firstIndex(where: { areTripsRelated($0, newTrip) }) {
+            // 2. Check existing drafts — merge photos into the best-matching trip (latest end date when split parts both match).
+            if let idx = bestRelatedDraftIndex(for: newTrip) {
                 let beforeIds = Set(tripDrafts[idx].days.flatMap(\.photos).compactMap(\.localIdentifier))
                 let (merged, didChange) = appendDaysFromTrip(newTrip, into: tripDrafts[idx])
                 tripDrafts[idx] = merged
@@ -1359,6 +1367,7 @@ final class TripsViewModel: ObservableObject {
         debugPrint("[Scan] findMatchingSavedBlog: trip \"\(trip.title)\" tripStart=\(scanDbg(tripStart)) tripEnd=\(scanDbg(tripEnd)) checking \(createdRecapStore.visibleRecents.count) blog(s)")
         #endif
 
+        var matches: [CreatedRecapBlog] = []
         for blog in createdRecapStore.visibleRecents {
             guard let blogStart = blog.tripStartDate, let blogEnd = blog.tripEndDate else {
                 #if DEBUG
@@ -1379,16 +1388,60 @@ final class TripsViewModel: ObservableObject {
             #endif
 
             guard overlaps || continues else { continue }
-
-            #if DEBUG
-            debugPrint("[Scan]   → MATCHED blog \"\(blog.title)\" (date overlap/continuation)")
-            #endif
-            return blog
+            matches.append(blog)
         }
+
+        guard let best = matches.max(by: {
+            ($0.tripEndDate ?? .distantPast) < ($1.tripEndDate ?? .distantPast)
+        }) else {
+            #if DEBUG
+            debugPrint("[Scan] findMatchingSavedBlog: no match found")
+            #endif
+            return nil
+        }
+
         #if DEBUG
-        debugPrint("[Scan] findMatchingSavedBlog: no match found")
+        debugPrint("[Scan]   → MATCHED blog \"\(best.title)\" (date overlap/continuation)")
         #endif
-        return nil
+        return best
+    }
+
+    /// Among drafts related to `newTrip`, pick the one with the latest end date (e.g. Part 2 over Part 1 after a split).
+    private func bestRelatedDraftIndex(for newTrip: TripDraft) -> Int? {
+        let related = tripDrafts.enumerated().compactMap { idx, draft -> (idx: Int, end: Date)? in
+            guard areTripsRelated(draft, newTrip), let end = draft.latestDate else { return nil }
+            return (idx, end)
+        }
+        return related.max(by: { $0.end < $1.end })?.idx
+    }
+
+    /// Replaces in-memory drafts with persisted split parts and drops stale pre-split parents.
+    func syncTripDraftsFromStore() {
+        let storeDrafts = createdRecapStore.allTripDrafts()
+        guard !storeDrafts.isEmpty else { return }
+
+        for storeDraft in storeDrafts {
+            if let idx = tripDrafts.firstIndex(where: { $0.id == storeDraft.id }) {
+                tripDrafts[idx] = storeDraft
+            } else if storeDraft.title.contains("(Part ") {
+                if !tripDrafts.contains(where: { $0.id == storeDraft.id }) {
+                    tripDrafts.append(storeDraft)
+                }
+            }
+        }
+
+        let splitBases = Set(
+            storeDrafts
+                .filter { $0.title.contains("(Part ") }
+                .map { CreatedRecapBlogStore.titleByStrippingSplitPartSuffix($0.title) }
+        )
+        guard !splitBases.isEmpty else { return }
+
+        tripDrafts.removeAll { trip in
+            let base = CreatedRecapBlogStore.titleByStrippingSplitPartSuffix(trip.title)
+            guard splitBases.contains(base) else { return false }
+            return !trip.title.contains("(Part ")
+        }
     }
 
     /// Returns true when `newTrip` overlaps with or is a temporal continuation
@@ -1465,9 +1518,21 @@ final class TripsViewModel: ObservableObject {
                 var d = day; d.dayIndex = idx; return d
             }
             merged.days = allDays
+            refreshTripDraftDateRange(&merged)
         }
 
         return (merged, didChange)
+    }
+
+    private func refreshTripDraftDateRange(_ trip: inout TripDraft) {
+        guard let first = trip.days.first, let last = trip.days.last else { return }
+        if let start = first.dateAlignedForRange, let end = last.dateAlignedForRange {
+            trip.dateRangeText = CreatedRecapBlogStore.formatDateRange(start: start, end: end) ?? trip.dateRangeText
+        } else {
+            trip.dateRangeText = first.dateText == last.dateText
+                ? first.dateText
+                : "\(first.dateText) – \(last.dateText)"
+        }
     }
 
     /// Drops photos outside `[rangeStart, rangeEnd]` (inclusive), removes empty days, reindexes days,

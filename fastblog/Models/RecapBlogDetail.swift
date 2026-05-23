@@ -181,6 +181,46 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
         return fmt.string(from: d)
     }
 
+    /// Calendar date in the user's local calendar that matches `shortDateText` / EXIF capture day.
+    /// Use with `CreatedRecapBlogStore.formatDateRange` instead of raw `date` (UTC midnight shifts a day west of UTC).
+    var dateAlignedWithShortDateText: Date {
+        if let digitized = placeStops.first?.visitedTimeDigitized {
+            let parts = digitized.split(separator: " ")
+            if !parts.isEmpty {
+                let parser = DateFormatter()
+                parser.dateFormat = "yyyy:MM:dd"
+                parser.timeZone = TimeZone(secondsFromGMT: 0)
+                if let exifUTCDate = parser.date(from: String(parts[0])) {
+                    var utcCal = Calendar(identifier: .gregorian)
+                    utcCal.timeZone = TimeZone(secondsFromGMT: 0)!
+                    var comps = utcCal.dateComponents([.year, .month, .day], from: exifUTCDate)
+                    comps.hour = 12
+                    comps.minute = 0
+                    comps.second = 0
+                    if let localNoon = Calendar.current.date(from: comps) {
+                        return localNoon
+                    }
+                }
+            }
+        }
+        return date
+    }
+
+    /// Trip-level date range for cover/header (aligned with `shortDateText` on each day row).
+    static func tripCoverDateRangeText(from days: [RecapBlogDay]) -> String {
+        guard let first = days.first, let last = days.last else { return "" }
+        return "\(first.monthDayStringForStoryBookRange()) – \(last.monthDayStringForStoryBookRange())\(last.yearSuffixForStoryBookRange())"
+    }
+
+    /// Start/end dates aligned with day row headers — use for recents metadata and occupied scan ranges.
+    static func alignedTripStartDate(from days: [RecapBlogDay]) -> Date? {
+        days.first?.dateAlignedWithShortDateText
+    }
+
+    static func alignedTripEndDate(from days: [RecapBlogDay]) -> Date? {
+        days.last?.dateAlignedWithShortDateText
+    }
+
     /// All photos in this day that have a location (for map pins).
     var photosWithLocation: [RecapPhoto] {
         placeStops.flatMap(\.photos).filter { $0.location != nil }
