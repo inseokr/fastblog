@@ -169,6 +169,71 @@ enum PlaceCategoryID: String, Sendable {
         }
         return .unknown
     }
+
+    /// Short, category-appropriate travel-blog line when the on-device model is unavailable or returns nothing.
+    /// Intentionally generic — no invented venue facts.
+    func genericVisitBlogLine(
+        placeName: String,
+        placeSubtitle: String?,
+        nameConfidence: PlaceNameConfidence
+    ) -> String {
+        let placeLabel: String
+        switch nameConfidence {
+        case .official, .semi:
+            let line = [placeName, placeSubtitle]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: ", ")
+            placeLabel = line
+        case .generic:
+            placeLabel = ""
+        }
+
+        let lead = placeLabel.isEmpty ? "" : "\(placeLabel) — "
+
+        switch self {
+        case .restaurant:
+            return "\(lead)a stop built around the table, the room, and whatever was on the plate."
+        case .cafe:
+            return "\(lead)a slower pause over coffee and the hum of the room."
+        case .beach:
+            return "\(lead)time near the water, open air, and the rhythm of the shore."
+        case .landmark:
+            return "\(lead)a moment in front of something worth stopping for."
+        case .museum:
+            return "\(lead)an indoor wander through exhibits and quiet discovery."
+        case .park:
+            return "\(lead)open green space and a breather from the city pace."
+        case .trail:
+            return "\(lead)footsteps on a path and the small rewards along the way."
+        case .mountain:
+            return "\(lead)scale, fresh air, and the pull of the high ground."
+        case .hotel:
+            return "\(lead)a base for the day — check-in energy and a room to land in."
+        case .viewpoint:
+            return "\(lead)a lookout worth the climb or the drive."
+        case .event:
+            return "\(lead)the buzz of a crowd and a shared night out."
+        case .golf:
+            return "\(lead)fairways, fresh turf, and a round in the open air."
+        case .music:
+            return "\(lead)a venue built for sound and a night that lingers."
+        case .nightlife:
+            return "\(lead)late lights, a lively room, and the night stretching on."
+        case .shopping:
+            return "\(lead)browsing, displays, and the small thrill of finding something."
+        case .fitness:
+            return "\(lead)a workout stop and the reset that comes after."
+        case .winery:
+            return "\(lead)tasting-room calm and glasses passed around the bar."
+        case .amusementPark:
+            return "\(lead)rides, color, and the energy of a day out."
+        case .street:
+            return "\(lead)a stretch of street life — storefronts, foot traffic, and the city moving past."
+        case .unknown:
+            return placeLabel.isEmpty ? "A stop worth remembering from the day." : "\(placeLabel) — a stop worth remembering from the day."
+        }
+    }
 }
 
 // MARK: - Place Name Confidence
@@ -374,50 +439,20 @@ final class TemplateStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
     func generatePlaceStory(context: PlaceStoryContext) async -> String {
         try? await Task.sleep(nanoseconds: 400_000_000)
-
-        let tagPart = context.tags.prefix(6).joined(separator: ", ")
-        let placePart: String
-        switch context.nameConfidence {
-        case .official, .semi:
-            placePart = [context.placeName, context.placeSubtitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
-        case .generic:
-            placePart = ""
-        }
-        let timePart = context.dateTimeText
-        let countPart = context.photoCount > 1 ? "\(context.photoCount) photos" : "one photo"
-
-        if context.tags.isEmpty && placePart.isEmpty {
-            return "We stopped here and took \(countPart) — a moment to look back on."
-        }
-
-        if !placePart.isEmpty && !tagPart.isEmpty {
-            return "\(placePart): \(tagPart). We took \(countPart) here." + (timePart.isEmpty ? "" : " \(timePart).")
-        }
-        if !placePart.isEmpty {
-            return "Stopped at \(placePart) and took \(countPart)." + (timePart.isEmpty ? "" : " \(timePart).")
-        }
-        return "This spot had \(tagPart). \(countPart) from the visit." + (timePart.isEmpty ? "" : " \(timePart).")
+        return context.categoryID.genericVisitBlogLine(
+            placeName: context.placeName,
+            placeSubtitle: context.placeSubtitle,
+            nameConfidence: context.nameConfidence
+        )
     }
 
     func generateOverallPlaceStory(context: OverallPlaceStoryContext) async -> String {
         try? await Task.sleep(nanoseconds: 200_000_000)
-        let captions = context.photoCaptions.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        if captions.isEmpty {
-            let placePart: String
-            switch context.nameConfidence {
-            case .official, .semi:
-                placePart = [context.placeName, context.placeSubtitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
-            case .generic:
-                placePart = ""
-            }
-            return placePart.isEmpty ? "A stop worth remembering." : "\(placePart) — a moment to look back on."
-        }
-        if captions.count == 1 {
-            let one = String(captions[0].prefix(120))
-            return one.count < captions[0].count ? one + "…" : one
-        }
-        let first = String(captions[0].prefix(60))
-        return first + "… and \(captions.count - 1) more from this spot."
+        return context.categoryID.genericVisitBlogLine(
+            placeName: context.placeName,
+            placeSubtitle: context.placeSubtitle,
+            nameConfidence: context.nameConfidence
+        )
     }
 
     func generateDaySummary(context: DayStoryContext) async -> String {

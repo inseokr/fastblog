@@ -316,6 +316,17 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
 #if canImport(FoundationModels)
 
+    /// Rules for auto-generated **place stop** blurbs (overall row) — blog voice, not photo-caption recap.
+    private static let placeStopBlogBlurbRules = """
+        Place stop blurb — follow strictly:
+        • Write a short travel-blog moment for this stop. Lead with the venue category and what that kind of visit usually feels like.
+        • If existing photo captions are provided, treat them as optional memory seeds only — weave the mood or one detail, do not paraphrase every caption or list what each photo shows.
+        • On-device photo tags are evidence for concrete visuals only when clearly supported. Tags outrank vague caption text if they conflict.
+        • Do not invent people, relationships, dish names, business names, historical claims, or travel mishaps not in the hints.
+        • When evidence is thin, write a simple, category-appropriate visit line that could fit most trips to this type of place — still no invented specifics.
+        • Never output clock times or full calendar dates — daypart words only when timing matters.
+        """
+
     /// Shared rules to keep on-device copy tied to trip data and reduce invented travel drama.
     private static let groundedTravelBlogRules = """
         Grounding — follow strictly:
@@ -516,39 +527,49 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
     @available(iOS 26.0, *)
     private func generatePlaceStoryWithLLM(context: PlaceStoryContext) async -> String? {
-        let tagsLine = context.tags.isEmpty ? "general visit" : context.tags.prefix(8).joined(separator: ", ")
-        let timePart = context.dateTimeText.isEmpty ? "" : " When: \(context.dateTimeText)."
-        let countPart = context.photoCount > 1 ? " \(context.photoCount) photos from this stop." : ""
+        let tagsLine = context.tags.isEmpty
+            ? "Aggregated on-device photo tags: none."
+            : "Aggregated on-device photo tags: \(context.tags.prefix(16).joined(separator: ", "))."
+        let countPart = context.photoCount > 1 ? "\nThis stop has \(context.photoCount) photos in the trip." : "\nThis stop has one photo in the trip."
 
         var contextLines: [String] = []
-        if let tod = context.timeOfDay { contextLines.append("Time of day: \(tod)") }
+        if let tod = context.timeOfDay { contextLines.append("Approximate time of day: \(tod)") }
         if let indoor = context.isIndoor { contextLines.append("Environment: \(indoor ? "indoor" : "outdoor")") }
-        let contextBlock = contextLines.isEmpty ? "" : "\nContext:\n" + contextLines.joined(separator: "\n")
+        let contextBlock = contextLines.isEmpty ? "" : "\n" + contextLines.joined(separator: "\n")
+
+        let placePart: String
+        switch context.nameConfidence {
+        case .official, .semi:
+            let line = [context.placeName, context.placeSubtitle]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: ", ")
+            placePart = line.isEmpty ? "" : "\nPlace: \(line)."
+        case .generic:
+            placePart = ""
+        }
 
         let baseSystem = """
-            You are a travel storytelling assistant inside a mobile app called Bloggo.
-            Your job is to generate a short, natural caption for a place visited during a trip.
-            The caption should:
-            • Feel human and readable — warm but not melodramatic
-            • Stay under 3 sentences
-            • Focus on atmosphere and memory only when supported by the tags and context below
-            Do not invent false historical facts. Do not exaggerate unrealistically.
-            No hashtags or emoji. No first person (no "I", "we", "my").
-            Output only the caption text. No preamble like "Here is a caption" — just the caption.
+            You write very short travel-blog blurbs for a single stop on a trip. \
+            At most two sentences. Warm, readable blog voice — not marketing, not a tag list, not a photo-by-photo recap. \
+            No hashtags or emoji. No first person (no "I", "we", "my"). \
+            Output only the blurb. No preamble or quotation marks.
             """
 
         let instructions = [
             baseSystem,
+            Self.placeStopBlogBlurbRules,
             Self.groundedTravelBlogRules,
             categoryModifier(for: context.categoryID),
             nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
         ].joined(separator: "\n\n")
 
         let prompt = """
-            Write a short story for this place visit.
-            Tags: \(tagsLine).\(timePart)\(countPart)\(contextBlock)
+            Write a tiny travel-blog moment for this stop using only the evidence below.
 
-            Output only the text. No introduction, no first person.
+            \(tagsLine)\(placePart)\(countPart)\(contextBlock)
+
+            Maximum two sentences. Stay grounded in the hints.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)
@@ -569,7 +590,6 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         case .generic:
             placePart = ""
         }
-        let timePart = context.dateTimeText.isEmpty ? "" : " When: \(context.dateTimeText)."
 
         let captionsBlock = captions.isEmpty
             ? "No photo captions yet."
@@ -579,27 +599,26 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         let tagsPart = tagsLine.isEmpty ? "" : "\nPhoto analysis tags: \(tagsLine)."
 
         let baseSystem = """
-            You are a travel storytelling assistant inside a mobile app called Bloggo.
-            Your job is to write one very short sentence that summarizes a place visit for a travel blog.
-            The sentence should feel natural and clear — only merge ideas that appear in the captions or tags.
-            No hashtags or emoji. No first person (no "I", "we", "my"). No exact timestamp.
-            Output only the sentence. No preamble, no labels — just the sentence.
+            You write very short travel-blog blurbs for a single stop on a trip. \
+            At most two sentences. Warm, readable blog voice — not marketing, not a tag list, not a photo-by-photo recap. \
+            No hashtags or emoji. No first person (no "I", "we", "my"). Never output clock times or full calendar dates. \
+            Output only the blurb. No preamble or quotation marks.
             """
 
         let instructions = [
             baseSystem,
+            Self.placeStopBlogBlurbRules,
             Self.groundedTravelBlogRules,
             categoryModifier(for: context.categoryID),
             nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
         ].joined(separator: "\n\n")
 
         let prompt = """
-            Summarize these photo captions into one short sentence for this place.\(placePart)\(timePart)\(tagsPart)
+            Write a tiny travel-blog moment for this stop using only the evidence below.\(placePart)\(tagsPart)
 
-            Photo captions:
-            \(captionsBlock)
+            \(captionsBlock.isEmpty ? "Existing photo captions from this stop: none." : "Existing photo captions from this stop (optional memory seeds — do not paraphrase each photo):\n\(captionsBlock)")
 
-            Output only the text. No introduction, no first person.
+            Maximum two sentences. Stay grounded in the hints.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)
@@ -1117,18 +1136,14 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
         let instructions = """
             You write very short travel-blog blurbs for a single stop on a trip. \
-            Use the aggregated photo tags, optional existing photo captions, place name/area, photo count, and approximate daypart. \
-            Tags are from on-device Vision — they outrank vague caption text if there is ever a conflict. \
-            Do not invent people, events, business names, or details not supported by the hints. \
-            Never invent flight delays, cancellations, or other travel mishaps unless a caption explicitly says so. \
-            At most two sentences. Warm, readable blog voice — not marketing, not a list of tags. \
+            At most two sentences. Warm, readable blog voice — not marketing, not a tag list, not a photo-by-photo recap. \
             No hashtags or emoji. No first person (no "I", "we", "my"). \
             Never output clock times or full calendar dates — daypart words only when timing matters. \
             Output only the two sentences (or one). No preamble or quotation marks.
-            """ + categoryBlock
+            """ + categoryBlock + "\n\n" + Self.placeStopBlogBlurbRules + "\n\n" + Self.groundedTravelBlogRules
 
         let prompt = """
-            Summarise this stop in a tiny travel-blog moment using only the evidence below.
+            Write a tiny travel-blog moment for this stop using only the evidence below.
 
             \(tagsLine)
             \(captionsBlock)

@@ -87,12 +87,17 @@ actor StoryCaptionService {
         return nil
     }
 
-    /// Generate a place-level story from the first included photo's tags (or aggregated tags).
-    /// Uses place name, subtitle, earliest photo time, and photo count.
+    /// Generate a place-level story for a stop (overall place row).
+    /// Prefers the grounded place blurb model when Apple Intelligence is available.
     func generatePlaceStory(
         stop: PlaceStop,
         dayDate: Date?
     ) async -> String {
+        if LocalLLMStoryCaptionGenerator.isCapable {
+            let short = await generatePlaceLevelAIShortStory(stop: stop, dayDate: dayDate)
+            let trimmed = short.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
         let included = stop.photos.filter(\.isIncluded)
         var tagSet: [String] = []
         for photo in included.prefix(3) {
@@ -133,13 +138,17 @@ actor StoryCaptionService {
         return await generator.generatePlaceStory(context: context)
     }
 
-    /// Generate a very quick one-sentence overall story for the place by summarizing all photo captions.
-    /// Use the current captions from the stop's included photos (in order).
+    /// Generate a short overall story for the place (blog stop blurb, not a photo-caption recap).
     func generateOverallPlaceStory(
         stop: PlaceStop,
         dayDate: Date?,
         photoCaptions: [String]
     ) async -> String {
+        if LocalLLMStoryCaptionGenerator.isCapable {
+            let short = await generatePlaceLevelAIShortStory(stop: stop, dayDate: dayDate)
+            let trimmed = short.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
         let included = stop.photos.filter(\.isIncluded)
         var tagSet: [String] = []
         for photo in included.prefix(3) {

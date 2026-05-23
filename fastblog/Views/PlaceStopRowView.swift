@@ -408,7 +408,7 @@ struct PlaceStopRowView: View {
             if hasCaption {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(caption)
-                        .font(.callout)
+                        .font(.body)
                         .foregroundColor(rowStoryReadColor)
                         .lineLimit(isExpanded ? nil : 4)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -590,7 +590,7 @@ struct PlaceStopRowView: View {
                     } label: {
                         let caption = photoCaption(photo.id).wrappedValue
                         Text(caption.isEmpty ? "Leave a story for this photo" : caption)
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
@@ -1056,7 +1056,7 @@ struct PlaceStopRowView: View {
                             } label: {
                                 let caption = photoCaption(photo.id).wrappedValue
                                 Text(caption.isEmpty ? "Leave a story for this photo" : caption)
-                                    .font(.caption)
+                                    .font(.subheadline)
                                     .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.leading)
