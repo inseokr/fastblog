@@ -22,7 +22,7 @@ struct BlogVideoExportOptions: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case secondsPerSlide, musicFilename, musicDisabled, musicVolume, showPhotoCaptions,
              maxPhotosPerPlace, includedPlaceIDs, includedReelPhotoIDs, includedPlaceCategoryRaws,
-             showDayItineraryCards, exportMode, showMapFrames, videoStyle
+             showDayItineraryCards, exportMode, showMapFrames, videoStyle, includedDayIDs
     }
 
     var secondsPerSlide: Double = 3.0
@@ -40,6 +40,8 @@ struct BlogVideoExportOptions: Codable, Equatable {
     var includedReelPhotoIDs: Set<UUID>? = nil
     /// Place categories to include (raw MapKit POI strings, plus optional `”Others”`). nil means all categories are included.
     var includedPlaceCategoryRaws: Set<String>? = nil
+    /// Day IDs to include in the video. nil means all days are included.
+    var includedDayIDs: Set<UUID>? = nil
     /// Inject a 2-second itinerary card before each day's map sequence listing all places for that day.
     var showDayItineraryCards: Bool = false
     /// Whether to export a cinematic video or a set of carousel slide images.
@@ -61,6 +63,7 @@ struct BlogVideoExportOptions: Codable, Equatable {
         includedPlaceIDs: Set<UUID>? = nil,
         includedReelPhotoIDs: Set<UUID>? = nil,
         includedPlaceCategoryRaws: Set<String>? = nil,
+        includedDayIDs: Set<UUID>? = nil,
         showDayItineraryCards: Bool = false,
         exportMode: ExportMode = .video,
         showMapFrames: Bool = true,
@@ -75,6 +78,7 @@ struct BlogVideoExportOptions: Codable, Equatable {
         self.includedPlaceIDs = includedPlaceIDs
         self.includedReelPhotoIDs = includedReelPhotoIDs
         self.includedPlaceCategoryRaws = includedPlaceCategoryRaws
+        self.includedDayIDs = includedDayIDs
         self.showDayItineraryCards = showDayItineraryCards
         self.exportMode = exportMode
         self.showMapFrames = showMapFrames
@@ -91,6 +95,7 @@ struct BlogVideoExportOptions: Codable, Equatable {
         includedPlaceIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .includedPlaceIDs)
         includedReelPhotoIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .includedReelPhotoIDs)
         includedPlaceCategoryRaws = try c.decodeIfPresent(Set<String>.self, forKey: .includedPlaceCategoryRaws)
+        includedDayIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .includedDayIDs)
         showDayItineraryCards = try c.decodeIfPresent(Bool.self, forKey: .showDayItineraryCards) ?? false
         exportMode = try c.decodeIfPresent(ExportMode.self, forKey: .exportMode) ?? .video
         showMapFrames = try c.decodeIfPresent(Bool.self, forKey: .showMapFrames) ?? true
@@ -110,6 +115,7 @@ struct BlogVideoExportOptions: Codable, Equatable {
         try c.encodeIfPresent(includedPlaceIDs, forKey: .includedPlaceIDs)
         try c.encodeIfPresent(includedReelPhotoIDs, forKey: .includedReelPhotoIDs)
         try c.encodeIfPresent(includedPlaceCategoryRaws, forKey: .includedPlaceCategoryRaws)
+        try c.encodeIfPresent(includedDayIDs, forKey: .includedDayIDs)
         try c.encode(showDayItineraryCards, forKey: .showDayItineraryCards)
         try c.encode(exportMode, forKey: .exportMode)
         try c.encode(showMapFrames, forKey: .showMapFrames)
@@ -122,24 +128,38 @@ struct BlogVideoExportOptions: Codable, Equatable {
         return musicFilename ?? SlideshowMusicPreference.defaultFilename
     }
 
-    /// Options as consumed by export after applying category pills (subset + `includedPlaceIDs` fold-in).
+    /// Options as consumed by export after applying day and category filters (subset + `includedPlaceIDs` fold-in).
     func effectiveForExport(draft: RecapBlogDetail) -> BlogVideoExportOptions {
         var resolved = self
-        if let cats = includedPlaceCategoryRaws {
-            let allowedIDs = Set(
-                draft.days.flatMap(\.placeStops).filter { stop in
+
+        let hasFilters = includedDayIDs != nil || includedPlaceCategoryRaws != nil
+        if hasFilters {
+            var allowedIDs: Set<UUID>? = nil
+
+            if let dayIDs = includedDayIDs {
+                allowedIDs = Set(draft.days.filter { dayIDs.contains($0.id) }
+                    .flatMap(\.placeStops).map(\.id))
+            }
+
+            if let cats = includedPlaceCategoryRaws {
+                let catFiltered = Set(draft.days.flatMap(\.placeStops).filter { stop in
                     let raw = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines)
                     let key = (raw == nil || raw?.isEmpty == true) ? "Others" : raw!
                     return cats.contains(key)
-                }.map(\.id)
-            )
-            resolved.includedPlaceIDs = {
-                if let ids = includedPlaceIDs {
-                    let filtered = ids.intersection(allowedIDs)
-                    return filtered.isEmpty ? [] : filtered
-                }
-                return allowedIDs
-            }()
+                }.map(\.id))
+                allowedIDs = allowedIDs.map { $0.intersection(catFiltered) } ?? catFiltered
+            }
+
+            if let allowed = allowedIDs {
+                resolved.includedPlaceIDs = {
+                    if let ids = includedPlaceIDs {
+                        let filtered = ids.intersection(allowed)
+                        return filtered.isEmpty ? [] : filtered
+                    }
+                    return allowed
+                }()
+            }
+
             let allowedReelPhotoIDs = CinematicBlogVideoBuilder.allExportableReelPhotoIDs(
                 draft: draft,
                 includedPlaceIDs: resolved.includedPlaceIDs
@@ -149,6 +169,7 @@ struct BlogVideoExportOptions: Codable, Equatable {
                 resolved.includedReelPhotoIDs = pruned.isEmpty ? [] : pruned
             }
         }
+
         if resolved.videoStyle == .simpleStitch {
             resolved.showMapFrames = false
             resolved.showDayItineraryCards = false

@@ -62,6 +62,7 @@ struct BlogVideoExportOptionsSheet: View {
                             mapSegmentsSection
                             dayItineraryCardsSection
                         }
+                        daysSection
                         musicSection
                         reelsSection
                     }
@@ -147,6 +148,13 @@ struct BlogVideoExportOptionsSheet: View {
                 let currentIDs = CinematicBlogVideoBuilder.allExportableReelPhotoIDs(draft: draft)
                 if ids.isDisjoint(with: currentIDs) {
                     options.includedReelPhotoIDs = nil
+                }
+            }
+            // Reset day selection if it references days from a different blog.
+            if let dayIDs = options.includedDayIDs {
+                let currentDayIDs = Set(draft.days.map(\.id))
+                if dayIDs.isDisjoint(with: currentDayIDs) {
+                    options.includedDayIDs = nil
                 }
             }
             if !canExport {
@@ -550,6 +558,98 @@ struct BlogVideoExportOptionsSheet: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Days Section
+
+    private var daysSection: some View {
+        let days = draft.days.filter { !$0.placeStops.isEmpty }
+        let allSelected = options.includedDayIDs == nil
+        return Group {
+            if days.count > 1 {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        sectionHeader("Days", icon: "calendar")
+                        Spacer()
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                options.includedDayIDs = allSelected ? Set<UUID>() : nil
+                            }
+                        } label: {
+                            Text(allSelected ? "Deselect All" : "Select All")
+                                .font(.caption.weight(.medium))
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+
+                    VStack(spacing: 0) {
+                        ForEach(Array(days.enumerated()), id: \.element.id) { idx, day in
+                            if idx > 0 {
+                                Divider().padding(.leading, 14)
+                            }
+                            dayToggleRow(day: day, dayNumber: (draft.days.firstIndex(where: { $0.id == day.id }) ?? idx) + 1)
+                        }
+                    }
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .appChromeCornerRadius(12)
+                }
+            }
+        }
+    }
+
+    private func isDayIncluded(_ dayID: UUID) -> Bool {
+        guard let ids = options.includedDayIDs else { return true }
+        return ids.contains(dayID)
+    }
+
+    private func toggleDay(_ dayID: UUID) {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            let allIDs = Set(draft.days.filter { !$0.placeStops.isEmpty }.map(\.id))
+            if options.includedDayIDs == nil {
+                var remaining = allIDs
+                remaining.remove(dayID)
+                options.includedDayIDs = remaining.isEmpty ? Set<UUID>() : remaining
+            } else if options.includedDayIDs!.contains(dayID) {
+                options.includedDayIDs!.remove(dayID)
+            } else {
+                options.includedDayIDs!.insert(dayID)
+                if options.includedDayIDs == allIDs {
+                    options.includedDayIDs = nil
+                }
+            }
+        }
+    }
+
+    private func dayToggleRow(day: RecapBlogDay, dayNumber: Int) -> some View {
+        let isIncluded = isDayIncluded(day.id)
+        return Button { toggleDay(day.id) } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(isIncluded ? Color.accentColor : Color(uiColor: .tertiarySystemGroupedBackground))
+                        .frame(width: 30, height: 30)
+                    if isIncluded {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Day \(dayNumber)")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(isIncluded ? .primary : .secondary)
+                    Text(day.dateText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .opacity(isIncluded ? 1 : 0.55)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Music Section
 
     private var musicSection: some View {
@@ -834,7 +934,10 @@ struct BlogVideoExportOptionsSheet: View {
     }
 
     private func filteredDaysForPlacePicker() -> [RecapBlogDay] {
-        let days = draft.days.filter { !$0.placeStops.isEmpty }
+        var days = draft.days.filter { !$0.placeStops.isEmpty }
+        if let dayIDs = options.includedDayIDs {
+            days = days.filter { dayIDs.contains($0.id) }
+        }
         guard let cats = options.includedPlaceCategoryRaws else { return days }
         return days.compactMap { day in
             let filteredStops = day.placeStops.filter { stop in
