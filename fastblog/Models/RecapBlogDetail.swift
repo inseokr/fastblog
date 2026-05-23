@@ -221,6 +221,15 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
         days.last?.dateAlignedWithShortDateText
     }
 
+    /// Stable `yyyy-MM-dd` key from EXIF digitized date (preferred) or aligned calendar day — used to merge timezone-split buckets.
+    var storyBookCalendarDayKey: String {
+        if let digitized = placeStops.compactMap(\.visitedTimeDigitized).first,
+           let key = TripCalendarDayKey.from(digitizedTime: digitized) {
+            return key
+        }
+        return TripCalendarDayKey.from(date: dateAlignedWithShortDateText)
+    }
+
     /// All photos in this day that have a location (for map pins).
     var photosWithLocation: [RecapPhoto] {
         placeStops.flatMap(\.photos).filter { $0.location != nil }
@@ -554,6 +563,109 @@ extension PlaceStop {
         }
         return includedPhotos.contains { photo in
             !( photo.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+}
+
+// MARK: - Calendar day keys (capture / digitized time)
+
+/// Groups photos and blog days by the calendar date in `visitedTimeDigitized` (EXIF), not device timezone.
+enum TripCalendarDayKey {
+    /// `yyyy-MM-dd` from EXIF digitized string (`yyyy:MM:dd HH:mm:ss`).
+    static func from(digitizedTime: String) -> String? {
+        let parts = digitizedTime.split(separator: " ")
+        guard let datePart = parts.first else { return nil }
+        let normalized = String(datePart).replacingOccurrences(of: ":", with: "-")
+        let segments = normalized.split(separator: "-")
+        guard segments.count == 3,
+              let y = Int(segments[0]), let m = Int(segments[1]), let d = Int(segments[2]) else { return nil }
+        return String(format: "%04d-%02d-%02d", y, m, d)
+    }
+
+    static func from(date: Date, timeZone: TimeZone = .current) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        let c = cal.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    /// Parses trip scan `dateText` (medium style) into `yyyy-MM-dd`.
+    static func from(dateText: String) -> String? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.dateStyle = .medium
+        guard let parsed = formatter.date(from: dateText) else { return nil }
+        return from(date: parsed)
+    }
+
+    /// Local noon on that calendar day (stable `RecapBlogDay.date` for sorting and range formatting).
+    static func canonicalDate(from key: String) -> Date? {
+        let segments = key.split(separator: "-")
+        guard segments.count == 3,
+              let y = Int(segments[0]), let m = Int(segments[1]), let d = Int(segments[2]) else { return nil }
+        var comps = DateComponents()
+        comps.year = y
+        comps.month = m
+        comps.day = d
+        comps.hour = 12
+        comps.minute = 0
+        comps.second = 0
+        return Calendar.current.date(from: comps)
+    }
+}
+
+extension RecapBlogDetail {
+    /// Merges days that share the same `storyBookCalendarDayKey` (e.g. after a flight, device TZ vs EXIF disagreed).
+    func consolidatingDuplicateCalendarDays() -> RecapBlogDetail {
+        guard days.count > 1 else { return self }
+        var byKey: [String: RecapBlogDay] = [:]
+        var keyOrder: [String] = []
+
+        for day in days {
+            let key = day.storyBookCalendarDayKey
+            if var existing = byKey[key] {
+                existing.placeStops.append(contentsOf: day.placeStops)
+                sortPlaceStopsChronologically(&existing.placeStops)
+                if existing.dayCaption == nil { existing.dayCaption = day.dayCaption }
+                if existing.dayNarrative == nil { existing.dayNarrative = day.dayNarrative }
+                if existing.weather == nil { existing.weather = day.weather }
+                existing.isPlaceNamesResolved = existing.isPlaceNamesResolved && day.isPlaceNamesResolved
+                byKey[key] = existing
+            } else {
+                var copy = day
+                sortPlaceStopsChronologically(&copy.placeStops)
+                byKey[key] = copy
+                keyOrder.append(key)
+            }
+        }
+
+        keyOrder.sort { lhs, rhs in
+            earliestTimestamp(in: byKey[lhs]!) < earliestTimestamp(in: byKey[rhs]!)
+        }
+
+        var merged = self
+        merged.days = keyOrder.enumerated().map { index, key in
+            var day = byKey[key]!
+            day.dayIndex = index + 1
+            day.date = TripCalendarDayKey.canonicalDate(from: key) ?? day.date
+            return day
+        }
+        return merged
+    }
+
+    private func earliestTimestamp(in day: RecapBlogDay) -> Date {
+        day.placeStops.flatMap(\.photos).map(\.timestamp).min() ?? day.date
+    }
+
+    private func sortPlaceStopsChronologically(_ stops: inout [PlaceStop]) {
+        stops.sort {
+            ($0.photos.map(\.timestamp).min() ?? .distantFuture) < ($1.photos.map(\.timestamp).min() ?? .distantFuture)
+        }
+        for i in stops.indices {
+            stops[i].orderIndex = i
+            if stops[i].placeTitle.range(of: "^Stop \\d+$", options: .regularExpression) != nil {
+                stops[i].placeTitle = "Stop \(i + 1)"
+            }
         }
     }
 }

@@ -350,7 +350,20 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
         if didMigrateCommittedSave { persistRecents() }
 
+        consolidateAllBlogDetailsDuplicateCalendarDays()
         refreshRecentsDateMetadataFromBlogDetails()
+    }
+
+    /// Merges blog days that share the same EXIF digitized calendar date (fixes duplicate "May 22" rows after flights).
+    private func consolidateAllBlogDetailsDuplicateCalendarDays() {
+        var didChange = false
+        for (id, detail) in blogDetailsBySourceId {
+            let consolidated = detail.consolidatingDuplicateCalendarDays()
+            guard consolidated.days.count != detail.days.count else { continue }
+            blogDetailsBySourceId[id] = consolidated
+            didChange = true
+        }
+        if didChange { persistBlogDetails() }
     }
 
     /// Realigns landing-page date ranges with day row headers (fixes legacy off-by-one tripStartDate/tripEndDate).
@@ -773,16 +786,50 @@ final class CreatedRecapBlogStore: ObservableObject {
     }
 
     /// Injects newly scanned photos into an existing blog's RecapBlogDetail.
-    /// Each photo is matched to the appropriate RecapBlogDay by calendar date, and within
+    /// Each photo is matched to the appropriate RecapBlogDay by EXIF/capture calendar date, and within
     /// that day to the closest PlaceStop by time gap (≤ gapHoursNewSegment). If no close
     /// stop exists, a new stop is appended to the day. New days are created when needed.
     /// The updated detail is saved automatically.
+    /// `yyyy-MM-dd` calendar day per photo using EXIF capture offset when available (same as library scan).
+    private func calendarDayKeys(for photos: [MockPhoto]) async -> [UUID: String] {
+        var keys: [UUID: String] = [:]
+        await withTaskGroup(of: (UUID, String).self) { group in
+            for photo in photos {
+                group.addTask {
+                    let key = await Self.calendarDayKey(for: photo)
+                    return (photo.id, key)
+                }
+            }
+            for await (id, key) in group {
+                keys[id] = key
+            }
+        }
+        return keys
+    }
+
+    private static func calendarDayKey(for photo: MockPhoto) async -> String {
+        if let lid = photo.localIdentifier,
+           !lid.hasPrefix(AppCapturePhotoService.prefix) {
+            let result = PHAsset.fetchAssets(withLocalIdentifiers: [lid], options: nil)
+            if let asset = result.firstObject {
+                let tz = await APIManager.getLocalTimeZone(for: asset) ?? .current
+                return TripCalendarDayKey.from(date: photo.timestamp, timeZone: tz)
+            }
+        }
+        return TripCalendarDayKey.from(date: photo.timestamp)
+    }
+
     func injectPhotos(_ newPhotos: [MockPhoto], intoSourceTripId sourceTripId: UUID) {
+        guard !newPhotos.isEmpty else { return }
+        Task { await injectPhotosAsync(newPhotos, intoSourceTripId: sourceTripId) }
+    }
+
+    /// Injects photos grouped by capture-timezone calendar day (same rule as library scan / digitizedTime).
+    private func injectPhotosAsync(_ newPhotos: [MockPhoto], intoSourceTripId sourceTripId: UUID) async {
         guard !newPhotos.isEmpty else { return }
         guard var detail = blogDetailsBySourceId[sourceTripId]
                 ?? tripDraftsBySourceId[sourceTripId].map({ buildBlogDetail(from: $0) }) else { return }
 
-        let cal = Calendar.current
         let gapLimit: TimeInterval = Double(ScanConfig.gapHoursNewSegment) * 3600
         let locationLimit: Double = ScanConfig.placeClusterMeters
 
@@ -794,26 +841,22 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
         guard !photos.isEmpty else { return }
 
-        // Group incoming photos by calendar day.
-        let byDay = Dictionary(grouping: photos) { photo in
-            cal.startOfDay(for: photo.timestamp)
-        }
+        let dayKeys = await calendarDayKeys(for: photos)
+        let byDay = Dictionary(grouping: photos) { dayKeys[$0.id] ?? TripCalendarDayKey.from(date: $0.timestamp) }
 
         var modifiedDayIndices: Set<Int> = []
         /// New stops that need reverse-geocode — keyed by `PlaceStop.id` so reordering below does not break lookups.
         var newStopsToGeocode: [(dayIdx: Int, stopId: UUID)] = []
 
-        for (dayStart, dayPhotos) in byDay.sorted(by: { $0.key < $1.key }) {
-            // Find or create the matching RecapBlogDay.
-            var dayIdx = detail.days.firstIndex(where: { cal.startOfDay(for: $0.date) == dayStart })
+        for (dayKey, dayPhotos) in byDay.sorted(by: { $0.key < $1.key }) {
+            let dayDate = TripCalendarDayKey.canonicalDate(from: dayKey) ?? dayPhotos.map(\.timestamp).min() ?? Date()
+            var dayIdx = detail.days.firstIndex(where: { $0.storyBookCalendarDayKey == dayKey })
             if dayIdx == nil {
-                // Create a new day and insert it in chronological order.
-                let newDay = RecapBlogDay(dayIndex: 0, date: dayStart, placeStops: [])
+                let newDay = RecapBlogDay(dayIndex: 0, date: dayDate, placeStops: [])
                 detail.days.append(newDay)
                 detail.days.sort { $0.date < $1.date }
-                // Re-assign dayIndex after sort.
                 for i in detail.days.indices { detail.days[i].dayIndex = i + 1 }
-                dayIdx = detail.days.firstIndex(where: { cal.startOfDay(for: $0.date) == dayStart })!
+                dayIdx = detail.days.firstIndex(where: { $0.storyBookCalendarDayKey == dayKey })!
             }
             guard let di = dayIdx else { continue }
 
@@ -919,14 +962,14 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
         }
 
+        detail = detail.consolidatingDuplicateCalendarDays()
         saveBlogDetail(detail, asDraft: true)
 
         // Run same business logic as initial selection: score quality, then preselect only good-quality photos per stop.
         if !modifiedDayIndices.isEmpty {
-            Task {
-                // Geocode any newly created stops that have location data.
-                if !newStopsToGeocode.isEmpty,
-                   var geocodedDetail = blogDetailsBySourceId[sourceTripId] {
+            // Geocode any newly created stops that have location data.
+            if !newStopsToGeocode.isEmpty,
+               var geocodedDetail = blogDetailsBySourceId[sourceTripId] {
                     for entry in newStopsToGeocode {
                         let di = entry.dayIdx
                         guard di < geocodedDetail.days.count,
@@ -944,19 +987,22 @@ final class CreatedRecapBlogStore: ObservableObject {
                                 syncAppCaptureMetaFromResolvedStop(geocodedDetail.days[di].placeStops[si])
                             }
                     }
-                    saveBlogDetail(geocodedDetail, asDraft: true)
-                }
-                await applyPhotoQualitySelectionForBlog(sourceTripId: sourceTripId, dayIndices: Array(modifiedDayIndices))
-                // New days injected from in-app camera have isPlaceNamesResolved = false by default.
-                // continueGeocodingDays is only called on initial load, so trigger it here to resolve them.
-                await continueGeocodingDays(blogId: sourceTripId)
+                geocodedDetail = geocodedDetail.consolidatingDuplicateCalendarDays()
+                saveBlogDetail(geocodedDetail, asDraft: true)
+            }
+            await applyPhotoQualitySelectionForBlog(sourceTripId: sourceTripId, dayIndices: Array(modifiedDayIndices))
+            await continueGeocodingDays(blogId: sourceTripId)
+            if var finalDetail = blogDetailsBySourceId[sourceTripId] {
+                finalDetail = finalDetail.consolidatingDuplicateCalendarDays()
+                saveBlogDetail(finalDetail, asDraft: true)
             }
         }
 
         // Update blog metadata to reflect newly injected photos.
+        guard let savedDetail = blogDetailsBySourceId[sourceTripId] else { return }
         if let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) {
-            let newStart = RecapBlogDay.alignedTripStartDate(from: detail.days)
-            let newEnd = RecapBlogDay.alignedTripEndDate(from: detail.days)
+            let newStart = RecapBlogDay.alignedTripStartDate(from: savedDetail.days)
+            let newEnd = RecapBlogDay.alignedTripEndDate(from: savedDetail.days)
             if let minDate = newStart,
                (recents[idx].tripStartDate == nil || minDate < recents[idx].tripStartDate!) {
                 recents[idx].tripStartDate = minDate
@@ -969,10 +1015,10 @@ final class CreatedRecapBlogStore: ObservableObject {
                 start: recents[idx].tripStartDate,
                 end: recents[idx].tripEndDate
             )
-            recents[idx].selectedPhotoCount = detail.days
+            recents[idx].selectedPhotoCount = savedDetail.days
                 .flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
-            recents[idx].totalPlaceVisitCount = detail.days.reduce(0) { $0 + $1.placeStops.count }
-            recents[idx].tripDurationDays = detail.days.count
+            recents[idx].totalPlaceVisitCount = savedDetail.days.reduce(0) { $0 + $1.placeStops.count }
+            recents[idx].tripDurationDays = savedDetail.days.count
             // Mark as edited so the blog appears in "My blogs" / Latest (e.g. "Edited Today").
             recents[idx].lastEditedAt = Date()
             recents[idx].syncStatus = .needsUpload
@@ -2348,8 +2394,9 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
 
             guard !placeStops.isEmpty else { continue }
-            // Use the earliest selected photo's calendar day so Day 2's date matches its photos (camera trips use 0-based dayIndex; we use 1-based for display).
-            let dayDate = day.photos.filter(\.isSelected).map(\.timestamp).min().map { calendar.startOfDay(for: $0) } ?? Date()
+            let dayDate = day.calendarDayKey.flatMap { TripCalendarDayKey.canonicalDate(from: $0) }
+                ?? day.photos.filter(\.isSelected).map(\.timestamp).min().map { calendar.startOfDay(for: $0) }
+                ?? Date()
             let oneBasedIndex = days.count + 1
             days.append(RecapBlogDay(dayIndex: oneBasedIndex, date: dayDate, placeStops: placeStops))
         }
@@ -2511,7 +2558,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             detail = await applyTransportModeInference(to: detail)
         }
 
-        return detail
+        return detail.consolidatingDuplicateCalendarDays()
     }
 
     @available(iOS 26, *)
@@ -2634,6 +2681,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         // Update cover only after all days are fully scored so we pick the globally best photo.
         if updatedDetail.days.allSatisfy(\.isPlaceNamesResolved) {
             updateCoverPhotoFromQualityScores(&updatedDetail)
+            updatedDetail = updatedDetail.consolidatingDuplicateCalendarDays()
         }
         blogDetailsBySourceId[blogId] = updatedDetail
         persistBlogDetails()
@@ -2980,7 +3028,6 @@ final class CreatedRecapBlogStore: ObservableObject {
         guard !newPhotos.isEmpty,
               var detail = blogDetailsBySourceId[sourceTripId] else { return (0, 0) }
 
-        let cal = Calendar.current
         let gapLimit: TimeInterval = Double(ScanConfig.gapHoursNewSegment) * 3600
         let locationLimit: Double = ScanConfig.placeClusterMeters
 
@@ -2991,24 +3038,22 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
         guard !photos.isEmpty else { return (0, 0) }
 
-        let byDay = Dictionary(grouping: photos) { cal.startOfDay(for: $0.timestamp) }
+        let dayKeys = await calendarDayKeys(for: photos)
+        let byDay = Dictionary(grouping: photos) { dayKeys[$0.id] ?? TripCalendarDayKey.from(date: $0.timestamp) }
 
         var newStopIds: [UUID] = []
         var addedToExisting = 0
         var newStopsToGeocode: [(dayIdx: Int, stopId: UUID)] = []
 
-        for (dayStart, dayPhotos) in byDay.sorted(by: { $0.key < $1.key }) {
-            var dayIdx = detail.days.firstIndex(where: {
-                cal.startOfDay(for: $0.dateAlignedWithShortDateText) == dayStart
-            })
+        for (dayKey, dayPhotos) in byDay.sorted(by: { $0.key < $1.key }) {
+            let dayDate = TripCalendarDayKey.canonicalDate(from: dayKey) ?? dayPhotos.map(\.timestamp).min() ?? Date()
+            var dayIdx = detail.days.firstIndex(where: { $0.storyBookCalendarDayKey == dayKey })
             if dayIdx == nil {
-                let newDay = RecapBlogDay(dayIndex: 0, date: dayStart, placeStops: [])
+                let newDay = RecapBlogDay(dayIndex: 0, date: dayDate, placeStops: [])
                 detail.days.append(newDay)
-                detail.days.sort { $0.dateAlignedWithShortDateText < $1.dateAlignedWithShortDateText }
+                detail.days.sort { $0.date < $1.date }
                 for i in detail.days.indices { detail.days[i].dayIndex = i + 1 }
-                dayIdx = detail.days.firstIndex(where: {
-                    cal.startOfDay(for: $0.dateAlignedWithShortDateText) == dayStart
-                })!
+                dayIdx = detail.days.firstIndex(where: { $0.storyBookCalendarDayKey == dayKey })!
             }
             guard let di = dayIdx else { continue }
 
@@ -3099,6 +3144,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             sortPlaceStopsChronologically(&detail.days[di].placeStops)
         }
 
+        detail = detail.consolidatingDuplicateCalendarDays()
         saveBlogDetail(detail, asDraft: true)
 
         // Geocode new stops, then quality-score only those stops (leave existing stops untouched).
@@ -3122,17 +3168,25 @@ final class CreatedRecapBlogStore: ObservableObject {
                         syncAppCaptureMetaFromResolvedStop(geocodedDetail.days[di].placeStops[si])
                     }
                 }
+                geocodedDetail = geocodedDetail.consolidatingDuplicateCalendarDays()
                 saveBlogDetail(geocodedDetail, asDraft: true)
             }
             if !newStopIds.isEmpty {
                 await applyPhotoQualitySelectionForStops(sourceTripId: sourceTripId, stopIds: Set(newStopIds))
             }
+            if var finalDetail = blogDetailsBySourceId[sourceTripId] {
+                finalDetail = finalDetail.consolidatingDuplicateCalendarDays()
+                saveBlogDetail(finalDetail, asDraft: true)
+            }
         }
 
         // Update blog metadata.
+        guard let savedDetail = blogDetailsBySourceId[sourceTripId] else {
+            return (newStops: newStopIds.count, addedToExisting: addedToExisting)
+        }
         if let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) {
-            let newStart = RecapBlogDay.alignedTripStartDate(from: detail.days)
-            let newEnd = RecapBlogDay.alignedTripEndDate(from: detail.days)
+            let newStart = RecapBlogDay.alignedTripStartDate(from: savedDetail.days)
+            let newEnd = RecapBlogDay.alignedTripEndDate(from: savedDetail.days)
             if let minDate = newStart,
                (recents[idx].tripStartDate == nil || minDate < recents[idx].tripStartDate!) {
                 recents[idx].tripStartDate = minDate
@@ -3142,9 +3196,9 @@ final class CreatedRecapBlogStore: ObservableObject {
                 recents[idx].tripEndDate = maxDate
             }
             recents[idx].tripDateRangeText = Self.formatDateRange(start: recents[idx].tripStartDate, end: recents[idx].tripEndDate)
-            recents[idx].selectedPhotoCount = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
-            recents[idx].totalPlaceVisitCount = detail.days.reduce(0) { $0 + $1.placeStops.count }
-            recents[idx].tripDurationDays = detail.days.count
+            recents[idx].selectedPhotoCount = savedDetail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+            recents[idx].totalPlaceVisitCount = savedDetail.days.reduce(0) { $0 + $1.placeStops.count }
+            recents[idx].tripDurationDays = savedDetail.days.count
             recents[idx].lastEditedAt = Date()
             recents[idx].syncStatus = .needsUpload
             persistRecents()

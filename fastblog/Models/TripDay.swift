@@ -26,6 +26,11 @@ struct TripDay: Identifiable, Equatable, Hashable, Codable, Sendable {
         self.cityName = cityName
     }
 
+    /// `yyyy-MM-dd` from scan `dateText` — same key used when merging blog days after geocoding.
+    var calendarDayKey: String? {
+        TripCalendarDayKey.from(dateText: dateText)
+    }
+
     /// Calendar date aligned with `dateText` for range formatting (local noon avoids timezone day shifts).
     var dateAlignedForRange: Date? {
         let formatter = DateFormatter()
