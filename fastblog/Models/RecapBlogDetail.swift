@@ -5,6 +5,7 @@
 
 import CoreLocation
 import Foundation
+import Photos
 
 /// Stores a place stop that was removed by the user, preserving all caption data so it can be restored.
 struct RemovedPlaceEntry: Identifiable, Equatable, Codable, Sendable {
@@ -58,6 +59,17 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
 
     var hasCloudPhotos: Bool {
         days.flatMap(\.placeStops).flatMap(\.photos).contains { $0.cloudURL != nil }
+    }
+
+    /// Drops photo rows that no longer resolve to pixels (deleted library assets, missing in-app captures).
+    func removingUndisplayablePhotos() -> RecapBlogDetail {
+        var result = self
+        for dayIdx in result.days.indices {
+            for stopIdx in result.days[dayIdx].placeStops.indices {
+                result.days[dayIdx].placeStops[stopIdx].photos.removeAll { !$0.hasDisplayableLocalBacking }
+            }
+        }
+        return result
     }
 
     /// Sets `cloudURL` on every photo whose Photos `localIdentifier` matches (after trim). Used when an asset was uploaded out-of-band (e.g. blog cover) so publish/sync sees the same URI as the server.
@@ -488,6 +500,16 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, timestamp, location, imageName, isIncluded, localIdentifier
         case caption, qualityScore, cloudURL, captionIsManual, sentiment, digitizedTime, isFavorite
+    }
+
+    /// True when the recap row should show a real thumbnail: cloud URL, on-disk app capture, or an existing Photos asset.
+    var hasDisplayableLocalBacking: Bool {
+        if let cloud = cloudURL, !cloud.isEmpty { return true }
+        guard let lid = localIdentifier, !lid.isEmpty else { return false }
+        if lid.hasPrefix(AppCapturePhotoService.prefix) {
+            return AppCapturePhotoService.shared.loadImage(identifier: lid) != nil
+        }
+        return PHAsset.fetchAssets(withLocalIdentifiers: [lid], options: nil).firstObject != nil
     }
 }
 

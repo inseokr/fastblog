@@ -52,22 +52,32 @@ struct ManagePhotosView: View {
         return CGSize(width: w * s, height: w * s)
     }
 
-    /// Slots that should resolve to pixels.
-    /// Source of truth is `localIdentifier` (Photo Library or app-capture). iCloud photos still have a `localIdentifier`;
-    /// they are fetched by Photos on demand.
-    ///
-    /// Important: this must stay *cheap* because it's evaluated often during layout and scrolling. We batch-check asset
-    /// existence via `existingPhotoLibraryAssetIds` instead of per-cell `PHAsset.fetchAssets(...)`.
+    /// Slots that should resolve to pixels (grid + full-screen pager use the same rules).
+    private func isPhotoDisplayableInManageGrid(_ photo: RecapPhoto) -> Bool {
+        guard photo.hasDisplayableLocalBacking else { return false }
+        guard let lid = photo.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !lid.isEmpty else {
+            return false
+        }
+        if lid.hasPrefix(AppCapturePhotoService.prefix) {
+            return AppCapturePhotoService.shared.loadImage(identifier: lid) != nil
+        }
+        return existingPhotoLibraryAssetIds.contains(lid) || provisionalLibraryAssetIds.contains(lid)
+    }
+
     private var manageGridPhotos: [RecapPhoto] {
         photos
-            .filter { photo in
-                guard let lid = photo.localIdentifier, !lid.isEmpty else { return false }
-                if lid.hasPrefix(AppCapturePhotoService.prefix) {
-                    return AppCapturePhotoService.shared.loadImage(identifier: lid) != nil
-                }
-                return existingPhotoLibraryAssetIds.contains(lid) || provisionalLibraryAssetIds.contains(lid)
-            }
+            .filter(isPhotoDisplayableInManageGrid)
             .sorted { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }
+    }
+
+    /// Drops rows that cannot render so the binding, grid, and full-screen pager stay in sync.
+    private func pruneUndisplayablePhotosFromBinding() {
+        let pruned = photos.filter(isPhotoDisplayableInManageGrid)
+        guard pruned.map(\.id) != photos.map(\.id) else { return }
+        photos = pruned
+        if let openId = fullScreenPhotoId, !pruned.contains(where: { $0.id == openId }) {
+            fullScreenPhotoId = nil
+        }
     }
 
     private let initialBatchSize = 60
@@ -117,6 +127,7 @@ struct ManagePhotosView: View {
                 try? await Task.sleep(nanoseconds: delayMs * 1_000_000)
                 guard !Task.isCancelled else { return }
                 refreshExistingAssetIds()
+                pruneUndisplayablePhotosFromBinding()
                 if libraryIds.isSubset(of: existingPhotoLibraryAssetIds) { return }
             }
         }
@@ -211,7 +222,6 @@ struct ManagePhotosView: View {
             if let photoId = fullScreenPhotoId {
                 ManagePhotoDetailView(
                     photos: $photos,
-                    gridPhotos: manageGridPhotos,
                     initialPhotoId: photoId,
                     aiRanks: cachedAiRanks,
                     onDismiss: {
@@ -373,6 +383,7 @@ struct ManagePhotosView: View {
         .tint(.white)
         .onAppear {
             refreshExistingAssetIds()
+            pruneUndisplayablePhotosFromBinding()
             scheduleExistingAssetIdRefreshRetriesIfNeeded()
             cachedAiRanks = photos.aiRanksByPhotoId()
             ensureInitialBatch()
@@ -420,6 +431,7 @@ struct ManagePhotosView: View {
             // before the synchronous fetchAssets call can block the main thread.
             Task { @MainActor in
                 refreshExistingAssetIds()
+                pruneUndisplayablePhotosFromBinding()
             }
             scheduleExistingAssetIdRefreshRetriesIfNeeded()
             cachedAiRanks = photos.aiRanksByPhotoId()
@@ -555,8 +567,6 @@ private struct ManagePhotoGridCell: View {
 /// Full-screen photo viewer shown when tapping a grid cell in normal mode.
 private struct ManagePhotoDetailView: View {
     @Binding var photos: [RecapPhoto]
-    /// Matches `manageGridPhotos` so limited-library picks appear before `PHAsset.fetch` catches up (`hasDisplayableLocalBacking` can be false briefly).
-    let gridPhotos: [RecapPhoto]
     let initialPhotoId: UUID
     let aiRanks: [UUID: Int]
     let onDismiss: () -> Void
@@ -567,21 +577,21 @@ private struct ManagePhotoDetailView: View {
 
     init(
         photos: Binding<[RecapPhoto]>,
-        gridPhotos: [RecapPhoto],
         initialPhotoId: UUID,
         aiRanks: [UUID: Int],
         onDismiss: @escaping () -> Void
     ) {
         _photos = photos
-        self.gridPhotos = gridPhotos
         self.initialPhotoId = initialPhotoId
         self.aiRanks = aiRanks
         self.onDismiss = onDismiss
         _currentPhotoId = State(initialValue: initialPhotoId)
     }
 
-    /// Same ordering as the grid (`manageGridPhotos`) so swipe order matches thumbnails.
-    private var detailPhotos: [RecapPhoto] { gridPhotos }
+    /// Same ordering as the manage grid so swipe pages match visible thumbnails.
+    private var detailPhotos: [RecapPhoto] {
+        photos.sorted { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }
+    }
 
     private var detailMainPixelSize: CGSize {
         let b = UIScreen.main.bounds
@@ -663,6 +673,7 @@ private struct ManagePhotoDetailView: View {
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
+                .id(detailPhotos.map(\.id))
 
                 VStack(spacing: 4) {
                     HStack(spacing: 6) {
@@ -760,10 +771,19 @@ private struct ManagePhotoDetailView: View {
             .padding(.top, 8)
         }
         .onAppear {
-            if let first = detailPhotos.first {
-                if detailPhotos.contains(where: { $0.id == currentPhotoId }) == false {
-                    currentPhotoId = first.id
-                }
+            if detailPhotos.contains(where: { $0.id == currentPhotoId }) {
+                return
+            }
+            if detailPhotos.contains(where: { $0.id == initialPhotoId }) {
+                currentPhotoId = initialPhotoId
+            } else if let first = detailPhotos.first {
+                currentPhotoId = first.id
+            }
+        }
+        .onChange(of: photos.map(\.id)) { _, _ in
+            if !detailPhotos.contains(where: { $0.id == currentPhotoId }),
+               let first = detailPhotos.first {
+                currentPhotoId = first.id
             }
         }
         .onChange(of: currentPhotoId) { _, _ in

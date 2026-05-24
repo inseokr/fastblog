@@ -213,19 +213,6 @@ struct CloudPhotoView: View {
     }
 }
 
-extension RecapPhoto {
-    /// True when the recap row should show a real thumbnail: cloud URL, on-disk app capture, or a Photos library asset that still exists.
-    /// Prevents gradient placeholders (and time badges) after the user deletes an in-app capture or removes the library asset.
-    var hasDisplayableLocalBacking: Bool {
-        if let cloud = cloudURL, !cloud.isEmpty { return true }
-        guard let lid = localIdentifier, !lid.isEmpty else { return false }
-        if lid.hasPrefix(AppCapturePhotoService.prefix) {
-            return AppCapturePhotoService.shared.loadImage(identifier: lid) != nil
-        }
-        return PHAsset.fetchAssets(withLocalIdentifiers: [lid], options: nil).firstObject != nil
-    }
-}
-
 /// Convenience for RecapPhoto. Prefers local PHAsset, falls back to cloud URL if local is unavailable.
 struct RecapPhotoThumbnail: View {
     let photo: RecapPhoto

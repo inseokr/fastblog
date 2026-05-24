@@ -3059,7 +3059,7 @@ struct RecapBlogPageView: View {
     private func placePhotoModalOverlay(item: PlacePhotoModalItem) -> some View {
         Group {
             if let stop = placeStop(dayId: item.dayId, stopId: item.stopId) {
-                let includedPhotos = stop.photos.filter(\.isIncluded)
+                let includedPhotos = stop.photos.filter(\.isIncluded).filter(\.hasDisplayableLocalBacking)
                 if !includedPhotos.isEmpty {
                     PlacePhotoModalView(
                         placeTitle: bindingForPlaceTitle(stopId: item.stopId),
@@ -3262,9 +3262,48 @@ struct RecapBlogPageView: View {
             }
             draft.days[i] = merged
         }
+        // In-app camera captures inject into already-resolved days in the store; merge new stops/photos
+        // into the local draft so the map and Manage Photos see them without leaving edit mode.
+        for i in draft.days.indices where draft.days[i].isPlaceNamesResolved && updated.days[i].isPlaceNamesResolved {
+            mergePlaceStopsFromStore(updatedStops: updated.days[i].placeStops, into: &draft.days[i].placeStops)
+        }
         // Sync cover photo from store: quality-based selection updates selectedCoverPhotoIdentifier
         // in the store as scoring completes, but the local draft never received that update.
         draft.selectedCoverPhotoIdentifier = updated.selectedCoverPhotoIdentifier
+    }
+
+    /// Merges background store updates (camera inject, rescan) into an in-progress draft day without dropping user edits.
+    private func mergePlaceStopsFromStore(updatedStops: [PlaceStop], into draftStops: inout [PlaceStop]) {
+        for updatedStop in updatedStops {
+            if let stopIdx = draftStops.firstIndex(where: { $0.id == updatedStop.id }) {
+                mergePhotosFromStore(updatedPhotos: updatedStop.photos, into: &draftStops[stopIdx].photos)
+            } else {
+                draftStops.append(updatedStop)
+            }
+        }
+        draftStops.sort { ($0.photos.first?.timestamp ?? .distantFuture) < ($1.photos.first?.timestamp ?? .distantFuture) }
+        for i in draftStops.indices {
+            draftStops[i].orderIndex = i
+        }
+    }
+
+    /// Appends photos newly injected in the store; propagates quality scores without overwriting manual include toggles.
+    private func mergePhotosFromStore(updatedPhotos: [RecapPhoto], into draftPhotos: inout [RecapPhoto]) {
+        let existingIds = Set(draftPhotos.map(\.id))
+        let existingLocalIds = Set(draftPhotos.compactMap(\.localIdentifier))
+        for updatedPhoto in updatedPhotos {
+            if let photoIdx = draftPhotos.firstIndex(where: { $0.id == updatedPhoto.id }) {
+                guard draftPhotos[photoIdx].qualityScore == nil,
+                      updatedPhoto.qualityScore != nil else { continue }
+                draftPhotos[photoIdx].qualityScore = updatedPhoto.qualityScore
+                draftPhotos[photoIdx].isFavorite = updatedPhoto.isFavorite
+                draftPhotos[photoIdx].isIncluded = updatedPhoto.isIncluded
+                continue
+            }
+            if let lid = updatedPhoto.localIdentifier, existingLocalIds.contains(lid) { continue }
+            draftPhotos.append(updatedPhoto)
+        }
+        draftPhotos.sort { $0.timestamp < $1.timestamp }
     }
 
     private func loadDraftIfNeeded() {
@@ -3273,7 +3312,8 @@ struct RecapBlogPageView: View {
             draft = saved
             hasFinishedInitialLoad = true
             if draftSnapshot == nil { draftSnapshot = draft }
-            // Process any remaining days in background (rate-limited geocoding).
+            // Score already-geocoded days (day 0) and process remaining days in background.
+            Task { @MainActor in await createdRecapStore.scoreResolvedDaysInBackground(blogId: blogId) }
             Task { @MainActor in await createdRecapStore.continueGeocodingDays(blogId: blogId) }
             // Check for new moments for this recent blog (if it passes the recency + cutoff checks).
             checkForNewMomentsIfRecent()

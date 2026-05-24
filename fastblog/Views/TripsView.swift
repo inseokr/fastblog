@@ -4565,8 +4565,24 @@ extension CameraCaptureView {
             return lid
         }
         guard let image = moment.previewImage else { return nil }
+        // Shutter path may have persisted already while this moment lost its id — avoid a second on-disk copy.
+        if let existing = recentAppCaptureIdentifier(near: moment.timestamp) {
+            return existing
+        }
         let vibe = moment.vibeURL ?? fallbackVibeURL
         return persistInAppCameraCapture(image: image, timestamp: moment.timestamp, vibeURL: vibe)
+    }
+
+    /// Finds an in-app capture saved within ~1s of `timestamp` (duplicate persist guard).
+    private func recentAppCaptureIdentifier(near timestamp: Date) -> String? {
+        let window: TimeInterval = 1.0
+        for captureId in AppCapturePhotoService.shared.allCaptureIds() {
+            guard let meta = AppCapturePhotoService.shared.metadata(captureId: captureId) else { continue }
+            guard abs(meta.timestamp.timeIntervalSince(timestamp)) <= window else { continue }
+            guard AppCapturePhotoService.shared.loadImage(captureId: captureId) != nil else { continue }
+            return AppCapturePhotoService.identifier(for: captureId)
+        }
+        return nil
     }
 
     /// Adds the captured photo to the session and routes it (active blog, matching blog, camera draft, or start-blog prompt).
@@ -4728,9 +4744,8 @@ extension CameraCaptureView {
                 locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
                 countryName = place.countryName != "Unknown" ? place.countryName : nil
             }
-            let photoId = UUID()
             let photo = MockPhoto(
-                id: photoId,
+                id: momentId,
                 imageName: "camera.fill",
                 timestamp: timestamp,
                 locationName: locationName ?? "Captured Moment",
@@ -4744,7 +4759,7 @@ extension CameraCaptureView {
             attachedCountThisSession = momentCount(from: sessionCapturesForDisplay)
             if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) {
                 var m = sessionCapturesForDisplay[idx]
-                m.injectedPhotoId = photoId
+                m.injectedPhotoId = momentId
                 sessionCapturesForDisplay[idx] = m
             }
         }

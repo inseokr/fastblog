@@ -836,7 +836,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         // Deduplicate against photos already in the blog.
         let existingIds = Set(detail.days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier))
         let photos = newPhotos.filter { photo in
-            guard let lid = photo.localIdentifier else { return true }
+            guard let lid = photo.localIdentifier, !lid.isEmpty else { return false }
             return !existingIds.contains(lid)
         }
         guard !photos.isEmpty else { return }
@@ -1046,7 +1046,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Returns saved blog detail if user has edited and saved before. Otherwise nil (caller builds from trip).
     func getBlogDetail(blogId: UUID) -> RecapBlogDetail? {
-        blogDetailsBySourceId[blogId]
+        blogDetailsBySourceId[blogId]?.removingUndisplayablePhotos()
     }
 
     /// Persist edited blog detail. Call when user taps Save on RecapBlogPageView. Updates the corresponding recents entry.
@@ -1069,8 +1069,9 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
         }
 
-        blogDetailsBySourceId[detail.id] = detail
-        syncAppCaptureCaptionsFromBlogDetail(detail)
+        let sanitized = detail.removingUndisplayablePhotos()
+        blogDetailsBySourceId[sanitized.id] = sanitized
+        syncAppCaptureCaptionsFromBlogDetail(sanitized)
         guard let idx = recents.firstIndex(where: { $0.sourceTripId == detail.id }) else { return false }
         let old = recents[idx]
         let country = (detail.countryName.flatMap { $0.isEmpty || $0 == "Unknown" ? nil : $0 }) ?? old.countryName
@@ -2597,7 +2598,7 @@ final class CreatedRecapBlogStore: ObservableObject {
     /// Builds blog detail with structure for all days but only processes day 0 (geocode, title, visitedTime, photo quality).
     /// Use before navigating to recap; then call continueGeocodingDays(blogId:) when the recap page loads.
     func buildBlogDetailFirstDayOnly(from trip: TripDraft, onProgress: ((Double) -> Void)? = nil) async -> RecapBlogDetail {
-        // Progress budget: geocoding 0→0.30, visitedTime 0.30→0.45, scoring 0.45→0.75, cover 0.75→0.80, weather 0.80→0.97
+        // Progress budget: geocoding 0.05→0.30, visitedTime 0.30→0.97 (scoring/cover/weather are background)
         var detail = buildBlogDetail(from: trip)
         onProgress?(0.05)
         guard let firstDayIdx = detail.days.indices.first else { return detail }
@@ -2654,17 +2655,28 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
 
         detail = await applyVisitedTimeDigitized(to: detail, dayIndices: [firstDayIdx])
-        onProgress?(0.45)
-        if Task.isCancelled { return detail }
-        detail = await applyPhotoQualitySelection(to: detail, dayIndices: [firstDayIdx])
-        onProgress?(0.75)
-        updateCoverPhotoFromQualityScores(&detail)
-        onProgress?(0.80)
-        detail = await applyWeather(to: detail) { fraction in
-            onProgress?(0.80 + 0.17 * fraction)
-        }
         onProgress?(0.97)
+        if Task.isCancelled { return detail }
+        // Photo scoring, cover selection, and weather are all done after the blog is shown:
+        // - resolved days (day 0) via scoreResolvedDaysInBackground(blogId:)
+        // - remaining days via continueGeocodingDays → processOneDay
         return detail
+    }
+
+    /// Scores photos for any day already marked isPlaceNamesResolved, then updates the cover.
+    /// Call from the blog page after buildBlogDetailFirstDayOnly so day 0 is scored without
+    /// blocking the creation animation.
+    func scoreResolvedDaysInBackground(blogId: UUID) async {
+        guard var detail = blogDetailsBySourceId[blogId] else { return }
+        let resolvedIndices = detail.days.indices.filter { detail.days[$0].isPlaceNamesResolved }
+        guard !resolvedIndices.isEmpty else { return }
+        let (updated, didScoreAny) = await applyPhotoQualitySelection(to: detail, dayIndices: resolvedIndices)
+        guard didScoreAny else { return }
+        detail = updated
+        updateCoverPhotoFromQualityScores(&detail)
+        blogDetailsBySourceId[blogId] = detail
+        saveBlogDetail(detail, asDraft: true)
+        objectWillChange.send()
     }
 
     /// Process one more day (geocode, visitedTime, photo quality) and merge into stored detail. Call after recommended delay.
@@ -2734,7 +2746,8 @@ final class CreatedRecapBlogStore: ObservableObject {
 
         result = await applyVisitedTimeDigitized(to: result, dayIndices: [dayIndex])
         if Task.isCancelled { return result }
-        result = await applyPhotoQualitySelection(to: result, dayIndices: [dayIndex])
+        let (scored, _) = await applyPhotoQualitySelection(to: result, dayIndices: [dayIndex])
+        result = scored
         result = await applyWeather(to: result)
         return result
     }
@@ -2840,103 +2853,173 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Scores every photo using Vision AI and auto-selects the best per place stop.
     private func applyPhotoQualitySelection(to detail: RecapBlogDetail) async -> RecapBlogDetail {
-        await applyPhotoQualitySelection(to: detail, dayIndices: detail.days.indices.map { $0 })
+        let (updated, _) = await applyPhotoQualitySelection(to: detail, dayIndices: detail.days.indices.map { $0 })
+        return updated
     }
 
-    /// Scores photos and auto-selects best per place stop for the given day indices only.
-    private func applyPhotoQualitySelection(to detail: RecapBlogDetail, dayIndices: [Int]) async -> RecapBlogDetail {
+    /// Scores photos missing `qualityScore` and auto-selects best per place stop for the given day indices only.
+    /// Returns whether any photo was newly scored (false when every photo already had a score).
+    private func applyPhotoQualitySelection(
+        to detail: RecapBlogDetail,
+        dayIndices: [Int]
+    ) async -> (RecapBlogDetail, didScoreAny: Bool) {
         var updated = detail
         let scorer = PhotoQualityScorer.shared
         let daySet = Set(dayIndices)
+        var didScoreAny = false
 
         for dayIdx in updated.days.indices where daySet.contains(dayIdx) {
             for stopIdx in updated.days[dayIdx].placeStops.indices {
-                if Task.isCancelled { return updated }
-                let photos = updated.days[dayIdx].placeStops[stopIdx].photos
-                // Exclude in-app camera captures — they have no PHAsset and cannot be scored via Vision.
-                let identifiers = photos.compactMap(\.localIdentifier)
-                    .filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
-                guard !identifiers.isEmpty else { continue }
-
-                let scores = await scorer.scorePhotos(identifiers: identifiers)
-
-                let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
-                var favoriteIdentifiers: Set<String> = []
-                fetchResult.enumerateObjects { asset, _, _ in
-                    if asset.isFavorite { favoriteIdentifiers.insert(asset.localIdentifier) }
-                }
-
-                for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
-                    let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
-                    if let id = photo.localIdentifier, let score = scores[id] {
-                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].qualityScore = score
-                    }
-                    if let id = photo.localIdentifier {
-                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isFavorite = favoriteIdentifiers.contains(id)
-                    }
-                }
-
-                for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
-                    let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
-                    guard photo.qualityScore == nil,
-                          let id = photo.localIdentifier,
-                          id.hasPrefix(AppCapturePhotoService.prefix) else { continue }
-                    if let score = await scorer.scoreAppCapture(identifier: id) {
-                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].qualityScore = score
-                    }
-                }
-
-                let scoredPhotos = updated.days[dayIdx].placeStops[stopIdx].photos
-                let topIds = scoredPhotos.autoSelectedIds()
-                for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
-                    let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
-                    // Camera-captured photos are always included; smart picker only applies to scanned library photos.
-                    let isCameraCapture = photo.imageName == "camera.fill"
-                    if isCameraCapture {
-                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = true
-                    } else if !topIds.isEmpty {
-                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = topIds.contains(photo.id)
-                    }
-                    // else: no scores returned and not a camera capture → leave isIncluded unchanged
+                if Task.isCancelled { return (updated, didScoreAny) }
+                if await scorePhotosIfNeeded(
+                    &updated.days[dayIdx].placeStops[stopIdx].photos,
+                    scorer: scorer
+                ) {
+                    didScoreAny = true
                 }
             }
         }
 
-        return updated
+        return (updated, didScoreAny)
+    }
+
+    /// Scores library and in-app photos missing `qualityScore`. Re-applies smart selection only when at least one photo was newly scored.
+    private func scorePhotosIfNeeded(
+        _ photos: inout [RecapPhoto],
+        scorer: PhotoQualityScorer
+    ) async -> Bool {
+        let identifiersToScore = photos.compactMap { photo -> String? in
+            guard let id = photo.localIdentifier,
+                  !id.hasPrefix(AppCapturePhotoService.prefix),
+                  photo.qualityScore == nil else { return nil }
+            return id
+        }
+
+        var didScoreNew = false
+
+        if !identifiersToScore.isEmpty {
+            let scores = await scorer.scorePhotos(identifiers: identifiersToScore)
+            let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiersToScore, options: nil)
+            var favoriteIdentifiers: Set<String> = []
+            fetchResult.enumerateObjects { asset, _, _ in
+                if asset.isFavorite { favoriteIdentifiers.insert(asset.localIdentifier) }
+            }
+
+            for photoIdx in photos.indices {
+                let photo = photos[photoIdx]
+                if let id = photo.localIdentifier, let score = scores[id] {
+                    photos[photoIdx].qualityScore = score
+                    didScoreNew = true
+                }
+                if let id = photo.localIdentifier, identifiersToScore.contains(id) {
+                    photos[photoIdx].isFavorite = favoriteIdentifiers.contains(id)
+                }
+            }
+        }
+
+        for photoIdx in photos.indices {
+            guard photos[photoIdx].qualityScore == nil,
+                  let id = photos[photoIdx].localIdentifier,
+                  id.hasPrefix(AppCapturePhotoService.prefix) else { continue }
+            if let score = await scorer.scoreAppCapture(identifier: id) {
+                photos[photoIdx].qualityScore = score
+                didScoreNew = true
+            }
+        }
+
+        guard didScoreNew else { return false }
+
+        let topIds = photos.autoSelectedIds()
+        for photoIdx in photos.indices {
+            let photo = photos[photoIdx]
+            let isCameraCapture = photo.imageName == "camera.fill"
+            if isCameraCapture {
+                photos[photoIdx].isIncluded = true
+            } else if !topIds.isEmpty {
+                photos[photoIdx].isIncluded = topIds.contains(photo.id)
+            }
+        }
+        return true
     }
 
     /// Fetches Open-Meteo weather for each day using the first available coordinate.
     /// Days that already have weather or have no location data are skipped.
-    private func applyWeather(to detail: RecapBlogDetail, onProgress: ((Double) -> Void)? = nil) async -> RecapBlogDetail {
+    private func applyWeather(to detail: RecapBlogDetail) async -> RecapBlogDetail {
         var updated = detail
-        let fetchableIndices = updated.days.indices.filter {
-            !updated.days[$0].weatherIsManual
-                && updated.days[$0].weather == nil
-                && updated.days[$0].placeStops.compactMap(\.representativeLocation).first != nil
-        }
-        let total = max(1, fetchableIndices.count)
-        var done = 0
+        let tripRange = detail.days.map(\.date).min().map { min in
+            let max = detail.days.map(\.date).max() ?? min
+            return "\(TripCalendarDayKey.from(date: min))…\(TripCalendarDayKey.from(date: max))"
+        } ?? "—"
+        print(
+            "[WeatherService] applyWeather start: \(detail.days.count) days, " +
+            "trip=\(detail.title), range=\(tripRange)"
+        )
+
+        var pending: [(dayIdx: Int, date: Date, latitude: Double, longitude: Double)] = []
+        var skippedManual = 0
+        var skippedExisting = 0
+        var skippedNoLocation = 0
+
         for dayIdx in updated.days.indices {
             if Task.isCancelled { return updated }
-            // Skip if manually overridden or already fetched.
-            if updated.days[dayIdx].weatherIsManual { continue }
-            if updated.days[dayIdx].weather != nil { continue }
-            // Use the first place stop with a known location as the coordinate for the day.
-            guard let coord = updated.days[dayIdx].placeStops.compactMap(\.representativeLocation).first else { continue }
-            let date = updated.days[dayIdx].date
-            if let weather = await WeatherService.shared.fetchWeather(
-                latitude: coord.latitude,
-                longitude: coord.longitude,
-                date: date
-            ) {
-                updated.days[dayIdx].weather = weather
-                print("[WeatherService] ✅ Day \(updated.days[dayIdx].dayIndex): \(weather.emoji) \(weather.description), \(String(format: "%.0f", weather.tempMaxC))°C / \(String(format: "%.0f", weather.tempMinC))°C")
-            } else {
-                print("[WeatherService] ⚠️ Day \(updated.days[dayIdx].dayIndex): no weather data")
+            let day = updated.days[dayIdx]
+            if day.weatherIsManual {
+                skippedManual += 1
+                continue
             }
-            done += 1
-            onProgress?(Double(done) / Double(total))
+            if day.weather != nil {
+                skippedExisting += 1
+                continue
+            }
+            guard let coord = day.placeStops.compactMap(\.representativeLocation).first else {
+                skippedNoLocation += 1
+                continue
+            }
+            pending.append((dayIdx, day.date, coord.latitude, coord.longitude))
         }
+
+        if pending.isEmpty {
+            print(
+                "[WeatherService] applyWeather done: nothing to fetch " +
+                "(skipped manual=\(skippedManual) existing=\(skippedExisting) noLocation=\(skippedNoLocation))"
+            )
+            return updated
+        }
+
+        let weatherByKey = await WeatherService.shared.fetchWeather(
+            requests: pending.map { (date: $0.date, latitude: $0.latitude, longitude: $0.longitude) }
+        )
+
+        var fetched = 0
+        var failed = 0
+        for item in pending {
+            let key = WeatherService.shared.cacheKey(
+                latitude: item.latitude,
+                longitude: item.longitude,
+                date: item.date
+            )
+            if let weather = weatherByKey[key] {
+                updated.days[item.dayIdx].weather = weather
+                fetched += 1
+                let dayIndex = updated.days[item.dayIdx].dayIndex
+                print(
+                    "[WeatherService] ✅ Day \(dayIndex): \(weather.emoji) \(weather.description), " +
+                    "\(String(format: "%.0f", weather.tempMaxC))°C / \(String(format: "%.0f", weather.tempMinC))°C"
+                )
+            } else {
+                failed += 1
+                let day = updated.days[item.dayIdx]
+                print(
+                    "[WeatherService] ⚠️ Day \(day.dayIndex): no weather data " +
+                    "(calendarKey=\(day.storyBookCalendarDayKey), coord=\(item.latitude), \(item.longitude))"
+                )
+            }
+        }
+
+        print(
+            "[WeatherService] applyWeather done: fetched=\(fetched) failed=\(failed) " +
+            "skipped(manual=\(skippedManual) existing=\(skippedExisting) noLocation=\(skippedNoLocation))"
+        )
         return updated
     }
 
@@ -2944,7 +3027,8 @@ final class CreatedRecapBlogStore: ObservableObject {
     /// Used after injecting newly scanned photos so only good-quality photos are preselected.
     private func applyPhotoQualitySelectionForBlog(sourceTripId: UUID, dayIndices: [Int]) async {
         guard let detail = blogDetailsBySourceId[sourceTripId], !dayIndices.isEmpty else { return }
-        let updated = await applyPhotoQualitySelection(to: detail, dayIndices: dayIndices)
+        let (updated, didScoreAny) = await applyPhotoQualitySelection(to: detail, dayIndices: dayIndices)
+        guard didScoreAny else { return }
         saveBlogDetail(updated, asDraft: true)
         if let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) {
             recents[idx].selectedPhotoCount = updated.days
@@ -3057,7 +3141,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
         let existingIds = Set(detail.days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier))
         let photos = newPhotos.filter { photo in
-            guard let lid = photo.localIdentifier else { return true }
+            guard let lid = photo.localIdentifier, !lid.isEmpty else { return false }
             return !existingIds.contains(lid)
         }
         guard !photos.isEmpty else { return (0, 0) }
@@ -3236,46 +3320,22 @@ final class CreatedRecapBlogStore: ObservableObject {
     private func applyPhotoQualitySelectionForStops(sourceTripId: UUID, stopIds: Set<UUID>) async {
         guard var detail = blogDetailsBySourceId[sourceTripId], !stopIds.isEmpty else { return }
         let scorer = PhotoQualityScorer.shared
+        var didScoreAny = false
 
         for dayIdx in detail.days.indices {
             for stopIdx in detail.days[dayIdx].placeStops.indices {
                 guard stopIds.contains(detail.days[dayIdx].placeStops[stopIdx].id) else { continue }
                 if Task.isCancelled { return }
-
-                let identifiers = detail.days[dayIdx].placeStops[stopIdx].photos.compactMap(\.localIdentifier)
-                    .filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
-                guard !identifiers.isEmpty else { continue }
-
-                let scores = await scorer.scorePhotos(identifiers: identifiers)
-
-                let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
-                var favoriteIdentifiers: Set<String> = []
-                fetchResult.enumerateObjects { asset, _, _ in
-                    if asset.isFavorite { favoriteIdentifiers.insert(asset.localIdentifier) }
-                }
-
-                for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
-                    let photo = detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
-                    if let id = photo.localIdentifier, let score = scores[id] {
-                        detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].qualityScore = score
-                    }
-                    if let id = photo.localIdentifier {
-                        detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isFavorite = favoriteIdentifiers.contains(id)
-                    }
-                }
-
-                let topIds = detail.days[dayIdx].placeStops[stopIdx].photos.autoSelectedIds()
-                for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
-                    let photo = detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
-                    let isCameraCapture = photo.imageName == "camera.fill"
-                    if isCameraCapture {
-                        detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = true
-                    } else if !topIds.isEmpty {
-                        detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = topIds.contains(photo.id)
-                    }
+                if await scorePhotosIfNeeded(
+                    &detail.days[dayIdx].placeStops[stopIdx].photos,
+                    scorer: scorer
+                ) {
+                    didScoreAny = true
                 }
             }
         }
+
+        guard didScoreAny else { return }
 
         saveBlogDetail(detail, asDraft: true)
         if let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) {

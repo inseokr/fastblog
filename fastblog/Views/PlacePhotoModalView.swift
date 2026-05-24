@@ -302,9 +302,14 @@ struct PlacePhotoModalView: View {
         onSavePlaceCategory != nil && !recapBlogIsReadOnly
     }
 
+    /// Photos that still resolve to pixels — pager and filmstrip must not include deleted/missing assets.
+    private var displayablePhotos: [RecapPhoto] {
+        photos.filter(\.hasDisplayableLocalBacking)
+    }
+
     /// Earliest photo in this stop by timestamp (same as used for place stop visit time).
     private var earliestPhoto: RecapPhoto? {
-        photos.min(by: { $0.timestamp < $1.timestamp })
+        displayablePhotos.min(by: { $0.timestamp < $1.timestamp })
     }
 
     /// True when the current photo is the earliest in the stop, so we can show the same visit time as the place stop row.
@@ -377,7 +382,7 @@ struct PlacePhotoModalView: View {
     }
 
     private var currentPhoto: RecapPhoto? {
-        photos.first { $0.id == effectiveDisplayedPhotoId } ?? photos.first
+        displayablePhotos.first { $0.id == effectiveDisplayedPhotoId } ?? displayablePhotos.first
     }
 
     private var currentPhotoLocalIdentifier: String? {
@@ -648,9 +653,9 @@ struct PlacePhotoModalView: View {
                             }
 
                             if !usesInlineCaptionChrome && !isEditing {
-                                if photos.count > 1 {
+                                if displayablePhotos.count > 1 {
                                     PlacePhotoThumbnailStrip(
-                                        photos: photos,
+                                        photos: displayablePhotos,
                                         currentPhotoId: effectiveDisplayedPhotoId,
                                         onSelectPhoto: { currentPhotoId = $0 }
                                     )
@@ -658,7 +663,7 @@ struct PlacePhotoModalView: View {
                                     .padding(.horizontal, PlaceDetailChromeLayout.horizontalPadding)
                                     .padding(.top, 0)
                                     .padding(.bottom, PlaceDetailChromeLayout.thumbnailStripBottomPadding(sheet: presentation.isSheet))
-                                } else if let single = photos.first {
+                                } else if let single = displayablePhotos.first {
                                     HStack {
                                         RecapPhotoThumbnail(photo: single, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 160, height: 160))
                                             .frame(width: 56, height: 56)
@@ -924,6 +929,13 @@ struct PlacePhotoModalView: View {
         .onAppear {
             dismissFrozenPhotoId = nil
             isDismissExitAnimating = false
+            if !displayablePhotos.contains(where: { $0.id == currentPhotoId }) {
+                if displayablePhotos.contains(where: { $0.id == initialPhotoId }) {
+                    currentPhotoId = initialPhotoId
+                } else if let first = displayablePhotos.first {
+                    currentPhotoId = first.id
+                }
+            }
             editedCaptionText = currentCaption
             editedPlaceTitle = placeTitle
             if usesInlineCaptionChrome {
@@ -1309,13 +1321,14 @@ struct PlacePhotoModalView: View {
     /// in a sheet context — ScrollView(.horizontal) conflicts with the sheet's pan-to-dismiss.
     private var fullScreenPhotoView: some View {
         TabView(selection: tabSelectionBinding) {
-            ForEach(photos) { photo in
+            ForEach(displayablePhotos) { photo in
                 photoFullScreenImage(photo)
                     .tag(photo.id)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .scrollDisabled(isPhotoPagingLocked)
+        .id(displayablePhotos.map(\.id))
         .ignoresSafeArea()
     }
 
@@ -1342,7 +1355,7 @@ struct PlacePhotoModalView: View {
         // capture them for in-photo pan on wide shots (see HorizontalScrollablePhotoView).
         return HorizontalScrollablePhotoView(
             photo: photo,
-            allowsIntrinsicHorizontalPan: photos.count <= 1
+            allowsIntrinsicHorizontalPan: displayablePhotos.count <= 1
         )
             .ignoresSafeArea()
             .contentShape(Rectangle())
