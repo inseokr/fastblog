@@ -2671,9 +2671,11 @@ final class CreatedRecapBlogStore: ObservableObject {
         let resolvedIndices = detail.days.indices.filter { detail.days[$0].isPlaceNamesResolved }
         guard !resolvedIndices.isEmpty else { return }
         let (updated, didScoreAny) = await applyPhotoQualitySelection(to: detail, dayIndices: resolvedIndices)
-        guard didScoreAny else { return }
         detail = updated
-        updateCoverPhotoFromQualityScores(&detail)
+        if didScoreAny {
+            updateCoverPhotoFromQualityScores(&detail)
+        }
+        detail = await applyWeather(to: detail)
         blogDetailsBySourceId[blogId] = detail
         saveBlogDetail(detail, asDraft: true)
         objectWillChange.send()

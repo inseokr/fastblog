@@ -1022,10 +1022,7 @@ struct TripsView: View {
                     }
                 }
 
-                LoadOlderTripsCard(
-                    isLoading: viewModel.isLoadingOlderTrips,
-                    debugStatus: viewModel.loadOlderDebugStatus
-                ) {
+                LoadOlderTripsCard(isLoading: viewModel.isLoadingOlderTrips) {
                     viewModel.loadOlderTrips()
                 }
                 .containerRelativeFrame(.horizontal, count: 5, span: 4, spacing: 16)
@@ -6378,7 +6375,6 @@ struct TripCarouselCard: View {
 
 struct LoadOlderTripsCard: View {
     var isLoading: Bool
-    var debugStatus: String = ""
     var onTap: () -> Void
 
     @State private var isPressing = false
@@ -6439,18 +6435,6 @@ struct LoadOlderTripsCard: View {
                             Text("Tap or swipe to explore")
                                 .font(.caption2)
                                 .foregroundColor(.white.opacity(0.5))
-
-                            #if DEBUG
-                            if !debugStatus.isEmpty {
-                                Text(debugStatus)
-                                    .font(.caption2)
-                                    .foregroundColor(.orange.opacity(0.9))
-                                    .multilineTextAlignment(.center)
-                                    .lineLimit(3)
-                                    .padding(.horizontal, 8)
-                                    .padding(.top, 4)
-                            }
-                            #endif
                         }
 
                         // Arrow hint

@@ -101,8 +101,6 @@ final class TripsViewModel: ObservableObject {
     @Published var loadOlderProgress: Double = 0
     /// Result of the load-older scan.
     @Published var olderTripsResult: FindMoreScanResult = .none
-    /// Last load-older action / outcome (shown on the card in DEBUG builds).
-    @Published var loadOlderDebugStatus: String = ""
 
     // MARK: - Load Newer Trips State
     /// True while the "load newer trips" scan is running.
@@ -861,7 +859,6 @@ final class TripsViewModel: ObservableObject {
     #endif
 
     private func noteLoadOlder(_ message: String) {
-        loadOlderDebugStatus = message
         #if DEBUG
         debugPrint("[LoadOlder] \(message)")
         #endif

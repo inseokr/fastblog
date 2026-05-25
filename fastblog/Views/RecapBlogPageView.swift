@@ -3293,6 +3293,10 @@ struct RecapBlogPageView: View {
         // into the local draft so the map and Manage Photos see them without leaving edit mode.
         for i in draft.days.indices where draft.days[i].isPlaceNamesResolved && updated.days[i].isPlaceNamesResolved {
             mergePlaceStopsFromStore(updatedStops: updated.days[i].placeStops, into: &draft.days[i].placeStops)
+            // Day 0 is resolved before weather runs; applyWeather may fill it in while later days geocode.
+            if !draft.days[i].weatherIsManual, draft.days[i].weather == nil, let weather = updated.days[i].weather {
+                draft.days[i].weather = weather
+            }
         }
         // Sync cover photo from store: quality-based selection updates selectedCoverPhotoIdentifier
         // in the store as scoring completes, but the local draft never received that update.
