@@ -61,14 +61,20 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
         days.flatMap(\.placeStops).flatMap(\.photos).contains { $0.cloudURL != nil }
     }
 
-    /// Drops photo rows that no longer resolve to pixels (deleted library assets, missing in-app captures).
+    /// Drops photo rows that no longer resolve to pixels (deleted library assets, missing in-app captures),
+    /// then removes place stops and days that have no photos left.
     func removingUndisplayablePhotos() -> RecapBlogDetail {
         var result = self
         for dayIdx in result.days.indices {
             for stopIdx in result.days[dayIdx].placeStops.indices {
                 result.days[dayIdx].placeStops[stopIdx].photos.removeAll { !$0.hasDisplayableLocalBacking }
             }
+            result.days[dayIdx].placeStops.removeAll { $0.photos.isEmpty }
+            for stopIdx in result.days[dayIdx].placeStops.indices {
+                result.days[dayIdx].placeStops[stopIdx].orderIndex = stopIdx
+            }
         }
+        result.days.removeAll { $0.placeStops.isEmpty }
         return result
     }
 

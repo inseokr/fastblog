@@ -62,14 +62,6 @@ private enum DiptychHalf {
     case bottom
 }
 
-/// What the slideshow renders for each slide.
-enum SlideshowContentMode: Equatable {
-    /// Show still photos with Ken Burns zoom (original behavior).
-    case photos
-    /// Show moment-video reels; only entries that have a reel are included.
-    case reels
-}
-
 /// Which days to include in the active slide pool.
 private enum SlideshowDayScope: Equatable {
     case allDays
@@ -168,12 +160,10 @@ struct PanoramaPlayerView: View {
     /// True when we paused slideshow music because the bundled-track sheet was open (resume on cancel only).
     @State private var pausedSlideshowMusicForPicker = false
 
-    // MARK: - Mode / scope
-    @State private var contentMode: SlideshowContentMode = .photos
+    // MARK: - Scope
     @State private var dayScope: SlideshowDayScope = .allDays
     @State private var showDayPicker = false
-    @State private var showNoReelsAlert = false
-    /// AVPlayer for reel-mode video slides (original clip audio; bundled music is ducked).
+    /// AVPlayer for video slides (original clip audio; bundled music is ducked).
     @State private var videoPlayer: AVPlayer?
     /// Controls the auto-dismissing place/caption overlay shown at the start of each reel slide.
     @State private var showReelInfoOverlay = false
@@ -190,30 +180,13 @@ struct PanoramaPlayerView: View {
 
     // MARK: - Derived
 
-    /// Groups filtered by `dayScope` and `contentMode`; used for all slideshow navigation.
+    /// Groups filtered by `dayScope`; used for all slideshow navigation.
     private var activeGroups: [[PanoramaPhotoEntry]] {
         var groups = photoGroups
         if case .day(let idx) = dayScope {
             groups = groups.map { $0.filter { $0.dayIndex == idx } }.filter { !$0.isEmpty }
         }
-        if contentMode == .reels {
-            groups = groups.map { $0.filter { $0.momentVideoURL != nil } }.filter { !$0.isEmpty }
-        }
         return groups
-    }
-
-    /// True when any entry in the full photo set has a moment-video reel attached.
-    private var hasAnyReels: Bool {
-        photoGroups.contains { $0.contains { $0.momentVideoURL != nil } }
-    }
-
-    /// True when the current day scope contains at least one reel (used before switching to reel mode).
-    private var hasReelsInCurrentScope: Bool {
-        var groups = photoGroups
-        if case .day(let idx) = dayScope {
-            groups = groups.map { $0.filter { $0.dayIndex == idx } }.filter { !$0.isEmpty }
-        }
-        return groups.contains { $0.contains { $0.momentVideoURL != nil } }
     }
 
     private var dayScopeLabel: String {
@@ -223,9 +196,9 @@ struct PanoramaPlayerView: View {
         }
     }
 
-    /// Stable key for `.task(id:)` — drives AVPlayer creation/teardown when the current reel slide changes.
+    /// Stable key for `.task(id:)` — drives AVPlayer creation/teardown when the current slide changes.
     private var currentVideoKey: String {
-        "\(currentGroupIndex)-\(currentSlideOffset)-\(contentMode == .reels)"
+        "\(currentGroupIndex)-\(currentSlideOffset)"
     }
 
     private var currentGroup: [PanoramaPhotoEntry] {
@@ -334,8 +307,8 @@ struct PanoramaPlayerView: View {
                 .ignoresSafeArea()
             }
 
-            // Reel info overlay — place name + caption, fades in on slide start then auto-dismisses.
-            if contentMode == .reels, showReelInfoOverlay, let entry = currentPrimaryEntry {
+            // Video info overlay — place name + caption, fades in on slide start then auto-dismisses.
+            if showReelInfoOverlay, let entry = currentPrimaryEntry, entry.momentVideoURL != nil {
                 reelInfoPanel(entry: entry)
                     .transition(.opacity)
                     .allowsHitTesting(false)
@@ -468,7 +441,7 @@ struct PanoramaPlayerView: View {
             // Hide the info overlay before the new slide begins.
             await MainActor.run { showReelInfoOverlay = false }
 
-            guard contentMode == .reels, let url = currentPrimaryEntry?.momentVideoURL else {
+            guard let url = currentPrimaryEntry?.momentVideoURL else {
                 // No new video — fade out whatever is showing.
                 await MainActor.run {
                     restoreSlideshowMusicVolumeForPhotos()
@@ -520,28 +493,7 @@ struct PanoramaPlayerView: View {
         .onChange(of: isPlaying) { _, playing in
             if playing { videoPlayer?.play() } else { videoPlayer?.pause() }
         }
-        .onChange(of: contentMode) { _, mode in
-            if mode == .photos {
-                restoreSlideshowMusicVolumeForPhotos()
-            }
-            resetToFirstSlide()
-        }
         .onChange(of: dayScope) { _, _ in resetToFirstSlide() }
-        .alert("No Videos Available", isPresented: $showNoReelsAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            let scopeDescription: String = {
-                if case .day(let idx) = dayScope {
-                    return dayLabels.indices.contains(idx) ? dayLabels[idx] : "Day \(idx + 1)"
-                }
-                return ""
-            }()
-            if scopeDescription.isEmpty {
-                Text("No video reels are available for this blog. Use the in-app camera to capture video reels.")
-            } else {
-                Text("No video reels are available for \(scopeDescription). Try switching to All Days or use the in-app camera to capture video reels.")
-            }
-        }
         .sheet(isPresented: $showDayPicker) {
             DayScopePickerSheet(dayLabels: dayLabels, currentScope: dayScope) { newScope in
                 dayScope = newScope
@@ -580,7 +532,7 @@ struct PanoramaPlayerView: View {
         switch currentLayout {
 
         case .solo:
-            if contentMode == .reels, let player = videoPlayer {
+            if let player = videoPlayer, currentPrimaryEntry?.momentVideoURL != nil {
                 SlideshowVideoSlideView(player: player)
                     .ignoresSafeArea()
                     // Identity keyed on the player instance — changing the player triggers
@@ -813,33 +765,6 @@ struct PanoramaPlayerView: View {
             }
 
             Spacer()
-
-            // Content-mode toggle (photos ↔ reels) — only when reels exist.
-            if hasAnyReels {
-                Button {
-                    let nextMode: SlideshowContentMode = contentMode == .photos ? .reels : .photos
-                    if nextMode == .reels && !hasReelsInCurrentScope {
-                        showNoReelsAlert = true
-                    } else {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            contentMode = nextMode
-                        }
-                    }
-                } label: {
-                    let isReels = contentMode == .reels
-                    ZStack {
-                        Circle().fill(.black.opacity(isReels ? 0.65 : 0.38))
-                        Circle().strokeBorder(.white.opacity(isReels ? 0.3 : 0.12), lineWidth: 0.5)
-                        Image(systemName: isReels ? "video.fill" : "photo.fill")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(isReels ? Color(red: 0.04, green: 0.52, blue: 1.0) : .white.opacity(0.6))
-                    }
-                    .frame(width: 44, height: 44)
-                    .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(contentMode == .reels ? "Switch to photo slideshow" : "Switch to reel slideshow")
-            }
 
             // Music picker (muted when no background track is selected)
             Button { showMusicPicker = true } label: {
@@ -1317,10 +1242,14 @@ struct PanoramaPlayerView: View {
     /// Choose layout for a given group position.
     private func chooseLayout(groupIndex: Int, offset: Int) -> SlideLayout {
         guard groupIndex < activeGroups.count else { return .solo }
-        // Reels mode always uses solo layout (video fills the screen).
-        if contentMode == .reels { return .solo }
-        let remaining = activeGroups[groupIndex].count - offset
+        let group = activeGroups[groupIndex]
+        guard offset < group.count else { return .solo }
+        // Video slides always fill the screen solo.
+        if group[offset].momentVideoURL != nil { return .solo }
+        let remaining = group.count - offset
         if remaining >= 2 {
+            // Don't pair with a video entry in diptych — it would show as a still.
+            if group[offset + 1].momentVideoURL != nil { return .solo }
             return [.solo, .diptych].randomElement()!
         }
         return .solo

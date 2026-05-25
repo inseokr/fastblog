@@ -937,6 +937,7 @@ struct RecapBlogPageView: View {
                         let draftBeforeMerge = draft
                         let snapshotBeforeMerge = draftSnapshot
                         mergeResolvedBlogDaysFromStore(updated: updated, into: &draft)
+                        pruneEmptyPhotoGroupsFromDraft()
                         // If the user hadn't changed anything since the snapshot, keep the snapshot aligned with
                         // background geocode/cover updates so we don't show a false "Unsaved changes" prompt.
                         if let snap = snapshotBeforeMerge, draftBeforeMerge == snap {
@@ -1275,6 +1276,7 @@ struct RecapBlogPageView: View {
                 // Equivalent of onDismiss: save and sync after user navigates back.
                 skipDefaultDayPageScrollOnNextAppear = true
                 print("📸 [ManagePhotos] dismissed — editInfo=\(managePhotosEditInfo != nil ? "set(stopId=\(managePhotosEditInfo!.stopId))" : "nil")")
+                pruneEmptyPhotoGroupsFromDraft()
                 persistRecapBlogDetail()
                 syncPhotoChangesWithCloud()
             }
@@ -3326,6 +3328,11 @@ struct RecapBlogPageView: View {
         guard !hasFinishedInitialLoad else { return }
         if let saved = createdRecapStore.getBlogDetail(blogId: blogId) {
             draft = saved
+            let beforePrune = draft
+            pruneEmptyPhotoGroupsFromDraft()
+            if draft != beforePrune {
+                persistRecapBlogDetail()
+            }
             hasFinishedInitialLoad = true
             if draftSnapshot == nil { draftSnapshot = draft }
             // Score already-geocoded days (day 0) and process remaining days in background.
@@ -3347,6 +3354,11 @@ struct RecapBlogPageView: View {
             let detail = await createdRecapStore.buildBlogDetailFirstDayOnly(from: trip)
             createdRecapStore.saveBlogDetail(detail, asDraft: true)
             draft = detail
+            let beforePrune = draft
+            pruneEmptyPhotoGroupsFromDraft()
+            if draft != beforePrune {
+                createdRecapStore.saveBlogDetail(draft, asDraft: true)
+            }
             hasFinishedInitialLoad = true
             if draftSnapshot == nil { draftSnapshot = draft }
             // Process remaining days in background (rate limit: 50 geocode/min).
@@ -6147,13 +6159,32 @@ Your blog remains private unless you choose to share it.
 
     /// Captures photo inclusion state for a stop before ManagePhotosView opens so we can diff on dismiss.
     private func openManagePhotos(dayId: UUID, stopId: UUID) {
-        if let stop = placeStop(dayId: dayId, stopId: stopId) {
-            managePhotosEditInfo = ManagePhotosEditInfo(
-                dayId: dayId, stopId: stopId,
-                photoInclusionBefore: Dictionary(uniqueKeysWithValues: stop.photos.map { ($0.id, $0.isIncluded) })
-            )
+        pruneEmptyPhotoGroupsFromDraft()
+        guard let stop = placeStop(dayId: dayId, stopId: stopId) else { return }
+        guard stop.photos.contains(where: \.hasDisplayableLocalBacking) else {
+            removePlaceStop(dayId: dayId, stopId: stopId)
+            return
         }
+        managePhotosEditInfo = ManagePhotosEditInfo(
+            dayId: dayId, stopId: stopId,
+            photoInclusionBefore: Dictionary(uniqueKeysWithValues: stop.photos.map { ($0.id, $0.isIncluded) })
+        )
         showManagePhotosForStop = ManagePhotosItem(dayId: dayId, stopId: stopId)
+    }
+
+    /// Strips broken photo rows and removes place stops / days that no longer have any photos.
+    private func pruneEmptyPhotoGroupsFromDraft() {
+        let sanitized = draft.removingUndisplayablePhotos()
+        guard sanitized != draft else { return }
+        draft = sanitized
+        if selectedDayIndex >= draft.days.count {
+            selectedDayIndex = max(0, draft.days.count - 1)
+        }
+        let allIncludedPhotos = draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
+        if let currentCover = draft.selectedCoverPhotoIdentifier,
+           !allIncludedPhotos.contains(where: { $0.localIdentifier == currentCover }) {
+            draft.selectedCoverPhotoIdentifier = allIncludedPhotos.compactMap(\.localIdentifier).first
+        }
     }
 
     /// Diffs photo inclusion changes made in ManagePhotosView and fires targeted updatePhoto calls.
