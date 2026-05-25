@@ -350,7 +350,6 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
         if didMigrateCommittedSave { persistRecents() }
 
-        consolidateAllBlogDetailsDuplicateCalendarDays()
         refreshRecentsDateMetadataFromBlogDetails()
     }
 
@@ -2361,7 +2360,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
             // Build stops; isIncluded mirrors the user's photo selection.
             var placeStops: [PlaceStop] = stopGroups.compactMap { orderIndex, inputs -> PlaceStop? in
-                let photos: [RecapPhoto] = inputs.map { input in
+                var photos: [RecapPhoto] = inputs.map { input in
                     let photo = day.photos.first { $0.id == input.id }!
                     return RecapPhoto(
                         id: photo.id,
@@ -2374,6 +2373,16 @@ final class CreatedRecapBlogStore: ObservableObject {
                     )
                 }.sorted { $0.timestamp < $1.timestamp }
                 guard photos.contains(where: \.isIncluded) else { return nil }
+
+                // Cap included photos to maxAutoIncludedCount() using time-spread.
+                // Quality scoring runs later (async) and will refine this selection.
+                let includedPhotos = photos.filter(\.isIncluded)
+                if includedPhotos.count > includedPhotos.maxAutoIncludedCount() {
+                    let topIds = includedPhotos.autoSelectedIds()
+                    for j in photos.indices where photos[j].isIncluded {
+                        photos[j].isIncluded = topIds.contains(photos[j].id)
+                    }
+                }
                 let repLoc = inputs.compactMap(\.location).first
                 return PlaceStop(
                     orderIndex: orderIndex,
@@ -2559,7 +2568,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             detail = await applyTransportModeInference(to: detail)
         }
 
-        return detail.consolidatingDuplicateCalendarDays()
+        return detail
     }
 
     @available(iOS 26, *)
@@ -2820,19 +2829,13 @@ final class CreatedRecapBlogStore: ObservableObject {
             .filter({ $0.qualityScore != nil })
         print("[CoverPhoto] Scored \(scoredPhotos.count) included photo(s)")
         for photo in scoredPhotos.sorted(by: { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }).prefix(5) {
-            let hasFace = (photo.qualityScore?.facePenalty ?? 0) > 0
-            print("[CoverPhoto]   id=\(photo.localIdentifier?.prefix(8) ?? "nil")… total=\(String(format: "%.3f", photo.qualityScore?.totalScore ?? 0)) aesthetics=\(String(format: "%.3f", photo.qualityScore?.aesthetics ?? 0)) sharpness=\(String(format: "%.3f", photo.qualityScore?.sharpness ?? 0)) face=\(hasFace)")
+            print("[CoverPhoto]   id=\(photo.localIdentifier?.prefix(8) ?? "nil")… total=\(String(format: "%.3f", photo.qualityScore?.totalScore ?? 0)) aesthetics=\(String(format: "%.3f", photo.qualityScore?.aesthetics ?? 0)) sharpness=\(String(format: "%.3f", photo.qualityScore?.sharpness ?? 0))")
         }
-        // Prefer scenic/landscape photos (no detected faces) over photos with people.
-        // Fall back to all scored photos if no face-free candidates exist.
-        let scenicPhotos = scoredPhotos.filter({ ($0.qualityScore?.facePenalty ?? 0) == 0 })
-        let candidates = scenicPhotos.isEmpty ? scoredPhotos : scenicPhotos
         let prevCoverId = detail.selectedCoverPhotoIdentifier
-        if let bestPhoto = candidates.max(by: { ($0.qualityScore?.totalScore ?? 0) < ($1.qualityScore?.totalScore ?? 0) }),
+        if let bestPhoto = scoredPhotos.max(by: { ($0.qualityScore?.totalScore ?? 0) < ($1.qualityScore?.totalScore ?? 0) }),
            let bestPhotoId = bestPhoto.localIdentifier {
-            let usedFallback = scenicPhotos.isEmpty && !scoredPhotos.isEmpty
             detail.selectedCoverPhotoIdentifier = bestPhotoId
-            print("[CoverPhoto] Updated cover: \(prevCoverId?.prefix(8) ?? "nil")… → \(bestPhotoId.prefix(8))… (score=\(String(format: "%.3f", bestPhoto.qualityScore?.totalScore ?? 0))\(usedFallback ? ", fallback: no scenic photos" : ""))")
+            print("[CoverPhoto] Updated cover: \(prevCoverId?.prefix(8) ?? "nil")… → \(bestPhotoId.prefix(8))… (score=\(String(format: "%.3f", bestPhoto.qualityScore?.totalScore ?? 0)))")
         } else {
             // Camera / in-app captures are not in the photo library — pick first included capture with a still on disk.
             let fallbackId = detail.days
@@ -2890,18 +2893,14 @@ final class CreatedRecapBlogStore: ObservableObject {
         _ photos: inout [RecapPhoto],
         scorer: PhotoQualityScorer
     ) async -> Bool {
-        let identifiersToScore = photos.compactMap { photo -> String? in
-            guard let id = photo.localIdentifier,
-                  !id.hasPrefix(AppCapturePhotoService.prefix),
-                  photo.qualityScore == nil else { return nil }
-            return id
-        }
+        let identifiersToScore = Set(photos.localIdentifiersForQualityScoring())
+        let libraryIdsToScore = identifiersToScore.filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
 
         var didScoreNew = false
 
-        if !identifiersToScore.isEmpty {
-            let scores = await scorer.scorePhotos(identifiers: identifiersToScore)
-            let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiersToScore, options: nil)
+        if !libraryIdsToScore.isEmpty {
+            let scores = await scorer.scorePhotos(identifiers: Array(libraryIdsToScore))
+            let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: Array(libraryIdsToScore), options: nil)
             var favoriteIdentifiers: Set<String> = []
             fetchResult.enumerateObjects { asset, _, _ in
                 if asset.isFavorite { favoriteIdentifiers.insert(asset.localIdentifier) }
@@ -2913,7 +2912,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                     photos[photoIdx].qualityScore = score
                     didScoreNew = true
                 }
-                if let id = photo.localIdentifier, identifiersToScore.contains(id) {
+                if let id = photo.localIdentifier, libraryIdsToScore.contains(id) {
                     photos[photoIdx].isFavorite = favoriteIdentifiers.contains(id)
                 }
             }
@@ -2922,24 +2921,23 @@ final class CreatedRecapBlogStore: ObservableObject {
         for photoIdx in photos.indices {
             guard photos[photoIdx].qualityScore == nil,
                   let id = photos[photoIdx].localIdentifier,
-                  id.hasPrefix(AppCapturePhotoService.prefix) else { continue }
+                  id.hasPrefix(AppCapturePhotoService.prefix),
+                  identifiersToScore.contains(id) else { continue }
             if let score = await scorer.scoreAppCapture(identifier: id) {
                 photos[photoIdx].qualityScore = score
                 didScoreNew = true
             }
         }
 
-        guard didScoreNew else { return false }
+        let includedCount = photos.filter(\.isIncluded).count
+        let needsInclusionCap = includedCount > photos.maxAutoIncludedCount()
+        guard didScoreNew || needsInclusionCap else { return false }
 
         let topIds = photos.autoSelectedIds()
+        guard !topIds.isEmpty else { return didScoreNew }
+
         for photoIdx in photos.indices {
-            let photo = photos[photoIdx]
-            let isCameraCapture = photo.imageName == "camera.fill"
-            if isCameraCapture {
-                photos[photoIdx].isIncluded = true
-            } else if !topIds.isEmpty {
-                photos[photoIdx].isIncluded = topIds.contains(photo.id)
-            }
+            photos[photoIdx].isIncluded = topIds.contains(photos[photoIdx].id)
         }
         return true
     }

@@ -51,6 +51,7 @@ struct LandingView: View {
     @StateObject private var photoAuth = PhotosAuthorizationManager()
 
     private let landingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
+    private let latestEditsLimit  = 5
 
     /// Used to keep the "Blog Your Trips in Seconds" alternate CTA off smaller iPhones.
     /// iPhone Pro Max models have wider point bounds than non-Max models.
@@ -414,7 +415,7 @@ struct LandingView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
-                        ForEach(createdRecapStore.displayRecents) { recap in
+                        ForEach(createdRecapStore.displayRecents.prefix(latestEditsLimit)) { recap in
                             CreatedRecapCard(recap: recap)
                                 .onTapGesture {
                                     selectedCreatedRecap = recap

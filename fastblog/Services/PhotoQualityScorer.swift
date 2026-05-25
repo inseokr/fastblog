@@ -20,9 +20,9 @@ struct PhotoScore: Codable, Equatable {
     let aesthetics: Double
     /// Sharpness estimated from contour detection. 0–1.
     let sharpness: Double
-    /// Penalty applied when faces are detected (keeps scenic/landscape preference). 0 or 0.05.
+    /// Legacy field; always 0 (face penalty removed). Kept for persisted blog JSON compatibility.
     let facePenalty: Double
-    /// Weighted composite: aesthetics×0.6 + sharpness×0.4 − facePenalty.
+    /// Weighted composite: aesthetics×0.6 + sharpness×0.4.
     let totalScore: Double
 }
 
@@ -35,7 +35,6 @@ actor PhotoQualityScorer {
     // Score weights (mirror expo app)
     private let aestheticsWeight = 0.6
     private let sharpnessWeight  = 0.4
-    private let facePenaltyValue = 0.05
 
     // Thumbnail size for analysis (balance speed vs accuracy)
     private let analysisSize = CGSize(width: 300, height: 300)
@@ -119,15 +118,12 @@ actor PhotoQualityScorer {
     private func score(cgImage: CGImage) async -> PhotoScore? {
         async let aesthetics = analyzeAesthetics(cgImage)
         async let sharpness  = analyzeSharpness(cgImage)
-        async let hasFaces   = detectFaces(cgImage)
 
         let a = await aesthetics
         let s = await sharpness
-        let f = await hasFaces
-        let penalty = f ? facePenaltyValue : 0.0
-        let total   = max(0, a * aestheticsWeight + s * sharpnessWeight - penalty)
+        let total = max(0, a * aestheticsWeight + s * sharpnessWeight)
 
-        return PhotoScore(aesthetics: a, sharpness: s, facePenalty: penalty, totalScore: total)
+        return PhotoScore(aesthetics: a, sharpness: s, facePenalty: 0, totalScore: total)
     }
 
     /// Load a small thumbnail from the photo library. Returns nil on failure.
@@ -245,16 +241,6 @@ actor PhotoQualityScorer {
         return min(1.0, count / 120.0)
     }
 
-    // MARK: - Face detection
-
-    /// Returns true when at least one face is detected (results in a small penalty).
-    private func detectFaces(_ cgImage: CGImage) async -> Bool {
-        let request = VNDetectFaceRectanglesRequest()
-        let handler = VNImageRequestHandler(cgImage: cgImage)
-        try? handler.perform([request])
-        return (request.results?.count ?? 0) > 0
-    }
-
     // MARK: - PHAsset fetch
 
     private func fetchAssets(identifiers: [String]) -> [PHAsset] {
@@ -266,9 +252,96 @@ actor PhotoQualityScorer {
     }
 }
 
+// MARK: - Per-stop scoring sample (temporal spread)
+
+extension Array where Element == RecapPhoto {
+    /// Max library + in-app photos per place stop sent through Vision on each scoring pass.
+    static let qualityScoringSampleLimit = 10
+
+    /// Unscored photos to run through Vision. When count exceeds `limit`, picks evenly across visit time.
+    func localIdentifiersForQualityScoring(limit: Int = qualityScoringSampleLimit) -> [String] {
+        let unscored = filter { $0.qualityScore == nil && $0.localIdentifier != nil }
+        let sorted = unscored.sorted {
+            if $0.timestamp != $1.timestamp { return $0.timestamp < $1.timestamp }
+            return ($0.localIdentifier ?? "") < ($1.localIdentifier ?? "")
+        }
+        guard sorted.count > limit else {
+            return sorted.compactMap(\.localIdentifier)
+        }
+        return temporalSampleLocalIdentifiers(from: sorted, limit: limit)
+    }
+
+    /// Evenly spaced photo ids across visit time (used when scores are not available yet).
+    func spreadSampledPhotoIds(limit: Int) -> Set<UUID> {
+        let sorted = self.sorted {
+            if $0.timestamp != $1.timestamp { return $0.timestamp < $1.timestamp }
+            return $0.id.uuidString < $1.id.uuidString
+        }
+        guard sorted.count > limit else { return Set(sorted.map(\.id)) }
+        return Set(temporalSpreadPhotos(from: sorted, limit: limit).map(\.id))
+    }
+
+    private func temporalSampleLocalIdentifiers(from sorted: [RecapPhoto], limit: Int) -> [String] {
+        temporalSpreadPhotos(from: sorted, limit: limit).compactMap(\.localIdentifier)
+    }
+
+    private func temporalSpreadPhotos(from sorted: [RecapPhoto], limit: Int) -> [RecapPhoto] {
+        guard let first = sorted.first, let last = sorted.last else { return [] }
+
+        let t0 = first.timestamp.timeIntervalSince1970
+        let t1 = last.timestamp.timeIntervalSince1970
+        if t1 <= t0 {
+            return Array(sorted.prefix(limit))
+        }
+
+        var picked: [RecapPhoto] = []
+        var pickedIds = Set<UUID>()
+        let slotCount = limit
+        let divisor = Swift.max(1, slotCount - 1)
+
+        for slot in 0..<slotCount {
+            let target = t0 + (t1 - t0) * Double(slot) / Double(divisor)
+            var best: RecapPhoto?
+            var bestDelta = TimeInterval.greatestFiniteMagnitude
+
+            for photo in sorted {
+                guard !pickedIds.contains(photo.id) else { continue }
+                let delta = abs(photo.timestamp.timeIntervalSince1970 - target)
+                if delta < bestDelta {
+                    bestDelta = delta
+                    best = photo
+                } else if delta == bestDelta, let current = best {
+                    if photo.id.uuidString < current.id.uuidString { best = photo }
+                }
+            }
+
+            if let photo = best {
+                picked.append(photo)
+                pickedIds.insert(photo.id)
+            }
+        }
+
+        if picked.count < limit {
+            for photo in sorted where !pickedIds.contains(photo.id) {
+                picked.append(photo)
+                pickedIds.insert(photo.id)
+                if picked.count >= limit { break }
+            }
+        }
+
+        return picked
+    }
+}
+
 // MARK: - PlaceStop auto-selection helper
 
 extension Array where Element == RecapPhoto {
+    /// Default max included photos per place stop: 3 if stop has >5 photos, else 2 or 1.
+    func maxAutoIncludedCount() -> Int {
+        let count = self.count
+        return count > 5 ? 3 : (count >= 3 ? 2 : 1)
+    }
+
     /// Returns the top-quality photo ids that should be included by default.
     /// 3 photos if total > 5, 2 if 3–5, 1 if 1–2. Users can add more via "Manage Photos".
     /// Favorites (PHAsset.isFavorite) are always prioritized: if there are fewer favorites than the
@@ -276,8 +349,7 @@ extension Array where Element == RecapPhoto {
     /// When no favorites exist, falls back to pure score ranking.
     func autoSelectedIds() -> Set<UUID> {
         guard !isEmpty else { return [] }
-        let count = self.count
-        let maxSelected: Int = count > 5 ? 3 : (count >= 3 ? 2 : 1)
+        let maxSelected = maxAutoIncludedCount()
 
         let minTimeDistance: TimeInterval = 90
         let minSpatialDistance: CLLocationDistance = 35
@@ -320,7 +392,8 @@ extension Array where Element == RecapPhoto {
                 }
                 if selected.count < maxSelected {
                     for candidate in ranked where !selected.contains(where: { $0.id == candidate.id }) {
-                        guard selected.count - favorites.count < remaining else { break }
+                        guard selected.count < maxSelected,
+                              selected.count - favorites.count < remaining else { break }
                         selected.append(candidate)
                     }
                 }
@@ -331,7 +404,7 @@ extension Array where Element == RecapPhoto {
         // No favorites — use score-based selection.
         let scored = filter { $0.qualityScore != nil }
         if scored.isEmpty {
-            return Set(filter(\.isIncluded).map(\.id))
+            return spreadSampledPhotoIds(limit: maxSelected)
         }
 
         let rankedPhotos = sorted {
@@ -362,8 +435,11 @@ extension Array where Element == RecapPhoto {
         minTimeDistance: TimeInterval,
         minSpatialDistance: CLLocationDistance
     ) -> Bool {
+        let hardMinTimeDistance: TimeInterval = 10
         for existing in selected {
             let timeDelta = abs(candidate.timestamp.timeIntervalSince(existing.timestamp))
+            // Hard cutoff: burst shots within 10 seconds are never both selected.
+            if timeDelta < hardMinTimeDistance { return false }
             guard timeDelta < minTimeDistance else { continue }
 
             // If both locations exist, require spatial separation too.
