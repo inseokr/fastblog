@@ -1,3 +1,4 @@
+import AVFoundation
 import Photos
 import SwiftUI
 import UIKit
@@ -22,8 +23,30 @@ struct PanoramaPhotoEntry: Equatable {
     let caption: String?
     let placeName: String?
     let timestamp: Date?
-    /// GPS from the recap photo, when available — used for “open in Maps” in slideshow / gallery detail.
+    /// GPS from the recap photo, when available — used for "open in Maps" in slideshow / gallery detail.
     let location: PhotoCoordinate?
+    /// Local file URL for a moment-video reel attached to this photo (in-app camera captures only).
+    let momentVideoURL: URL?
+    /// Zero-based index of the blog day this photo belongs to; used for day-scope filtering.
+    let dayIndex: Int
+
+    init(
+        id: String,
+        caption: String?,
+        placeName: String?,
+        timestamp: Date?,
+        location: PhotoCoordinate?,
+        momentVideoURL: URL? = nil,
+        dayIndex: Int = 0
+    ) {
+        self.id = id
+        self.caption = caption
+        self.placeName = placeName
+        self.timestamp = timestamp
+        self.location = location
+        self.momentVideoURL = momentVideoURL
+        self.dayIndex = dayIndex
+    }
 }
 
 // MARK: - Layout variant (solo or top/bottom diptych only)
@@ -37,6 +60,20 @@ private enum SlideLayout: Equatable {
 private enum DiptychHalf {
     case top
     case bottom
+}
+
+/// What the slideshow renders for each slide.
+enum SlideshowContentMode: Equatable {
+    /// Show still photos with Ken Burns zoom (original behavior).
+    case photos
+    /// Show moment-video reels; only entries that have a reel are included.
+    case reels
+}
+
+/// Which days to include in the active slide pool.
+private enum SlideshowDayScope: Equatable {
+    case allDays
+    case day(Int)
 }
 
 /// Full-screen slideshow that advances through photos grouped by place.
@@ -53,6 +90,8 @@ struct PanoramaPlayerView: View {
     let blogId: UUID
     /// Shown centered on the gallery hero (matches recap cover title treatment).
     let blogTitle: String
+    /// Display labels for each day (e.g. "Day 1", "Day 2") — drives the day-scope picker.
+    let dayLabels: [String]
     /// When true, present the gallery overlay immediately instead of starting on slideshow playback.
     var startInGallery: Bool = false
     var onDismiss: () -> Void
@@ -65,6 +104,7 @@ struct PanoramaPlayerView: View {
         photoGroups: [[PanoramaPhotoEntry]],
         blogId: UUID,
         blogTitle: String,
+        dayLabels: [String] = [],
         startInGallery: Bool = false,
         onDismiss: @escaping () -> Void,
         onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil
@@ -72,6 +112,7 @@ struct PanoramaPlayerView: View {
         self.photoGroups = photoGroups
         self.blogId = blogId
         self.blogTitle = blogTitle
+        self.dayLabels = dayLabels
         self.startInGallery = startInGallery
         self.onDismiss = onDismiss
         self.onAppCaptureDeletedFromSlideshow = onAppCaptureDeletedFromSlideshow
@@ -127,6 +168,16 @@ struct PanoramaPlayerView: View {
     /// True when we paused slideshow music because the bundled-track sheet was open (resume on cancel only).
     @State private var pausedSlideshowMusicForPicker = false
 
+    // MARK: - Mode / scope
+    @State private var contentMode: SlideshowContentMode = .photos
+    @State private var dayScope: SlideshowDayScope = .allDays
+    @State private var showDayPicker = false
+    @State private var showNoReelsAlert = false
+    /// AVPlayer for reel-mode video slides (original clip audio; bundled music is ducked).
+    @State private var videoPlayer: AVPlayer?
+    /// Controls the auto-dismissing place/caption overlay shown at the start of each reel slide.
+    @State private var showReelInfoOverlay = false
+
     // MARK: - Constants
     private let soloDurationSeconds: Double = 4.0
     private let diptychDurationSeconds: Double = 4.0
@@ -134,12 +185,52 @@ struct PanoramaPlayerView: View {
     private let zoomScale: CGFloat = 1.12   // how far to zoom in/out
     private let pinchScaleMin: CGFloat = 0.5
     private let pinchScaleMax: CGFloat = 4.0
+    /// Bundled slideshow music level while a reel clip with its own soundtrack is playing.
+    private static let slideshowMusicDuckedVolume: Float = 0.2
 
     // MARK: - Derived
 
+    /// Groups filtered by `dayScope` and `contentMode`; used for all slideshow navigation.
+    private var activeGroups: [[PanoramaPhotoEntry]] {
+        var groups = photoGroups
+        if case .day(let idx) = dayScope {
+            groups = groups.map { $0.filter { $0.dayIndex == idx } }.filter { !$0.isEmpty }
+        }
+        if contentMode == .reels {
+            groups = groups.map { $0.filter { $0.momentVideoURL != nil } }.filter { !$0.isEmpty }
+        }
+        return groups
+    }
+
+    /// True when any entry in the full photo set has a moment-video reel attached.
+    private var hasAnyReels: Bool {
+        photoGroups.contains { $0.contains { $0.momentVideoURL != nil } }
+    }
+
+    /// True when the current day scope contains at least one reel (used before switching to reel mode).
+    private var hasReelsInCurrentScope: Bool {
+        var groups = photoGroups
+        if case .day(let idx) = dayScope {
+            groups = groups.map { $0.filter { $0.dayIndex == idx } }.filter { !$0.isEmpty }
+        }
+        return groups.contains { $0.contains { $0.momentVideoURL != nil } }
+    }
+
+    private var dayScopeLabel: String {
+        switch dayScope {
+        case .allDays: return "All Days"
+        case .day(let idx): return dayLabels.indices.contains(idx) ? dayLabels[idx] : "Day \(idx + 1)"
+        }
+    }
+
+    /// Stable key for `.task(id:)` — drives AVPlayer creation/teardown when the current reel slide changes.
+    private var currentVideoKey: String {
+        "\(currentGroupIndex)-\(currentSlideOffset)-\(contentMode == .reels)"
+    }
+
     private var currentGroup: [PanoramaPhotoEntry] {
-        guard currentGroupIndex < photoGroups.count else { return [] }
-        return photoGroups[currentGroupIndex]
+        guard currentGroupIndex < activeGroups.count else { return [] }
+        return activeGroups[currentGroupIndex]
     }
 
     /// Asset ID of the top (or only) photo on the current slide.
@@ -158,16 +249,16 @@ struct PanoramaPlayerView: View {
 
     /// Primary visible photo for captions / timestamp / map (top slot, or solo).
     private var currentPrimaryEntry: PanoramaPhotoEntry? {
-        guard currentGroupIndex < photoGroups.count else { return nil }
-        let group = photoGroups[currentGroupIndex]
+        guard currentGroupIndex < activeGroups.count else { return nil }
+        let group = activeGroups[currentGroupIndex]
         guard currentSlideOffset < group.count else { return nil }
         return group[currentSlideOffset]
     }
 
-    private var totalPhotos: Int { photoGroups.reduce(0) { $0 + $1.count } }
+    private var totalPhotos: Int { activeGroups.reduce(0) { $0 + $1.count } }
 
     private var currentFlatIndex: Int {
-        photoGroups[0..<currentGroupIndex].reduce(0) { $0 + $1.count } + currentSlideOffset
+        activeGroups[0..<currentGroupIndex].reduce(0) { $0 + $1.count } + currentSlideOffset
     }
 
     private var soloProgress: CGFloat {
@@ -223,7 +314,7 @@ struct PanoramaPlayerView: View {
             .allowsHitTesting(false)
 
             // Left/right tap zones for photo navigation. Pause/resume is only via the bottom control.
-            if !photoGroups.isEmpty, diptychExpandedHalf == nil {
+            if !activeGroups.isEmpty, diptychExpandedHalf == nil {
                 GeometryReader { geo in
                     HStack(spacing: 0) {
                         Color.clear
@@ -241,6 +332,14 @@ struct PanoramaPlayerView: View {
                     .frame(maxHeight: .infinity)
                 }
                 .ignoresSafeArea()
+            }
+
+            // Reel info overlay — place name + caption, fades in on slide start then auto-dismisses.
+            if contentMode == .reels, showReelInfoOverlay, let entry = currentPrimaryEntry {
+                reelInfoPanel(entry: entry)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+                    .animation(.easeInOut(duration: 0.4), value: showReelInfoOverlay)
             }
 
             // Chrome — extend to physical bottom; explicit padding replaces implicit safe-area inset
@@ -365,10 +464,110 @@ struct PanoramaPlayerView: View {
             currentLayout = chooseLayout(groupIndex: 0, offset: 0)
             await restorePersistedSlideshowMusic()
         }
+        .task(id: currentVideoKey) {
+            // Hide the info overlay before the new slide begins.
+            await MainActor.run { showReelInfoOverlay = false }
+
+            guard contentMode == .reels, let url = currentPrimaryEntry?.momentVideoURL else {
+                // No new video — fade out whatever is showing.
+                await MainActor.run {
+                    restoreSlideshowMusicVolumeForPhotos()
+                    withAnimation(.easeOut(duration: 0.4)) { videoPlayer = nil }
+                }
+                return
+            }
+
+            let item = AVPlayerItem(url: url)
+            let newPlayer = AVPlayer(playerItem: item)
+            newPlayer.isMuted = false
+            newPlayer.volume = 1
+            let obs = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime,
+                object: item,
+                queue: .main
+            ) { _ in newPlayer.seek(to: .zero); newPlayer.play() }
+
+            await MainActor.run {
+                duckSlideshowMusicForReelPlayback()
+                configureAudioSessionForReelSlideshow()
+                // Crossfade: replacing videoPlayer with a new instance changes the view's
+                // .id(ObjectIdentifier(player)), so SwiftUI dissolves the old view out while
+                // scaling+fading the new one in — no black flash between slides.
+                withAnimation(.easeInOut(duration: 0.55)) { videoPlayer = newPlayer }
+                if isPlaying { newPlayer.play() }
+                // Fade in the place/caption overlay.
+                withAnimation(.easeIn(duration: 0.35).delay(0.2)) { showReelInfoOverlay = true }
+                // Restart the advance timer for this reel slide. In reel mode soloZoomView
+                // never appears so its onAppear-based startSoloTimer() never fires — the
+                // timer must be (re)started here after every slide change.
+                soloElapsed = 0
+                if isPlaying { startSoloTimer() }
+            }
+
+            // Auto-dismiss the info overlay after 2.5 seconds.
+            try? await Task.sleep(for: .milliseconds(2500))
+            if !Task.isCancelled {
+                await MainActor.run {
+                    withAnimation(.easeOut(duration: 0.5)) { showReelInfoOverlay = false }
+                }
+            }
+
+            // Keep player alive until the task is cancelled (slide or mode changed).
+            do { try await Task.sleep(for: .seconds(3600)) } catch {}
+            NotificationCenter.default.removeObserver(obs)
+            newPlayer.pause()
+        }
+        .onChange(of: isPlaying) { _, playing in
+            if playing { videoPlayer?.play() } else { videoPlayer?.pause() }
+        }
+        .onChange(of: contentMode) { _, mode in
+            if mode == .photos {
+                restoreSlideshowMusicVolumeForPhotos()
+            }
+            resetToFirstSlide()
+        }
+        .onChange(of: dayScope) { _, _ in resetToFirstSlide() }
+        .alert("No Videos Available", isPresented: $showNoReelsAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            let scopeDescription: String = {
+                if case .day(let idx) = dayScope {
+                    return dayLabels.indices.contains(idx) ? dayLabels[idx] : "Day \(idx + 1)"
+                }
+                return ""
+            }()
+            if scopeDescription.isEmpty {
+                Text("No video reels are available for this blog. Use the in-app camera to capture video reels.")
+            } else {
+                Text("No video reels are available for \(scopeDescription). Try switching to All Days or use the in-app camera to capture video reels.")
+            }
+        }
+        .sheet(isPresented: $showDayPicker) {
+            DayScopePickerSheet(dayLabels: dayLabels, currentScope: dayScope) { newScope in
+                dayScope = newScope
+                showDayPicker = false
+            }
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
         .onDisappear {
             stopTimer()
             Task { await slideshowMusic.stopAll() }
         }
+    }
+
+    // MARK: - Reset
+
+    private func resetToFirstSlide() {
+        stopTimer()
+        soloElapsed = 0
+        withAnimation(.easeInOut(duration: 0.3)) {
+            currentGroupIndex = 0
+            currentSlideOffset = 0
+            currentLayout = chooseLayout(groupIndex: 0, offset: 0)
+        }
+        if isPlaying { resumeSlideshowTimingIfPlaying() }
+        Task { await preloadAround(groupIndex: 0, offset: 0) }
     }
 
     // MARK: - Slide content
@@ -381,7 +580,17 @@ struct PanoramaPlayerView: View {
         switch currentLayout {
 
         case .solo:
-            if let id = topPhotoId, let img = loadedImages[id] {
+            if contentMode == .reels, let player = videoPlayer {
+                SlideshowVideoSlideView(player: player)
+                    .ignoresSafeArea()
+                    // Identity keyed on the player instance — changing the player triggers
+                    // a proper SwiftUI crossfade between outgoing and incoming video views.
+                    .id(ObjectIdentifier(player))
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.97)),
+                        removal: .opacity
+                    ))
+            } else if let id = topPhotoId, let img = loadedImages[id] {
                 soloZoomView(img: img, size: geo.size)
                     .transition(.opacity)   // crossfade between photos
                     .id("solo-\(currentGroupIndex)-\(currentSlideOffset)")
@@ -569,9 +778,9 @@ struct PanoramaPlayerView: View {
     // MARK: - Top bar
 
     private var topBar: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 8) {
 
-            // Dismiss slideshow → blog (gallery uses text “Close” in `galleryOverlay`).
+            // Dismiss slideshow → blog (gallery uses text "Close" in `galleryOverlay`).
             Button(action: dismissSlideshowToBlog) {
                 Image(systemName: "xmark")
                     .font(.system(size: 15, weight: .semibold))
@@ -583,7 +792,54 @@ struct PanoramaPlayerView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Close")
 
+            // Day scope pill — only when blog spans multiple days.
+            if dayLabels.count > 1 {
+                Button { showDayPicker = true } label: {
+                    HStack(spacing: 4) {
+                        Text(dayScopeLabel)
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(.black.opacity(0.55)))
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Filter by day: \(dayScopeLabel)")
+            }
+
             Spacer()
+
+            // Content-mode toggle (photos ↔ reels) — only when reels exist.
+            if hasAnyReels {
+                Button {
+                    let nextMode: SlideshowContentMode = contentMode == .photos ? .reels : .photos
+                    if nextMode == .reels && !hasReelsInCurrentScope {
+                        showNoReelsAlert = true
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            contentMode = nextMode
+                        }
+                    }
+                } label: {
+                    let isReels = contentMode == .reels
+                    ZStack {
+                        Circle().fill(.black.opacity(isReels ? 0.65 : 0.38))
+                        Circle().strokeBorder(.white.opacity(isReels ? 0.3 : 0.12), lineWidth: 0.5)
+                        Image(systemName: isReels ? "video.fill" : "photo.fill")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(isReels ? Color(red: 0.04, green: 0.52, blue: 1.0) : .white.opacity(0.6))
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(contentMode == .reels ? "Switch to photo slideshow" : "Switch to reel slideshow")
+            }
 
             // Music picker (muted when no background track is selected)
             Button { showMusicPicker = true } label: {
@@ -657,8 +913,8 @@ struct PanoramaPlayerView: View {
             Spacer()
 
             // Group counter (which place we're on)
-            if photoGroups.count > 1 {
-                Text("\(currentGroupIndex + 1)/\(photoGroups.count)")
+            if activeGroups.count > 1 {
+                Text("\(currentGroupIndex + 1)/\(activeGroups.count)")
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.white.opacity(0.7))
@@ -796,6 +1052,39 @@ struct PanoramaPlayerView: View {
         }
     }
 
+    // MARK: - Reel info overlay
+
+    /// Place name + caption panel shown at the start of each reel slide, anchored above the bottom controls.
+    @ViewBuilder
+    private func reelInfoPanel(entry: PanoramaPhotoEntry) -> some View {
+        let placeName = entry.placeName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let caption = entry.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !placeName.isEmpty || !caption.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                if !placeName.isEmpty {
+                    Label(placeName, systemImage: "mappin.circle.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.55), radius: 3, y: 1)
+                        .lineLimit(2)
+                }
+                if !caption.isEmpty {
+                    Text(caption)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white.opacity(0.88))
+                        .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            // Position above progress bar + play button + safe area (≈120 pt from bottom).
+            .padding(.bottom, 120)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        }
+    }
+
     // MARK: - Gallery overlay
 
     private func presentSlideshowGallery() {
@@ -854,7 +1143,7 @@ struct PanoramaPlayerView: View {
     private var galleryOverlay: some View {
         GeometryReader { geo in
             let coverHeight = geo.size.height * Self.coverHeroHeightFraction
-            let allPhotos = photoGroups.flatMap { $0 }
+            let allPhotos = activeGroups.flatMap { $0 }
             let groupedPhotosByPlace: [(placeName: String, photos: [PanoramaPhotoEntry])] = {
                 var orderedGroups: [(placeName: String, photos: [PanoramaPhotoEntry])] = []
                 for entry in allPhotos {
@@ -1027,8 +1316,10 @@ struct PanoramaPlayerView: View {
 
     /// Choose layout for a given group position.
     private func chooseLayout(groupIndex: Int, offset: Int) -> SlideLayout {
-        guard groupIndex < photoGroups.count else { return .solo }
-        let remaining = photoGroups[groupIndex].count - offset
+        guard groupIndex < activeGroups.count else { return .solo }
+        // Reels mode always uses solo layout (video fills the screen).
+        if contentMode == .reels { return .solo }
+        let remaining = activeGroups[groupIndex].count - offset
         if remaining >= 2 {
             return [.solo, .diptych].randomElement()!
         }
@@ -1072,7 +1363,7 @@ struct PanoramaPlayerView: View {
     // MARK: - Advance
 
     private func advanceSlide() {
-        guard !photoGroups.isEmpty else { return }
+        guard !activeGroups.isEmpty else { return }
         clearDiptychExpanded()
 
         // How many photos does the current slide consume?
@@ -1090,7 +1381,7 @@ struct PanoramaPlayerView: View {
             nextLayout    = layout
         } else {
             // Move to the next group (wrap around)
-            let ng = (currentGroupIndex + 1) % photoGroups.count
+            let ng = (currentGroupIndex + 1) % activeGroups.count
             let layout = chooseLayout(groupIndex: ng, offset: 0)
             nextGroupIdx  = ng
             nextOffset_   = 0
@@ -1110,7 +1401,7 @@ struct PanoramaPlayerView: View {
     }
 
     private func retreatSlide() {
-        guard !photoGroups.isEmpty else { return }
+        guard !activeGroups.isEmpty else { return }
         clearDiptychExpanded()
         soloElapsed = 0
 
@@ -1122,11 +1413,11 @@ struct PanoramaPlayerView: View {
             prevOffset   = currentSlideOffset - 1
         } else if currentGroupIndex > 0 {
             prevGroupIdx = currentGroupIndex - 1
-            prevOffset   = max(0, photoGroups[prevGroupIdx].count - 1)
+            prevOffset   = max(0, activeGroups[prevGroupIdx].count - 1)
         } else {
             // Already at the very first photo — wrap to the last
-            prevGroupIdx = photoGroups.count - 1
-            prevOffset   = max(0, photoGroups[prevGroupIdx].count - 1)
+            prevGroupIdx = activeGroups.count - 1
+            prevOffset   = max(0, activeGroups[prevGroupIdx].count - 1)
         }
 
         let prevLayout = chooseLayout(groupIndex: prevGroupIdx, offset: prevOffset)
@@ -1177,6 +1468,20 @@ struct PanoramaPlayerView: View {
     }
 
     /// Restores bundled track from `UserDefaults` when the file is still in the app bundle.
+    private func duckSlideshowMusicForReelPlayback() {
+        slideshowMusic.setVolume(Self.slideshowMusicDuckedVolume)
+    }
+
+    private func restoreSlideshowMusicVolumeForPhotos() {
+        slideshowMusic.setVolume(1)
+    }
+
+    private func configureAudioSessionForReelSlideshow() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try? session.setActive(true)
+    }
+
     private func restorePersistedSlideshowMusic() async {
         let key = blogId.uuidString
         let saved = SlideshowMusicPreference.load(blogId: key)
@@ -1250,8 +1555,9 @@ struct PanoramaPlayerView: View {
         var ids: [String] = []
         var gIdx = groupIndex
         var pIdx = offset
-        while ids.count < 6, gIdx < photoGroups.count {
-            let group = photoGroups[gIdx]
+        let groups = activeGroups
+        while ids.count < 6, gIdx < groups.count {
+            let group = groups[gIdx]
             while pIdx < group.count, ids.count < 6 {
                 ids.append(group[pIdx].id)
                 pIdx += 1
@@ -1813,6 +2119,83 @@ private struct GalleryThumbCell: View {
                 assetIdentifier: entry.id,
                 targetSize: CGSize(width: 200, height: 200)
             )
+        }
+    }
+}
+
+// MARK: - Video slide (reel mode)
+
+private final class _SlideshowPlayerView: UIView {
+    private let playerLayer: AVPlayerLayer
+
+    init(player: AVPlayer) {
+        playerLayer = AVPlayerLayer(player: player)
+        playerLayer.videoGravity = .resizeAspectFill
+        super.init(frame: .zero)
+        backgroundColor = .black
+        layer.addSublayer(playerLayer)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        playerLayer.frame = bounds
+    }
+}
+
+private struct SlideshowVideoSlideView: UIViewRepresentable {
+    let player: AVPlayer
+
+    func makeUIView(context: Context) -> _SlideshowPlayerView {
+        _SlideshowPlayerView(player: player)
+    }
+
+    func updateUIView(_ uiView: _SlideshowPlayerView, context: Context) {}
+}
+
+// MARK: - Day scope picker sheet
+
+private struct DayScopePickerSheet: View {
+    let dayLabels: [String]
+    let currentScope: SlideshowDayScope
+    let onSelect: (SlideshowDayScope) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Button {
+                    onSelect(.allDays)
+                } label: {
+                    HStack {
+                        Text("All Days")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if case .allDays = currentScope {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                }
+
+                ForEach(dayLabels.indices, id: \.self) { idx in
+                    Button {
+                        onSelect(.day(idx))
+                    } label: {
+                        HStack {
+                            Text(dayLabels[idx])
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if case .day(let selected) = currentScope, selected == idx {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Show")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

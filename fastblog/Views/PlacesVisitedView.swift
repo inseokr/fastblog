@@ -63,6 +63,15 @@ struct PlacesVisitedView: View {
     @FocusState private var isSearchFocused: Bool
     @State private var isSearchActive: Bool = false
 
+    @State private var showShareYourPlacesSheet = false
+    @State private var showPlacesShareTooManyAlert = false
+    @State private var placesShareBlockedPlaceCount = 0
+    @State private var placesShareDraft: RecapBlogDetail?
+    @State private var showPlacesSocialStudio = false
+    @State private var showPlacesVideoExport = false
+    @State private var placesVideoShareURL: URL?
+    @State private var showPlacesVideoShareSheet = false
+
     private let searchBarHeight: CGFloat = 56
     private let mapButtonSize: CGFloat = 52
     private let horizontalPadding: CGFloat = 16
@@ -304,6 +313,66 @@ struct PlacesVisitedView: View {
             }
         }
         .animation(.easeInOut(duration: 0.38), value: selectedPlaceForModal?.id)
+        .sheet(isPresented: $showShareYourPlacesSheet) {
+            ShareYourPlacesSheet(
+                onPickDestination: { destination in
+                    showShareYourPlacesSheet = false
+                    let placeCount = filteredPlaces.count
+                    let cap = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
+                    if placeCount > cap {
+                        placesShareBlockedPlaceCount = placeCount
+                        showPlacesShareTooManyAlert = true
+                        return
+                    }
+                    beginPlacesShare(destination: destination)
+                },
+                onDismiss: { showShareYourPlacesSheet = false }
+            )
+            .presentationDetents([.height(420)])
+            .presentationDragIndicator(.visible)
+        }
+        .alert("Too many places to share", isPresented: $showPlacesShareTooManyAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(placesShareTooManyAlertMessage)
+        }
+        .sheet(isPresented: $showPlacesVideoExport) {
+            if let draft = placesShareDraft {
+                BlogVideoExportOptionsSheet(
+                    draft: draft,
+                    isPlacesCollectionExport: true,
+                    onShare: { url in
+                        placesVideoShareURL = url
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 350_000_000)
+                            showPlacesVideoShareSheet = true
+                        }
+                    },
+                    onRequestReelCapture: {}
+                )
+            }
+        }
+        .sheet(isPresented: $showPlacesVideoShareSheet) {
+            if let url = placesVideoShareURL {
+                ShareSheet(items: [url])
+            }
+        }
+        .overlay {
+            if showPlacesSocialStudio, let draft = placesShareDraft {
+                SocialPostStudioSheet(
+                    blog: draft,
+                    opensInEditMode: true,
+                    placesOnlyMode: true,
+                    onDismissFromParent: {
+                        showPlacesSocialStudio = false
+                        placesShareDraft = nil
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
+                .zIndex(300)
+            }
+        }
         .navigationDestination(isPresented: $showPlacesMap) {
             PlacesVisitedMapView(
                 selectedYear: $selectedYear,
@@ -338,7 +407,16 @@ struct PlacesVisitedView: View {
                     .foregroundStyle(.primary)
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if !isSearchActive, !filteredPlaces.isEmpty {
+                    Button {
+                        showShareYourPlacesSheet = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(.primary)
+                    }
+                    .accessibilityLabel("Share places")
+                }
                 if isSearchActive {
                     Button("Done") {
                         searchText = ""
@@ -366,8 +444,8 @@ struct PlacesVisitedView: View {
                 }
             }
         }
-        .toolbar((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
-        .toolbarBackground((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
+        .toolbar(shouldHidePlacesVisitedNavigationBar ? .hidden : .automatic, for: .navigationBar)
+        .toolbarBackground(shouldHidePlacesVisitedNavigationBar ? .hidden : .automatic, for: .navigationBar)
         .dynamicTypeSize(.large)
         .onChange(of: selectedYear) { _, _ in
             // If the user switches years, drop any category that doesn't exist for the new year.
@@ -375,6 +453,29 @@ struct PlacesVisitedView: View {
                !availableCategories.contains(where: { $0.caseInsensitiveCompare(selectedCategory) == .orderedSame }) {
                 self.selectedCategory = nil
             }
+        }
+    }
+
+    /// Hide My Places chrome while Carousel Studio is full-screen (matches blog recap during share).
+    private var shouldHidePlacesVisitedNavigationBar: Bool {
+        (selectedPlaceForModal != nil && !revealNavDuringModalDismiss) || showPlacesSocialStudio
+    }
+
+    private var placesShareTooManyAlertMessage: String {
+        let cap = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
+        return "You have \(placesShareBlockedPlaceCount) places in your current view. Sharing supports up to \(cap) places at a time.\n\nUse the year, country, category, or search filters to narrow your list, then try sharing again."
+    }
+
+    /// Matches blog share: pick a format, then open the export UI directly. Uses current My Places filters as the place set; trim slides in Social Post Studio.
+
+    private func beginPlacesShare(destination: PlacesShareDestination) {
+        guard let draft = PlacesShareDraftBuilder.makeShareDraft(selectedPlaces: filteredPlaces) else { return }
+        placesShareDraft = draft
+        switch destination {
+        case .socialCarousel, .pdf:
+            showPlacesSocialStudio = true
+        case .video:
+            showPlacesVideoExport = true
         }
     }
 
@@ -612,7 +713,7 @@ private struct PlaceVisitedPhotoModalWrapper: View {
     }
 }
 
-private struct PlaceVisitedCard: View {
+struct PlaceVisitedCard: View {
     let place: VisitedPlaceSummary
     var onTap: (() -> Void)? = nil
     var onAddCategoryTap: (() -> Void)? = nil

@@ -1294,23 +1294,38 @@ struct RecapBlogPageView: View {
     @ViewBuilder
     private func panoramaOverlayLayer() -> some View {
         // Build one group per PlaceStop so diptych never mixes places.
+        // Enumerate days so each entry carries a dayIndex for scope filtering.
         let groups: [[PanoramaPhotoEntry]] = draft.days
-            .flatMap(\.placeStops)
-            .compactMap { stop -> [PanoramaPhotoEntry]? in
-                let entries = stop.photos
-                    .filter(\.isIncluded)
-                    .compactMap { photo -> PanoramaPhotoEntry? in
-                        guard let id = photo.localIdentifier, !id.isEmpty else { return nil }
-                        return PanoramaPhotoEntry(
-                            id: id,
-                            caption: photo.caption,
-                            placeName: stop.placeTitle,
-                            timestamp: photo.timestamp,
-                            location: photo.location
-                        )
-                    }
-                return entries.isEmpty ? nil : entries
+            .enumerated()
+            .flatMap { (dayIdx, day) in
+                day.placeStops.compactMap { stop -> [PanoramaPhotoEntry]? in
+                    let entries = stop.photos
+                        .filter(\.isIncluded)
+                        .compactMap { photo -> PanoramaPhotoEntry? in
+                            guard let id = photo.localIdentifier, !id.isEmpty else { return nil }
+                            // Resolve a moment-video reel for in-app camera captures.
+                            let reelURL: URL? = {
+                                guard let captureId = AppCapturePhotoService.uuid(from: id) else { return nil }
+                                return AppCapturePhotoService.shared.momentVideoFileURL(for: captureId)
+                            }()
+                            return PanoramaPhotoEntry(
+                                id: id,
+                                caption: photo.caption,
+                                placeName: stop.placeTitle,
+                                timestamp: photo.timestamp,
+                                location: photo.location,
+                                momentVideoURL: reelURL,
+                                dayIndex: dayIdx
+                            )
+                        }
+                    return entries.isEmpty ? nil : entries
+                }
             }
+        // Build day labels: prefer the day's caption if set, else "Day N".
+        let dayLabels: [String] = draft.days.enumerated().map { idx, day in
+            let caption = day.dayCaption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return caption.isEmpty ? "Day \(idx + 1)" : caption
+        }
         // Fall back to cover photo when no included photos exist.
         let photoGroups = groups.isEmpty
             ? draft.selectedCoverPhotoIdentifier.map {
@@ -1322,6 +1337,7 @@ struct RecapBlogPageView: View {
                 photoGroups: photoGroups,
                 blogId: blogId,
                 blogTitle: draft.title,
+                dayLabels: dayLabels,
                 startInGallery: false,
                 onDismiss: { showPanorama = false },
                 onAppCaptureDeletedFromSlideshow: { identifier in

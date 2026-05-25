@@ -1464,7 +1464,7 @@ private enum StudioExportMemoryGuidance {
 }
 
 /// Hard caps to avoid Jetsam crashes; aligned with common social carousel limits (34).
-private enum CarouselStudioExportHardLimit {
+enum CarouselStudioExportHardLimit {
     /// JPEG share and each Photos/PDF package may include at most this many slides.
     static let maxSlidesPerShareOrPackage: Int = 34
 }
@@ -1564,7 +1564,35 @@ private func carouselDrawableStopsForStudioDay(day: RecapBlogDay, excludedKeys: 
 }
 
 /// Matches the `await` budget in `SocialPostStudioSheet.loadSlides` so preparation progress stays in sync with real work.
-private func socialPostStudioLoadSlidesPreparationUnitCount(blog: RecapBlogDetail, excludedKeys: Set<String>) -> Int {
+/// Place intro map after the first stop in a day when a day-route map exists; in My Places share, each place with geometry gets one.
+private func shouldIncludePlaceIntroMapSlide(
+    placesOnlyMode: Bool,
+    isFirstDrawableStop: Bool,
+    stopID: UUID,
+    drawableForMap: [PlaceStop]
+) -> Bool {
+    guard drawableForMap.firstIndex(where: { $0.id == stopID }) != nil else { return false }
+    return placesOnlyMode || !isFirstDrawableStop
+}
+
+private func carouselStudioSlideBlockSupportsInlineTextEdit(
+    kind: CarouselSlideKind,
+    block: SlideBlockID
+) -> Bool {
+    switch (kind, block) {
+    case (.cover, .primary): return true
+    case (.mapRoute, .primary), (.mapRoute, .secondary): return true
+    case (.placeIntroMap, .primary), (.placeIntroMap, .secondary): return true
+    case (.placeStop, .primary), (.placeStop, .secondary): return true
+    default: return false
+    }
+}
+
+private func socialPostStudioLoadSlidesPreparationUnitCount(
+    blog: RecapBlogDetail,
+    excludedKeys: Set<String>,
+    placesOnlyMode: Bool = false
+) -> Int {
     var units = 1 // cover hero
     for day in blog.days {
         let drawableForMap = carouselDrawableStopsForStudioDay(day: day, excludedKeys: excludedKeys)
@@ -1574,13 +1602,19 @@ private func socialPostStudioLoadSlidesPreparationUnitCount(blog: RecapBlogDetai
                 .filter { !excludedKeys.contains(studioExclusionKey(stop: stop.id, photo: $0.id)) }
             guard !included.isEmpty else { continue }
             units += included.count
-            if !isFirstDrawableStop,
-               drawableForMap.firstIndex(where: { $0.id == stop.id }) != nil {
+            if shouldIncludePlaceIntroMapSlide(
+                placesOnlyMode: placesOnlyMode,
+                isFirstDrawableStop: isFirstDrawableStop,
+                stopID: stop.id,
+                drawableForMap: drawableForMap
+            ) {
                 units += 1
             }
             isFirstDrawableStop = false
         }
-        units += 1 // day route map snapshot
+        if !placesOnlyMode {
+            units += 1 // day route map snapshot
+        }
     }
     return max(units, 1)
 }
@@ -1590,7 +1624,8 @@ private func socialPostStudioLoadSlidesPreparationUnitCount(blog: RecapBlogDetai
 /// Management summary updates immediately while `loadSlides()` runs (e.g. format change).
 private func expectedSocialPostStudioDeckSlideCountAfterReload(
     blog: RecapBlogDetail,
-    excludedKeys: Set<String>
+    excludedKeys: Set<String>,
+    placesOnlyMode: Bool = false
 ) -> Int {
     var count = 1 // cover
     for day in blog.days {
@@ -1602,15 +1637,20 @@ private func expectedSocialPostStudioDeckSlideCountAfterReload(
                 .filter { !excludedKeys.contains(studioExclusionKey(stop: stop.id, photo: $0.id)) }
             guard !included.isEmpty else { continue }
 
-            if !isFirstDrawableStop,
-               drawableForMap.firstIndex(where: { $0.id == stop.id }) != nil {
+            if shouldIncludePlaceIntroMapSlide(
+                placesOnlyMode: placesOnlyMode,
+                isFirstDrawableStop: isFirstDrawableStop,
+                stopID: stop.id,
+                drawableForMap: drawableForMap
+            ) {
                 dayPlaceSlides += 1
             }
             isFirstDrawableStop = false
 
             dayPlaceSlides += included.count
         }
-        count += 1 + dayPlaceSlides // day map + that day’s place stack (same order as `loadSlides`)
+        let mapSlideCount = placesOnlyMode ? 0 : 1
+        count += mapSlideCount + dayPlaceSlides
     }
     return max(count, 1)
 }
@@ -2660,7 +2700,9 @@ struct CarouselSlideView: View {
         // ── Draggable text overlays ───────────────────────────────────
         // Cover title — centered
         .overlay {
-            if !showsBackgroundOnly, slide.kind == .cover, !slide.isPrimaryHidden, let title = slide.coverTitle, !title.isEmpty {
+            if !showsBackgroundOnly, slide.kind == .cover, !slide.isPrimaryHidden {
+                let titleText = (slide.coverTitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let showsPlaceholder = titleText.isEmpty && isEditingText
                 DraggableTextBlock(
                     id: .primary,
                     isEditingText: isEditingText,
@@ -2673,12 +2715,15 @@ struct CarouselSlideView: View {
                     onDragEnd: { onBlockDragEnd?() },
                     onTap: { onBlockTap?(.primary) },
                     content: {
-                    Text(title)
+                    Text(showsPlaceholder ? "Add a title" : titleText)
                         .font(.system(size: width * 0.085 * slide.textStyle.primary.sizeScale,
                                       weight: studioFontWeight(base: .heavy,
                                                                isBold: slide.textStyle.primary.isBold),
                                       design: slide.textStyle.primary.fontDesign.design))
-                        .foregroundColor(studioEffectiveForegroundColor(slide.textStyle.primary))
+                        .foregroundColor(
+                            showsPlaceholder
+                                ? studioEffectiveForegroundColor(slide.textStyle.primary).opacity(0.55)
+                                : studioEffectiveForegroundColor(slide.textStyle.primary))
                         .lineLimit(3)
                         .multilineTextAlignment(
                             slide.textStyle.primary.resolvedMultilineAlignment(fallback: .center))
@@ -4111,6 +4156,8 @@ private struct SlideEditPage: View {
     fileprivate var selectedSplitSlot: SplitRepositionSlot? = nil
     /// Cover slide only: open the blog photo grid to change the slide hero (studio / editor).
     let onRequestStudioCoverPhotoPick: (() -> Void)?
+    /// Second tap on an editable text block opens the inline text editor.
+    let onRequestInlineTextEdit: () -> Void
     /// Which horizontal page this edit surface represents (`slides` index).
     let slidePageIndex: Int
     /// Matches export: Bloggo watermark only on the first map slide in the deck.
@@ -4149,9 +4196,12 @@ private struct SlideEditPage: View {
             onBlockDragStart: { locksHorizontalSlidePaging = true },
             onBlockDragEnd: { locksHorizontalSlidePaging = false },
             onBlockTap: { id in
-                // Tap-to-cycle readable bar: Off → Dark → Light → Off. Only when the
-                // block was already selected (see `DraggableTextBlock` tap vs drag).
                 guard id == .primary || id == .secondary else { return }
+                if carouselStudioSlideBlockSupportsInlineTextEdit(kind: slide.kind, block: id) {
+                    onRequestInlineTextEdit()
+                    return
+                }
+                // Tap-to-cycle readable bar: Off → Dark → Light → Off.
                 recordUndoSnapshot()
                 var txn = Transaction()
                 txn.disablesAnimations = true
@@ -5959,6 +6009,38 @@ struct SlideTextEditorView: View {
         return "Optional. Shown under the place name when there is something to display (photo caption, recap narrative, or notes)."
     }
 
+    private var selectedBlockSupportsInlineTextEdit: Bool {
+        guard let slide = currentSlide, let block = selectedBlock else { return false }
+        return carouselStudioSlideBlockSupportsInlineTextEdit(kind: slide.kind, block: block)
+    }
+
+    private func presentInlineTextEditor() {
+        guard selectedBlockSupportsInlineTextEdit,
+              let block = selectedBlock else { return }
+        let idx = editorPagerFocusedSlideIndex
+        guard slides.indices.contains(idx) else { return }
+        textEditSlideIndexCapture = idx
+        textEditBlockCapture = block
+        inlineTextEditCommitted = false
+        let slide = slides[idx]
+        switch (slide.kind, block) {
+        case (.cover, .primary):
+            inlineTextDraft = slide.coverTitle ?? ""
+        case (.mapRoute, .primary), (.placeIntroMap, .primary):
+            inlineTextDraft = slide.dayTitle ?? slide.dayInfoLine1 ?? ""
+        case (.mapRoute, .secondary), (.placeIntroMap, .secondary):
+            inlineTextDraft = slide.dayStory ?? ""
+        case (.placeStop, .primary):
+            inlineTextDraft = slide.placeStop?.placeTitle ?? ""
+            inlineCaptionDraft = slide.photoCaption ?? slide.caption ?? ""
+        case (.placeStop, .secondary):
+            inlineTextDraft = slide.placeStop?.placeSubtitle ?? ""
+        default:
+            inlineTextDraft = ""
+        }
+        showsTextEditLine = true
+    }
+
     /// Writes `inlineTextDraft` (and `inlineCaptionDraft` for placeStop primary) back
     /// into the appropriate field(s) of the captured slide and dismisses the text editor.
     /// Uses `textEditBlockCapture` / `textEditSlideIndexCapture` (set when the editor opens)
@@ -7134,6 +7216,7 @@ struct SlideTextEditorView: View {
                                                 },
                                                 selectedSplitSlot: selectedSplitSlot,
                                                 onRequestStudioCoverPhotoPick: onRequestStudioCoverPhotoPick,
+                                                onRequestInlineTextEdit: { presentInlineTextEditor() },
                                                 slidePageIndex: i,
                                                 showPoweredByBloggoMapWatermark:
                                                     indexOfFirstCarouselStudioMapSlide(in: slides) == i,
@@ -7960,8 +8043,9 @@ struct SlideTextEditorView: View {
             .background(Color(red: 5/255, green: 10/255, blue: 48/255).ignoresSafeArea())
             .navigationTitle("Carousel Studio")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar(onDismissEditor != nil ? .hidden : .automatic, for: .navigationBar)
             .toolbarBackground(Color(red: 5/255, green: 10/255, blue: 48/255), for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(onDismissEditor != nil ? .hidden : .visible, for: .navigationBar)
             .toolbar { editorToolbarContent }
             .safeAreaInset(edge: .top, spacing: 0) {
                 if onDismissEditor != nil {
@@ -8192,7 +8276,7 @@ struct SlideTextEditorView: View {
         editorNavigationContent
             // Bar-button labels still pick up global/accent tint on some OS builds unless
             // the navigation hierarchy sets an explicit toolbar tint.
-            .toolbar(.visible, for: .navigationBar)
+            .toolbar(onDismissEditor != nil ? .hidden : .visible, for: .navigationBar)
             .tint(.white)
             .preferredColorScheme(.dark)
             // Text editing is presented in a fullScreenCover (isolated UIViewController).
@@ -8579,17 +8663,26 @@ struct SlideTextEditorView: View {
     /// full-height painted backdrop produced in the hint state.
     private var emptySelectionHint: some View {
         VStack(spacing: 10) {
-            Image(systemName: "hand.tap")
+            Image(systemName: currentSlide?.kind == .cover ? "photo.on.rectangle.angled" : "hand.tap")
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundColor(.white.opacity(0.55))
 
             VStack(spacing: 4) {
-                Text("Tap a block to edit")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.88))
-                Text("Drag to reposition · Swipe to change slides")
-                    .font(.system(size: 13))
-                    .foregroundColor(.white.opacity(0.55))
+                if currentSlide?.kind == .cover {
+                    Text("Tap the cover photo to change it")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.88))
+                    Text("Tap the title, then Edit text — or tap the title twice")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.55))
+                } else {
+                    Text("Tap a block to edit")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.88))
+                    Text("Drag to reposition · Swipe to change slides")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.55))
+                }
             }
             .multilineTextAlignment(.center)
         }
@@ -8606,6 +8699,20 @@ struct SlideTextEditorView: View {
             // Hidden while the text edit sheet is up (bottom chrome is removed then anyway).
             if !showsTextEditLine {
             HStack(spacing: 12) {
+                Button {
+                    presentInlineTextEditor()
+                } label: {
+                    Label("Edit text", systemImage: "character.cursor.ibeam")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(!selectedBlockSupportsInlineTextEdit)
+
                 Spacer()
 
                 Button {
@@ -9959,6 +10066,8 @@ struct SocialPostStudioSheet: View {
     let blog: RecapBlogDetail
     /// When `true`, the sheet is **Edit Slides** after load (Share → Post to Social), not Social Post Studio.
     var opensInEditMode: Bool = false
+    /// My Places share: place photos + optional route map only — no per-day itinerary maps or “Day N” cards.
+    var placesOnlyMode: Bool = false
     /// When the studio is embedded inline (not a system sheet), wire the nav Close button to this instead of `dismiss()`.
     var onDismissFromParent: (() -> Void)? = nil
 
@@ -10083,292 +10192,303 @@ struct SocialPostStudioSheet: View {
     }
 
     var body: some View {
-        Group {
-            if opensInEditMode {
-                if isLoading {
-                    StudioSlidePreparationLoadingView(progress: slidePreparationProgress)
-                        .preferredColorScheme(.dark)
-                } else if slides.isEmpty {
-                    Text("No places found in this blog.")
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(red: 5/255, green: 10/255, blue: 48/255))
-                        .preferredColorScheme(.dark)
-                } else {
-                    SlideTextEditorView(
-                        slides: $slides,
-                        initialIndex: 0,
-                        aspectRatio: exportFormat.aspectRatio,
-                        exportCanvasAspectRatio: $exportRenderAspectRatio,
-                        exportActions: makeEditorExportActions(),
-                        exportInProgress: $isRendering,
-                        externalJumpToSlideIndex: $studioEditorJumpToSlideIndex,
-                        onRequestStudioCoverPhotoPick: {
-                            #if DEBUG
-                            print("[CarouselStudio] opening cover picker (Edit Slides / Carousel Studio)")
-                            #endif
-                            showStudioCoverPicker = true
-                        },
-                        onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
-                        onExcludeMapFromStudio: { idx in
-                            guard slides.indices.contains(idx), isCarouselStudioMapKind(slides[idx].kind) else { return }
-                            if slides[idx].isSelected { excludeMapSlide(at: idx) } else { restoreMapSlide(at: idx) }
-                        },
-                        onOpenPhotoGroupPicker: { showPhotoGroupPicker = true },
-                        isSingleSlideDownloadMode: exportFormat.isSingleSlide,
-                        onDismissEditor: onDismissFromParent,
-                        onExcludeAllMapsFromStudio: { excludeAllMapSlidesFromStudio() }
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            } else {
-                NavigationStack {
-                    ZStack {
-                        Group {
-                            if isLoading {
-                                StudioSlidePreparationLoadingView(progress: slidePreparationProgress)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            } else if slides.isEmpty {
-                                Text("No places found in this blog.").foregroundColor(.secondary)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            } else {
-                                slidePreviewAndExport
-                            }
-                        }
-                        if isRendering {
-                            Color.black.opacity(0.45)
-                                .ignoresSafeArea()
-                                .allowsHitTesting(true)
-                            VStack(spacing: 14) {
-                                ProgressView()
-                                    .scaleEffect(1.1)
-                                    .tint(.white)
-                                Text("Preparing export…")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundColor(.white.opacity(0.9))
-                            }
-                            .padding(28)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        }
-                    }
-                    .background(isLoading
-                        ? Color(red: 5/255, green: 10/255, blue: 48/255)
-                        : Color(uiColor: .systemGroupedBackground))
-                    .navigationTitle("Social Post Studio")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button { dismiss() } label: {
-                                Image(systemName: "xmark").font(.system(size: 14)).foregroundColor(.white)
-                            }
-                        }
-                        ToolbarItemGroup(placement: .topBarTrailing) {
-                            Menu {
-                                Button {
-                                    Task { await shareViaSheet() }
-                                } label: {
-                                    Label("Share to social apps…", systemImage: "square.and.arrow.up")
-                                }
-                                Button {
-                                    Task { await saveToPhotos() }
-                                } label: {
-                                    Label("Save to Photos", systemImage: "photo.on.rectangle.angled")
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(.white)
-                            }
-                            .disabled(exportActionsDisabled)
-                            .accessibilityLabel("Export and share")
-                        }
-                    }
-                    .preferredColorScheme(.dark)
-                }
-            }
+        studioBodyWithPresentationChrome
+    }
+
+    @ViewBuilder
+    private var studioRootContent: some View {
+        if opensInEditMode {
+            studioEditModeRoot
+        } else {
+            studioPreviewModeRoot
         }
-        .task { await loadSlides() }
-        .onChange(of: exportFormat) { _, _ in Task { await loadSlides() } }
-        .sheet(isPresented: $showShareSheet, onDismiss: {
-            cleanupTempFiles()
-            if !pdfExportQueuedIndexChunks.isEmpty {
-                showPDFExportNextContinuation = true
-            }
-        }, content: {
-            ShareSheet(items: shareItems)
-        })
-        .alert(savedAlertTitle, isPresented: $showSavedAlert) {
-            Button("OK", role: .cancel) {}
-        } message: { Text(savedAlertBody) }
-        .alert(largeExportMemoryAlertTitle, isPresented: largeExportMemoryAlertBinding) {
-            Button("View slides") {
-                showPhotoGroupPicker = true
-                largeStudioExportMemoryGate = nil
-            }
-            Button("Continue anyway", role: .destructive) {
-                let gate = largeStudioExportMemoryGate
-                largeStudioExportMemoryGate = nil
-                switch gate {
-                case .saveToPhotos(let idx):
-                    Task { await performSaveToPhotosStreaming(atIndices: idx) }
-                case .pdf(let idx):
-                    Task { await performExportPDFStreaming(atIndices: idx) }
-                case .none:
-                    break
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                largeStudioExportMemoryGate = nil
-            }
-        } message: {
-            Text(largeExportMemoryAlertMessage)
+    }
+
+    @ViewBuilder
+    private var studioEditModeRoot: some View {
+        if isLoading {
+            StudioSlidePreparationLoadingView(progress: slidePreparationProgress)
+                .preferredColorScheme(.dark)
+        } else if slides.isEmpty {
+            Text("No places found in this blog.")
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(red: 5/255, green: 10/255, blue: 48/255))
+                .preferredColorScheme(.dark)
+        } else {
+            studioEmbeddedSlideEditor(initialIndex: 0, onDismissEditor: onDismissFromParent)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .alert("More PDFs to share", isPresented: $showPDFExportNextContinuation) {
-            Button("Continue") {
-                showPDFExportNextContinuation = false
-                Task { await presentNextQueuedPDFExportSlice() }
-            }
-            Button("Done", role: .cancel) {
-                pdfExportQueuedIndexChunks = []
-                pdfExportScheduledTotalChunks = 0
-            }
-        } message: {
-            let pkgsLeft = pdfExportQueuedIndexChunks.count
-            Text(
-                "\(pkgsLeft) PDF file\(pkgsLeft == 1 ? "" : "s") remaining (up to \(CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage) slides each)."
-            )
-        }
-        .alert("Sharing limit", isPresented: $showShareJPEGHardCapConfirmation) {
-            let cap = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
-            Button("Share first \(cap)") {
-                guard let full = pendingShareJPEGHardCapSteps else { return }
-                pendingShareJPEGHardCapSteps = nil
-                let capped = Array(full.prefix(cap))
-                Task { await performUnbatchedShareJPEGExportSteps(capped) }
-            }
-            Button("Cancel", role: .cancel) {
-                pendingShareJPEGHardCapSteps = nil
-            }
-        } message: {
-            Text(shareJPEGHardCapConfirmationMessage)
-        }
-        .alert("Your carousel is pretty large", isPresented: $showSocialCarouselOverflowAlert) {
-            Button("View Slides") { showPhotoGroupPicker = true }
-            Button("Continue Anyway", role: .cancel) {}
-        } message: {
-            Text(
-                "Some platforms limit how many slides can be uploaded at once.\n\n"
-                + "You currently have \(socialCarouselOverflowSlideCount) slides selected. Instagram may only post the first 34 slides.\n\n"
-                + "You can:\n"
-                + "• Trim slides\n"
-                + "• Combine busy moments with Multi layout\n"
-                + "• Continue anyway"
-            )
-        }
-        .sheet(isPresented: $showPhotoGroupPicker) {
-            CarouselPhotoGroupPickerSheet(
-                slides: $slides,
-                blog: blog,
-                excludedKeys: excludedStudioPhotoKeys,
-                aspectRatio: exportFormat.aspectRatio,
-                isDeckReloading: isLoading,
-                isReelExport: exportFormat.isSingleSlide,
-                onSelectSlide: { index in
-                    showPhotoGroupPicker = false
-                    // Defer so the sheet can start dismissing; the editor then handles
-                    // `externalJumpToSlideIndex` with a PIP-corrected target.
-                    DispatchQueue.main.async {
-                        if opensInEditMode || editingSlideRef != nil {
-                            studioEditorJumpToSlideIndex = index
-                        } else {
-                            navigatePreviewToSlideIndex = index
-                        }
-                    }
-                },
-                onRestoreExcludedPlacePhoto: { stopID, photoID in
-                    restoreExcludedPhoto(stopID: stopID, photoID: photoID)
-                },
-                onExcludePlaceFromStudio: { idx in
-                    guard slides.indices.contains(idx), slides[idx].kind == .placeStop else { return }
-                    if slides[idx].isSelected {
-                        excludePlaceSlide(at: idx)
+    }
+
+    private var studioPreviewModeRoot: some View {
+        NavigationStack {
+            ZStack {
+                Group {
+                    if isLoading {
+                        StudioSlidePreparationLoadingView(progress: slidePreparationProgress)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if slides.isEmpty {
+                        Text("No places found in this blog.")
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        restorePlaceSlide(at: idx)
-                    }
-                },
-                onExcludeMapFromStudio: { idx in
-                    guard slides.indices.contains(idx), isCarouselStudioMapKind(slides[idx].kind) else { return }
-                    if slides[idx].isSelected { excludeMapSlide(at: idx) } else { restoreMapSlide(at: idx) }
-                },
-                removeMapsFromCarousel: slideManagementRemoveMapsFromCarouselBinding,
-                onBulkSlidesExportSelectionChanged: {
-                    Task {
-                        let stopIDs = Set(slides.compactMap { $0.placeStop?.id })
-                        for sid in stopIDs {
-                            await rebuildPIPPayloadsForStop(stopID: sid)
-                        }
+                        slidePreviewAndExport
                     }
                 }
-            )
-        }
-        .onChange(of: showPhotoGroupPicker) { _, isPresented in
-            if !isPresented, pendingSocialCarouselOverflowAfterSlidesPickerDismiss {
-                pendingSocialCarouselOverflowAfterSlidesPickerDismiss = false
-                checkSocialCarouselOverflow()
-            }
-        }
-        .onChange(of: hasSeenPlaceLayoutPicker) { _, isSeen in
-            // Once the first-run layout picker sheet is dismissed (child sets this key),
-            // show the overflow alert that was deferred to avoid competing modal presentations.
-            if isSeen, pendingOverflowAfterFirstRunLayoutPicker {
-                pendingOverflowAfterFirstRunLayoutPicker = false
-                checkSocialCarouselOverflow()
-            }
-        }
-        .fullScreenCover(item: $editingSlideRef, onDismiss: {
-            exportRenderAspectRatio = exportFormat.aspectRatio
-        }) { ref in
-            SlideTextEditorView(
-                slides: $slides,
-                initialIndex: ref.index,
-                aspectRatio: exportFormat.aspectRatio,
-                exportCanvasAspectRatio: $exportRenderAspectRatio,
-                exportActions: makeEditorExportActions(),
-                exportInProgress: $isRendering,
-                externalJumpToSlideIndex: $studioEditorJumpToSlideIndex,
-                onRequestStudioCoverPhotoPick: {
-                    #if DEBUG
-                    print("[CarouselStudio] opening cover picker (from slide editor sheet)")
-                    #endif
-                    showStudioCoverPicker = true
-                },
-                onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
-                onExcludeMapFromStudio: { idx in
-                    guard slides.indices.contains(idx), isCarouselStudioMapKind(slides[idx].kind) else { return }
-                    if slides[idx].isSelected { excludeMapSlide(at: idx) } else { restoreMapSlide(at: idx) }
-                },
-                onOpenPhotoGroupPicker: { showPhotoGroupPicker = true },
-                isSingleSlideDownloadMode: exportFormat.isSingleSlide,
-                onExcludeAllMapsFromStudio: { excludeAllMapSlidesFromStudio() }
-            )
-        }
-        .sheet(isPresented: $showStudioCoverPicker) {
-            SocialPostStudioCoverPickerSheet(
-                blog: blog,
-                studioCoverPhotoID: studioCoverPhotoID,
-                onPick: { photo in
-                    showStudioCoverPicker = false
-                    Task { await applyStudioCoverFromPick(photo) }
+                if isRendering {
+                    studioExportProgressOverlay
                 }
-            )
-        }
-        .onChange(of: showStudioCoverPicker) { _, isPresented in
-            #if DEBUG
-            if isPresented {
-                print("[CarouselStudio] cover photo picker sheet presented")
             }
-            #endif
+            .background(isLoading
+                ? Color(red: 5/255, green: 10/255, blue: 48/255)
+                : Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("Social Post Studio")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { studioPreviewToolbarContent }
+            .preferredColorScheme(.dark)
         }
+    }
+
+    private var studioExportProgressOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .allowsHitTesting(true)
+            VStack(spacing: 14) {
+                ProgressView()
+                    .scaleEffect(1.1)
+                    .tint(.white)
+                Text("Preparing export…")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.white.opacity(0.9))
+            }
+            .padding(28)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var studioPreviewToolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Button { dismiss() } label: {
+                Image(systemName: "xmark").font(.system(size: 14)).foregroundColor(.white)
+            }
+        }
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            Menu {
+                Button { Task { await shareViaSheet() } } label: {
+                    Label("Share to social apps…", systemImage: "square.and.arrow.up")
+                }
+                Button { Task { await saveToPhotos() } } label: {
+                    Label("Save to Photos", systemImage: "photo.on.rectangle.angled")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+            .disabled(exportActionsDisabled)
+            .accessibilityLabel("Export and share")
+        }
+    }
+
+    private func studioEmbeddedSlideEditor(initialIndex: Int, onDismissEditor: (() -> Void)?) -> some View {
+        SlideTextEditorView(
+            slides: $slides,
+            initialIndex: initialIndex,
+            aspectRatio: exportFormat.aspectRatio,
+            exportCanvasAspectRatio: $exportRenderAspectRatio,
+            exportActions: makeEditorExportActions(),
+            exportInProgress: $isRendering,
+            externalJumpToSlideIndex: $studioEditorJumpToSlideIndex,
+            onRequestStudioCoverPhotoPick: {
+                #if DEBUG
+                print("[CarouselStudio] opening cover picker (Edit Slides / Carousel Studio)")
+                #endif
+                showStudioCoverPicker = true
+            },
+            onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
+            onExcludeMapFromStudio: { idx in
+                guard slides.indices.contains(idx), isCarouselStudioMapKind(slides[idx].kind) else { return }
+                if slides[idx].isSelected { excludeMapSlide(at: idx) } else { restoreMapSlide(at: idx) }
+            },
+            onOpenPhotoGroupPicker: { showPhotoGroupPicker = true },
+            isSingleSlideDownloadMode: exportFormat.isSingleSlide,
+            onDismissEditor: onDismissEditor,
+            onExcludeAllMapsFromStudio: { excludeAllMapSlidesFromStudio() }
+        )
+    }
+
+    private var studioBodyWithAlerts: some View {
+        studioRootContent
+            .task { await loadSlides() }
+            .onChange(of: exportFormat) { _, _ in Task { await loadSlides() } }
+            .sheet(isPresented: $showShareSheet, onDismiss: {
+                cleanupTempFiles()
+                if !pdfExportQueuedIndexChunks.isEmpty {
+                    showPDFExportNextContinuation = true
+                }
+            }, content: {
+                ShareSheet(items: shareItems)
+            })
+            .alert(savedAlertTitle, isPresented: $showSavedAlert) {
+                Button("OK", role: .cancel) {}
+            } message: { Text(savedAlertBody) }
+            .alert(largeExportMemoryAlertTitle, isPresented: largeExportMemoryAlertBinding) {
+                Button("View slides") {
+                    showPhotoGroupPicker = true
+                    largeStudioExportMemoryGate = nil
+                }
+                Button("Continue anyway", role: .destructive) {
+                    let gate = largeStudioExportMemoryGate
+                    largeStudioExportMemoryGate = nil
+                    switch gate {
+                    case .saveToPhotos(let idx):
+                        Task { await performSaveToPhotosStreaming(atIndices: idx) }
+                    case .pdf(let idx):
+                        Task { await performExportPDFStreaming(atIndices: idx) }
+                    case .none:
+                        break
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    largeStudioExportMemoryGate = nil
+                }
+            } message: {
+                Text(largeExportMemoryAlertMessage)
+            }
+            .alert("More PDFs to share", isPresented: $showPDFExportNextContinuation) {
+                Button("Continue") {
+                    showPDFExportNextContinuation = false
+                    Task { await presentNextQueuedPDFExportSlice() }
+                }
+                Button("Done", role: .cancel) {
+                    pdfExportQueuedIndexChunks = []
+                    pdfExportScheduledTotalChunks = 0
+                }
+            } message: {
+                let pkgsLeft = pdfExportQueuedIndexChunks.count
+                Text(
+                    "\(pkgsLeft) PDF file\(pkgsLeft == 1 ? "" : "s") remaining (up to \(CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage) slides each)."
+                )
+            }
+            .alert("Sharing limit", isPresented: $showShareJPEGHardCapConfirmation) {
+                let cap = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
+                Button("Share first \(cap)") {
+                    guard let full = pendingShareJPEGHardCapSteps else { return }
+                    pendingShareJPEGHardCapSteps = nil
+                    let capped = Array(full.prefix(cap))
+                    Task { await performUnbatchedShareJPEGExportSteps(capped) }
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingShareJPEGHardCapSteps = nil
+                }
+            } message: {
+                Text(shareJPEGHardCapConfirmationMessage)
+            }
+            .alert("Your carousel is pretty large", isPresented: $showSocialCarouselOverflowAlert) {
+                Button("View Slides") { showPhotoGroupPicker = true }
+                Button("Continue Anyway", role: .cancel) {}
+            } message: {
+                Text(studioCarouselOverflowAlertMessage)
+            }
+    }
+
+    private var studioCarouselOverflowAlertMessage: String {
+        "Some platforms limit how many slides can be uploaded at once.\n\n"
+        + "You currently have \(socialCarouselOverflowSlideCount) slides selected. Instagram may only post the first 34 slides.\n\n"
+        + "You can:\n"
+        + "• Trim slides\n"
+        + "• Combine busy moments with Multi layout\n"
+        + "• Continue anyway"
+    }
+
+    private var studioPhotoGroupPickerSheet: some View {
+        CarouselPhotoGroupPickerSheet(
+            slides: $slides,
+            blog: blog,
+            excludedKeys: excludedStudioPhotoKeys,
+            aspectRatio: exportFormat.aspectRatio,
+            isDeckReloading: isLoading,
+            isReelExport: exportFormat.isSingleSlide,
+            onSelectSlide: { index in
+                showPhotoGroupPicker = false
+                DispatchQueue.main.async {
+                    if opensInEditMode || editingSlideRef != nil {
+                        studioEditorJumpToSlideIndex = index
+                    } else {
+                        navigatePreviewToSlideIndex = index
+                    }
+                }
+            },
+            onRestoreExcludedPlacePhoto: { stopID, photoID in
+                restoreExcludedPhoto(stopID: stopID, photoID: photoID)
+            },
+            onExcludePlaceFromStudio: { idx in
+                guard slides.indices.contains(idx), slides[idx].kind == .placeStop else { return }
+                if slides[idx].isSelected {
+                    excludePlaceSlide(at: idx)
+                } else {
+                    restorePlaceSlide(at: idx)
+                }
+            },
+            onExcludeMapFromStudio: { idx in
+                guard slides.indices.contains(idx), isCarouselStudioMapKind(slides[idx].kind) else { return }
+                if slides[idx].isSelected { excludeMapSlide(at: idx) } else { restoreMapSlide(at: idx) }
+            },
+            removeMapsFromCarousel: slideManagementRemoveMapsFromCarouselBinding,
+            onBulkSlidesExportSelectionChanged: {
+                Task {
+                    let stopIDs = Set(slides.compactMap { $0.placeStop?.id })
+                    for sid in stopIDs {
+                        await rebuildPIPPayloadsForStop(stopID: sid)
+                    }
+                }
+            },
+            placesOnlyMode: placesOnlyMode
+        )
+    }
+
+    private var studioBodyWithPresentationChrome: some View {
+        studioBodyWithAlerts
+            .sheet(isPresented: $showPhotoGroupPicker) {
+                studioPhotoGroupPickerSheet
+            }
+            .onChange(of: showPhotoGroupPicker) { _, isPresented in
+                if !isPresented, pendingSocialCarouselOverflowAfterSlidesPickerDismiss {
+                    pendingSocialCarouselOverflowAfterSlidesPickerDismiss = false
+                    checkSocialCarouselOverflow()
+                }
+            }
+            .onChange(of: hasSeenPlaceLayoutPicker) { _, isSeen in
+                if isSeen, pendingOverflowAfterFirstRunLayoutPicker {
+                    pendingOverflowAfterFirstRunLayoutPicker = false
+                    checkSocialCarouselOverflow()
+                }
+            }
+            .fullScreenCover(item: $editingSlideRef, onDismiss: {
+                exportRenderAspectRatio = exportFormat.aspectRatio
+            }) { ref in
+                studioEmbeddedSlideEditor(initialIndex: ref.index, onDismissEditor: nil)
+            }
+            .sheet(isPresented: $showStudioCoverPicker) {
+                SocialPostStudioCoverPickerSheet(
+                    blog: blog,
+                    studioCoverPhotoID: studioCoverPhotoID,
+                    onPick: { photo in
+                        showStudioCoverPicker = false
+                        Task { await applyStudioCoverFromPick(photo) }
+                    }
+                )
+            }
+            .onChange(of: showStudioCoverPicker) { _, isPresented in
+                #if DEBUG
+                if isPresented {
+                    print("[CarouselStudio] cover photo picker sheet presented")
+                }
+                #endif
+            }
     }
 
     // MARK: - Layout
@@ -11242,7 +11362,11 @@ struct SocialPostStudioSheet: View {
         let (isReelSingleSlide, formatAspectRatio) = await MainActor.run {
             (exportFormat.isSingleSlide, exportFormat.aspectRatio)
         }
-        let prepTotal = socialPostStudioLoadSlidesPreparationUnitCount(blog: blog, excludedKeys: excludedSnapshot)
+        let prepTotal = socialPostStudioLoadSlidesPreparationUnitCount(
+            blog: blog,
+            excludedKeys: excludedSnapshot,
+            placesOnlyMode: placesOnlyMode
+        )
         var prepCompleted = 0
         var result: [CarouselSlide] = []
 
@@ -11299,13 +11423,20 @@ struct SocialPostStudioSheet: View {
                     #endif
                 }
 
-                // Skip the placeIntroMap for the first stop — the day map already highlights it.
-                if !isFirstDrawableStop,
+                // Blog day stack: skip intro for the first stop (day route map covers it). My Places: one intro map per place when possible.
+                if shouldIncludePlaceIntroMapSlide(
+                    placesOnlyMode: placesOnlyMode,
+                    isFirstDrawableStop: isFirstDrawableStop,
+                    stopID: stop.id,
+                    drawableForMap: drawableForMap
+                ),
                    let dIdx = drawableForMap.firstIndex(where: { $0.id == stop.id }) {
+                    if await MainActor.run(body: { generation != loadSlidesGeneration }) { return }
                     let introCandidate = await MapSnapshotHelper.generateCarouselPlaceIntroSnapshot(
                         drawableDayStops: drawableForMap,
                         focusedDrawableIndex: dIdx,
-                        logicalSize: exportSize
+                        logicalSize: exportSize,
+                        lightweightMapTiles: placesOnlyMode
                     )
                     await advanceSlidePreparationProgress(completed: &prepCompleted, total: prepTotal, generation: generation)
                     if let introSnap = introCandidate {
@@ -11365,21 +11496,23 @@ struct SocialPostStudioSheet: View {
                 }
             }
 
-            let mapSnap = await MapSnapshotHelper.generatePhotoRouteSnapshot(
-                for: day.placeStops, markerImagesByStopId: markerImages,
-                size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.13,
-                carouselDayFirstStopFocus: false)
-            await advanceSlidePreparationProgress(completed: &prepCompleted, total: prepTotal, generation: generation)
+            if !placesOnlyMode {
+                let mapSnap = await MapSnapshotHelper.generatePhotoRouteSnapshot(
+                    for: day.placeStops, markerImagesByStopId: markerImages,
+                    size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.13,
+                    carouselDayFirstStopFocus: false)
+                await advanceSlidePreparationProgress(completed: &prepCompleted, total: prepTotal, generation: generation)
 
-            let bestStory = [day.dayNarrative, day.dayCaption]
-                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .first { !$0.isEmpty }
+                let bestStory = [day.dayNarrative, day.dayCaption]
+                    .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .first { !$0.isEmpty }
 
-            result.append(CarouselSlide(
-                id: "map-\(day.id.uuidString)", kind: .mapRoute, isSelected: true,
-                mapSnapshot: mapSnap, mapShortDateLine: day.monthDayStringForStoryBookRange(),
-                dayInfoLine1: "Day \(dayNumber)",
-                dayInfoLine2: day.dayStoryDateLine, dayStory: bestStory))
+                result.append(CarouselSlide(
+                    id: "map-\(day.id.uuidString)", kind: .mapRoute, isSelected: true,
+                    mapSnapshot: mapSnap, mapShortDateLine: day.monthDayStringForStoryBookRange(),
+                    dayInfoLine1: "Day \(dayNumber)",
+                    dayInfoLine2: day.dayStoryDateLine, dayStory: bestStory))
+            }
             result.append(contentsOf: placeSlides)
         }
 
@@ -12468,6 +12601,8 @@ private struct CarouselPhotoGroupPickerSheet: View {
     @Binding var removeMapsFromCarousel: Bool
     /// After bulk include/exclude of place slides, parent should rebuild PIP payloads per affected stop.
     let onBulkSlidesExportSelectionChanged: (() -> Void)?
+    /// My Places share deck — affects expected slide count while reloading.
+    let placesOnlyMode: Bool
     @Environment(\.dismiss) private var dismiss
 
     @AppStorage("blogify.slidesManagementTip.dismissed") private var slidesManagementTipDismissed = false
@@ -12494,7 +12629,11 @@ private struct CarouselPhotoGroupPickerSheet: View {
     }
 
     private var slidesManagementExpectedDeckSlideCount: Int {
-        expectedSocialPostStudioDeckSlideCountAfterReload(blog: blog, excludedKeys: excludedKeys)
+        expectedSocialPostStudioDeckSlideCountAfterReload(
+            blog: blog,
+            excludedKeys: excludedKeys,
+            placesOnlyMode: placesOnlyMode
+        )
     }
 
     private var slidesManagementDisplayedExportSelectedCount: Int {
@@ -12735,7 +12874,8 @@ private struct CarouselPhotoGroupPickerSheet: View {
         onExcludePlaceFromStudio: ((Int) -> Void)? = nil,
         onExcludeMapFromStudio: ((Int) -> Void)? = nil,
         removeMapsFromCarousel: Binding<Bool>,
-        onBulkSlidesExportSelectionChanged: (() -> Void)? = nil
+        onBulkSlidesExportSelectionChanged: (() -> Void)? = nil,
+        placesOnlyMode: Bool = false
     ) {
         _slides = slides
         self.blog = blog
@@ -12749,6 +12889,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
         self.onExcludeMapFromStudio = onExcludeMapFromStudio
         _removeMapsFromCarousel = removeMapsFromCarousel
         self.onBulkSlidesExportSelectionChanged = onBulkSlidesExportSelectionChanged
+        self.placesOnlyMode = placesOnlyMode
     }
 
     /// Two columns; `GeometryReader` per cell uses the grid’s **proposed** width so cards never exceed the slot (avoids overlap).

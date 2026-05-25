@@ -18,7 +18,8 @@
       "Bash(claude mcp *)",
       "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog branch -a)",
       "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog log --oneline BLOGGO-443-use-ondevice-ai-to-figure-out-the-transport-betwee -20)",
-      "Bash(kill 36070)"
+      "Bash(kill 36070)",
+      "Bash(swiftc -typecheck /Users/inseo/Documents/GitHub/fastblog/fastblog/fastblog/Services/MomentVideoPreferences.swift)"
     ],
     "additionalDirectories": [
       "/Users/inseo/Documents/GitHub/shazam/shazam/Capper/Views",

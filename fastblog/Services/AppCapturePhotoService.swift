@@ -8,6 +8,7 @@
 
 import CoreLocation
 import Foundation
+import Photos
 import UIKit
 
 final class AppCapturePhotoService {
@@ -68,6 +69,8 @@ final class AppCapturePhotoService {
         var placeSubtitle: String?
         /// `MKPointOfInterestCategory` raw value when resolved from POI search.
         var placeCategory: String?
+        /// True when this capture was made in continuous (manual-stop) reel mode.
+        var isContinuousReel: Bool?
     }
 
     /// Writes `image.jpg` and `meta.json` to a new capture folder.
@@ -182,6 +185,7 @@ final class AppCapturePhotoService {
         var placeTitle: String?
         var placeSubtitle: String?
         var placeCategory: String?
+        var isContinuousReel: Bool
     }
 
     func metadata(captureId: UUID) -> CaptureInfo? {
@@ -201,7 +205,8 @@ final class AppCapturePhotoService {
             caption: meta.caption,
             placeTitle: meta.placeTitle,
             placeSubtitle: meta.placeSubtitle,
-            placeCategory: meta.placeCategory
+            placeCategory: meta.placeCategory,
+            isContinuousReel: meta.isContinuousReel == true
         )
     }
 
@@ -216,6 +221,18 @@ final class AppCapturePhotoService {
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !title.isEmpty else { return false }
         return !PlacePlaceholderNaming.isResolvablePlaceholder(title)
+    }
+
+    // MARK: - Update metadata flags
+
+    func markAsContinuousReel(captureId: UUID) throws {
+        guard let folder = try? captureURL(for: captureId) else { return }
+        let metaURL = folder.appendingPathComponent("meta.json")
+        guard let data = try? Data(contentsOf: metaURL),
+              var meta = try? JSONDecoder().decode(CaptureMetadata.self, from: data) else { return }
+        meta.isContinuousReel = true
+        let updated = try JSONEncoder().encode(meta)
+        try updated.write(to: metaURL)
     }
 
     // MARK: - Update caption
@@ -385,5 +402,56 @@ final class AppCapturePhotoService {
     func deleteCapture(captureId: UUID) {
         guard let folder = try? captureURL(for: captureId) else { return }
         try? FileManager.default.removeItem(at: folder)
+    }
+
+    // MARK: - Export to Photos
+
+    enum PhotosExportPayload {
+        case image(UIImage)
+        case video(URL)
+    }
+
+    /// Moment video when on disk, otherwise the still image — used for manual and auto-save to the Photo Library.
+    func preferredPhotosExport(captureId: UUID) -> PhotosExportPayload? {
+        if let videoURL = momentVideoFileURL(for: captureId) {
+            return .video(videoURL)
+        }
+        if let image = loadImage(captureId: captureId) {
+            return .image(image)
+        }
+        return nil
+    }
+
+    /// Saves one capture to the user's Photo Library (video preferred over still when both exist).
+    func saveToPhotoLibrary(captureId: UUID, completion: @escaping (Bool) -> Void) {
+        saveCapturesToPhotoLibrary(captureIds: [captureId], completion: { count, success in
+            completion(success && count > 0)
+        })
+    }
+
+    /// Saves multiple captures in a single Photos transaction.
+    func saveCapturesToPhotoLibrary(
+        captureIds: [UUID],
+        completion: @escaping (_ savedCount: Int, _ success: Bool) -> Void
+    ) {
+        let payloads = captureIds.compactMap { preferredPhotosExport(captureId: $0) }
+        guard !payloads.isEmpty else {
+            DispatchQueue.main.async { completion(0, false) }
+            return
+        }
+        PHPhotoLibrary.shared().performChanges {
+            for payload in payloads {
+                switch payload {
+                case .image(let image):
+                    _ = PHAssetChangeRequest.creationRequestForAsset(from: image)
+                case .video(let url):
+                    _ = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+                }
+            }
+        } completionHandler: { success, _ in
+            DispatchQueue.main.async {
+                completion(payloads.count, success)
+            }
+        }
     }
 }

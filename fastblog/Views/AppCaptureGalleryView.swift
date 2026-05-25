@@ -9,8 +9,9 @@
 
 import AVKit
 import CoreLocation
-import SwiftUI
 import Photos
+import SwiftUI
+
 
 /// Repeating timer invokes the latest scroll closure so gallery state stays current (avoids stale SwiftUI view captures).
 private final class GalleryAutoScrollInvoker: ObservableObject {
@@ -49,6 +50,8 @@ struct AppCaptureItem: Identifiable {
     var localVoiceMemoURL: URL?
     /// Local file URL of the five-second moment video (moment_video.mov), if recorded after capture.
     var localMomentVideoURL: URL?
+    /// True when this capture was recorded in continuous (manual-stop) reel mode.
+    var isManualReelCapture: Bool = false
 }
 
 // MARK: - Gallery view
@@ -71,7 +74,10 @@ struct AppCaptureGalleryView: View {
     @State private var isSelectMode = false
     @State private var selectedIds: Set<UUID> = []
     @State private var showRemoveConfirmation = false
+    @AppStorage("bloggo.inAppCamera.hasSeenDownloadTooltip") private var hasSeenDownloadTooltip = false
     @State private var downloadToast: String?
+    @State private var showDownloadTooltip = false
+
     @State private var cellFrames: [UUID: CGRect] = [:]
     @State private var dragStartIndex: Int?
     @State private var dragInitialSelectedIds: Set<UUID> = []
@@ -136,6 +142,7 @@ struct AppCaptureGalleryView: View {
                         // Normal mode: download (left), count (center), trash (right)
                         HStack {
                             Button {
+                                presentDownloadTooltipIfNeeded()
                                 saveSelectedToPhotoLibrary()
                             } label: {
                                 Image(systemName: "square.and.arrow.down")
@@ -172,18 +179,16 @@ struct AppCaptureGalleryView: View {
                     }
                 }
 
-                VStack(spacing: 12) {
-                    if let toast = downloadToast {
-                        Text(toast)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Capsule().fill(.black.opacity(0.7)))
-                    }
+                if let toast = downloadToast {
+                    Text(toast)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(.black.opacity(0.7)))
+                        .padding(.bottom, isSelectMode ? 88 : 24)
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 16)
+
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -246,6 +251,12 @@ struct AppCaptureGalleryView: View {
         .presentationDetents([.fraction(1)])
         .presentationDragIndicator(.visible)
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showDownloadTooltip) {
+            downloadTooltipContent
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .preferredColorScheme(.dark)
+        }
         .task {
             await loadItems()
             if isPickerMode && !isSelectMode {
@@ -408,7 +419,8 @@ struct AppCaptureGalleryView: View {
                 location: info?.location,
                 localVibeURL: service.vibeFileURL(for: uuid),
                 localVoiceMemoURL: service.voiceMemoFileURL(for: uuid),
-                localMomentVideoURL: service.momentVideoFileURL(for: uuid)
+                localMomentVideoURL: service.momentVideoFileURL(for: uuid),
+                isManualReelCapture: info?.isContinuousReel == true
             ))
         }
         items = loaded
@@ -426,21 +438,98 @@ struct AppCaptureGalleryView: View {
         }
     }
 
-    private func saveSelectedToPhotoLibrary() {
-        let toSave = items.filter { selectedIds.contains($0.id) }
-        let images = toSave.compactMap { $0.image }
-        guard !images.isEmpty else { return }
-        PHPhotoLibrary.shared().performChanges {
-            for image in images {
-                PHAssetChangeRequest.creationRequestForAsset(from: image)
-            }
-        } completionHandler: { success, _ in
-            DispatchQueue.main.async {
-                if success {
-                    downloadToast = "\(images.count) photo\(images.count == 1 ? "" : "s") saved to Photos"
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
+    @ViewBuilder
+    private var downloadTooltipContent: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 20) {
+                Image(systemName: "square.and.arrow.down.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 50, height: 50)
+                    .foregroundColor(.blue)
+                    .padding(.top, 8)
+
+                VStack(spacing: 8) {
+                    Text("Save to Photos")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.primary)
+
+                    Text("Selected Bloggo captures can be saved to your device's Photo Library. Reels are saved as video clips.")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
                 }
             }
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            Button {
+                showDownloadTooltip = false
+            } label: {
+                Text("Continue")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .appChromeCornerRadius(12)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .padding(.top, 24)
+    }
+
+    private func presentDownloadTooltipIfNeeded() {
+        guard !hasSeenDownloadTooltip else { return }
+        hasSeenDownloadTooltip = true
+        showDownloadTooltip = true
+    }
+
+    private func saveSelectedToPhotoLibrary() {
+        let ids = Array(selectedIds)
+        guard !ids.isEmpty else { return }
+
+        Task {
+            var auth = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+            if auth == .notDetermined {
+                auth = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            }
+            guard auth == .authorized || auth == .limited else {
+                await MainActor.run {
+                    downloadToast = "Allow Photos access to save"
+                    scheduleDownloadToastDismiss()
+                }
+                return
+            }
+
+            AppCapturePhotoService.shared.saveCapturesToPhotoLibrary(captureIds: ids) { count, success in
+                if success, count > 0 {
+                    let reelCount = ids.filter {
+                        AppCapturePhotoService.shared.momentVideoFileURL(for: $0) != nil
+                    }.count
+                    let photoCount = count - reelCount
+                    if reelCount > 0, photoCount == 0 {
+                        downloadToast = "\(count) reel\(count == 1 ? "" : "s") saved to Photos"
+                    } else if reelCount > 0 {
+                        downloadToast = "\(count) item\(count == 1 ? "" : "s") saved to Photos"
+                    } else {
+                        downloadToast = "\(count) photo\(count == 1 ? "" : "s") saved to Photos"
+                    }
+                } else {
+                    downloadToast = "Couldn't save to Photos"
+                }
+                scheduleDownloadToastDismiss()
+            }
+        }
+    }
+
+    private func scheduleDownloadToastDismiss() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            downloadToast = nil
         }
     }
 

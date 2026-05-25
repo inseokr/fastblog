@@ -29,7 +29,7 @@ struct AppCaptureDetailView: View {
     @State private var resolvedPlaceSubtitle: String?
     @State private var showDeleteConfirm = false
     @State private var isGeneratingCaption = false
-    @State private var downloadToast: String?
+
     @State private var showEditPlaceSheet = false
     @State private var isResolvingPlaceName = false
     @State private var pendingCaptionEditorClose = false
@@ -46,6 +46,7 @@ struct AppCaptureDetailView: View {
     @State private var showMomentVideoPlayer = false
     /// Pinned when opening the player so delete / pager changes cannot invalidate the URL mid-playback.
     @State private var momentVideoPlaybackURL: URL?
+    @State private var downloadToast: String?
 
     /// Restrict writing assist in full-screen gallery to iPhone 15+ hardware.
     private var supportsFullScreenWritingAssist: Bool {
@@ -109,26 +110,25 @@ struct AppCaptureDetailView: View {
                     }
                     .ignoresSafeArea(edges: .bottom)
                 }
-                if let downloadToast {
-                    VStack {
-                        Spacer()
-                        Text(downloadToast)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Capsule().fill(.black.opacity(0.7)))
-                            .padding(.bottom, 32)
-                    }
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
-                }
 
                 if showControls && !isEditingCaption {
                     VStack(spacing: 0) {
                         topBar
                             .ignoresSafeArea(edges: .top)
                         Spacer(minLength: 0)
+                    }
+                }
+
+                if let toast = downloadToast {
+                    VStack {
+                        Spacer()
+                        Text(toast)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Capsule().fill(.black.opacity(0.7)))
+                            .padding(.bottom, 120)
                     }
                 }
             }
@@ -557,14 +557,15 @@ struct AppCaptureDetailView: View {
 
                 HStack {
                     Button {
-                        downloadCurrentPhotoToPhotoLibrary()
+                        saveCurrentCaptureToPhotos()
                     } label: {
                         Image(systemName: "square.and.arrow.down")
                             .font(.system(size: 22, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(width: 56, height: 56)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                     }
-                    .accessibilityLabel("Download Photo")
+                    .accessibilityLabel("Save to Photos")
 
                     Spacer()
 
@@ -575,6 +576,7 @@ struct AppCaptureDetailView: View {
                             .font(.system(size: 22, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(width: 56, height: 56)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                     }
                     .accessibilityLabel("Delete Photo")
                 }
@@ -740,36 +742,6 @@ struct AppCaptureDetailView: View {
         return ""
     }
 
-    private func downloadCurrentPhotoToPhotoLibrary() {
-        guard let item = currentItem else { return }
-        let captureId = item.id
-        let image = item.image ?? AppCapturePhotoService.shared.loadImage(captureId: captureId)
-        guard let image else {
-            downloadToast = "Couldn’t load photo"
-            scheduleDownloadToastClear()
-            return
-        }
-        PHPhotoLibrary.shared().performChanges {
-            PHAssetChangeRequest.creationRequestForAsset(from: image)
-        } completionHandler: { success, _ in
-            DispatchQueue.main.async {
-                guard self.currentItem?.id == captureId else { return }
-                if success {
-                    downloadToast = "1 photo saved to Photos"
-                } else {
-                    downloadToast = "Couldn’t save to Photos"
-                }
-                scheduleDownloadToastClear()
-            }
-        }
-    }
-
-    private func scheduleDownloadToastClear() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            downloadToast = nil
-        }
-    }
-
     private func saveCaption() {
         guard let item = currentItem else { return }
         let trimmed = captionDraft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -791,6 +763,41 @@ struct AppCaptureDetailView: View {
             pendingCaptionEditorClose = false
             withAnimation(.easeOut(duration: 0.2)) {
                 isEditingCaption = false
+            }
+        }
+    }
+
+    private func saveCurrentCaptureToPhotos() {
+        guard let item = currentItem else { return }
+
+        Task {
+            var auth = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+            if auth == .notDetermined {
+                auth = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            }
+            guard auth == .authorized || auth == .limited else {
+                await MainActor.run {
+                    presentDownloadToast("Allow Photos access to save")
+                }
+                return
+            }
+
+            AppCapturePhotoService.shared.saveToPhotoLibrary(captureId: item.id) { success in
+                if success {
+                    let isReel = item.localMomentVideoURL != nil
+                    presentDownloadToast(isReel ? "Reel saved to Photos" : "1 photo saved to Photos")
+                } else {
+                    presentDownloadToast("Couldn't save to Photos")
+                }
+            }
+        }
+    }
+
+    private func presentDownloadToast(_ message: String) {
+        downloadToast = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if downloadToast == message {
+                downloadToast = nil
             }
         }
     }

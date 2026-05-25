@@ -8,8 +8,25 @@ import SwiftUI
 extension MKMapSnapshotter.Options {
     /// Standard map tiles plus **all** Apple POI categories so neighbourhood context
     /// (district names, parks, transit, etc.) stays visible at carousel export sizes.
-    func applyFastblogCarouselMapDisplayTweaks() {
-        pointOfInterestFilter = .includingAll
+    /// Use `lightweightPOI: true` when generating many snapshots in one session (e.g. My Places share)
+    /// to reduce MapKit GeoCodec churn and console noise (`default.csv`, zone allocator resets).
+    func applyFastblogCarouselMapDisplayTweaks(lightweightPOI: Bool = false) {
+        pointOfInterestFilter = lightweightPOI ? .excludingAll : .includingAll
+    }
+}
+
+/// MapKit does not cope well with concurrent `MKMapSnapshotter` runs; serializing avoids GeoCodec
+/// allocator resets, `default.csv` lookup spam, and intermittent Metal null textures during studio load.
+private actor MapSnapshotterSerialExecutor {
+    static let shared = MapSnapshotterSerialExecutor()
+    /// Brief pause so MapKit can release GeoCodec between back-to-back place-intro snapshots.
+    private static let pauseNanos: UInt64 = 100_000_000
+
+    func start(options: MKMapSnapshotter.Options) async throws -> MKMapSnapshotter.Snapshot {
+        let snapshot = try await MKMapSnapshotter(options: options).start()
+        try? await Task.sleep(nanoseconds: Self.pauseNanos)
+        await Task.yield()
+        return snapshot
     }
 }
 
@@ -62,10 +79,8 @@ class MapSnapshotHelper {
         options.traitCollection = UITraitCollection(userInterfaceStyle: .light)
         options.applyFastblogCarouselMapDisplayTweaks()
 
-        let snapshotter = MKMapSnapshotter(options: options)
-
         do {
-            let snapshot = try await snapshotter.start()
+            let snapshot = try await MapSnapshotterSerialExecutor.shared.start(options: options)
 
             UIGraphicsBeginImageContextWithOptions(snapshot.image.size, true, snapshot.image.scale)
             defer { UIGraphicsEndImageContext() }
@@ -252,10 +267,8 @@ class MapSnapshotHelper {
         options.traitCollection = UITraitCollection(userInterfaceStyle: .light)
         options.applyFastblogCarouselMapDisplayTweaks()
 
-        let snapshotter = MKMapSnapshotter(options: options)
-
         do {
-            let snapshot = try await snapshotter.start()
+            let snapshot = try await MapSnapshotterSerialExecutor.shared.start(options: options)
 
             UIGraphicsBeginImageContextWithOptions(snapshot.image.size, true, snapshot.image.scale)
             defer { UIGraphicsEndImageContext() }
@@ -361,7 +374,8 @@ class MapSnapshotHelper {
         drawableDayStops: [PlaceStop],
         focusedDrawableIndex: Int,
         logicalSize: CGSize,
-        displayScale: CGFloat? = nil
+        displayScale: CGFloat? = nil,
+        lightweightMapTiles: Bool = false
     ) async -> UIImage? {
         guard drawableDayStops.indices.contains(focusedDrawableIndex) else { return nil }
         guard let fc = coordinateForCarouselIncludedStop(stop: drawableDayStops[focusedDrawableIndex]) else {
@@ -386,7 +400,8 @@ class MapSnapshotHelper {
             showDistancePills: false,
             focusedMarkerTripRoleColors: false,
             focusedPlaceNameMarkerRadius: nil,
-            focusedMarkerRadius: markerRadius
+            focusedMarkerRadius: markerRadius,
+            lightweightMapTiles: lightweightMapTiles
         )
     }
 
@@ -1067,7 +1082,7 @@ class MapSnapshotHelper {
         opts.traitCollection = UITraitCollection(userInterfaceStyle: .light)
         opts.applyFastblogCarouselMapDisplayTweaks()
         do {
-            let snapshot = try await MKMapSnapshotter(options: opts).start()
+            let snapshot = try await MapSnapshotterSerialExecutor.shared.start(options: opts)
             UIGraphicsBeginImageContextWithOptions(snapshot.image.size, true, snapshot.image.scale)
             defer { UIGraphicsEndImageContext() }
             guard let context = UIGraphicsGetCurrentContext() else { return nil }
@@ -1174,7 +1189,8 @@ class MapSnapshotHelper {
         /// Scales typography + paddings under the focused marker’s place-name pill (`nil` = legacy fixed value).
         focusedPlaceNameMarkerRadius: CGFloat? = nil,
         /// Radius of the numbered POI disk + halo (`nil` = legacy 14 pt).
-        focusedMarkerRadius: CGFloat? = nil
+        focusedMarkerRadius: CGFloat? = nil,
+        lightweightMapTiles: Bool = false
     ) async -> UIImage? {
         let resolvedScale: CGFloat
         if let displayScale {
@@ -1188,10 +1204,10 @@ class MapSnapshotHelper {
         opts.scale = resolvedScale
         opts.mapType = .standard
         opts.traitCollection = UITraitCollection(userInterfaceStyle: .light)
-        opts.applyFastblogCarouselMapDisplayTweaks()
+        opts.applyFastblogCarouselMapDisplayTweaks(lightweightPOI: lightweightMapTiles)
 
         do {
-            let snapshot = try await MKMapSnapshotter(options: opts).start()
+            let snapshot = try await MapSnapshotterSerialExecutor.shared.start(options: opts)
             UIGraphicsBeginImageContextWithOptions(snapshot.image.size, true, snapshot.image.scale)
             defer { UIGraphicsEndImageContext() }
             guard let context = UIGraphicsGetCurrentContext() else { return snapshot.image }

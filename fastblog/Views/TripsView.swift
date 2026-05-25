@@ -1689,6 +1689,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     private var captureCompletion: ((UIImage?, String?) -> Void)?
     private var momentVideoCompletion: ((URL?) -> Void)?
     private var momentVideoStopWorkItem: DispatchWorkItem?
+    private var isManualStopMode = false
     /// Wall-clock length of the post-shutter moment clip (matches UI countdown and Settings).
     static var momentVideoClipDuration: TimeInterval {
         MomentVideoPreferences.maxDurationSeconds
@@ -1752,6 +1753,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             for input in self.session.inputs {
                 self.session.removeInput(input)
             }
+            self.hasAudioInput = false
 
             do {
                 guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
@@ -1793,6 +1795,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             for input in self.session.inputs {
                 self.session.removeInput(input)
             }
+            self.hasAudioInput = false
             guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: nextPosition) else {
                 self.session.commitConfiguration()
                 return
@@ -1807,6 +1810,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                 self.session.commitConfiguration()
                 return
             }
+            self.ensureMovieOutputConfiguredLocked()
             self.session.commitConfiguration()
             DispatchQueue.main.async {
                 self.position = nextPosition
@@ -1918,22 +1922,34 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             self.momentVideoCompletion = completion
             self.momentVideoStopWorkItem?.cancel()
             let clipDuration = Self.momentVideoClipDuration
-            let stopWork = DispatchWorkItem { [weak self] in
-                self?.stopMomentVideoRecordingLocked()
+            let stopMode = ReelStopMode.current
+            self.isManualStopMode = (stopMode == .manual)
+
+            if stopMode == .auto {
+                let stopWork = DispatchWorkItem { [weak self] in
+                    self?.stopMomentVideoRecordingLocked()
+                }
+                self.momentVideoStopWorkItem = stopWork
+                self.movieOutput.maxRecordedDuration = CMTime(seconds: clipDuration, preferredTimescale: 600)
+                self.sessionQueue.asyncAfter(deadline: .now() + clipDuration, execute: stopWork)
+            } else {
+                // Manual: cap at 120s as a safety ceiling; user taps stop manually
+                self.movieOutput.maxRecordedDuration = CMTime(seconds: 120, preferredTimescale: 600)
             }
-            self.momentVideoStopWorkItem = stopWork
-            self.movieOutput.maxRecordedDuration = CMTime(seconds: clipDuration, preferredTimescale: 600)
 
             if let connection = self.movieOutput.connection(with: .video),
                connection.isVideoRotationAngleSupported(90) {
                 connection.videoRotationAngle = 90
             }
+            if let audioConnection = self.movieOutput.connection(with: .audio) {
+                audioConnection.isEnabled = true
+            }
 
             DispatchQueue.main.async {
+                self.activateAudioSessionForVideoRecording()
                 self.isRecordingMomentVideo = true
             }
             self.movieOutput.startRecording(to: url, recordingDelegate: self)
-            self.sessionQueue.asyncAfter(deadline: .now() + clipDuration, execute: stopWork)
         }
     }
 
@@ -1944,29 +1960,46 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     }
 
     private func ensureMovieOutputConfiguredLocked() {
-        let needsAudio = !hasAudioInput
-        let needsMovie = !hasMovieOutput
-        guard needsAudio || needsMovie else { return }
+        let audioAlreadyInSession = session.inputs.contains { input in
+            guard let deviceInput = input as? AVCaptureDeviceInput else { return false }
+            return deviceInput.device.hasMediaType(.audio)
+        }
 
         session.beginConfiguration()
-        if needsAudio,
+        if !audioAlreadyInSession,
            let audioDevice = AVCaptureDevice.default(for: .audio),
            let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
            session.canAddInput(audioInput) {
             session.addInput(audioInput)
             hasAudioInput = true
+        } else if audioAlreadyInSession {
+            hasAudioInput = true
         }
-        if needsMovie, !session.outputs.contains(movieOutput), session.canAddOutput(movieOutput) {
+        if !hasMovieOutput, !session.outputs.contains(movieOutput), session.canAddOutput(movieOutput) {
             session.addOutput(movieOutput)
             hasMovieOutput = true
         }
         if hasMovieOutput {
             movieOutput.maxRecordedDuration = CMTime(seconds: Self.momentVideoClipDuration, preferredTimescale: 600)
+            if let audioConnection = movieOutput.connection(with: .audio) {
+                audioConnection.isEnabled = true
+            }
         }
         if hasMovieOutput, session.canSetSessionPreset(.high) {
             session.sessionPreset = .high
         }
         session.commitConfiguration()
+    }
+
+    /// Routes the mic into reel clips (`.playAndRecord` / `.videoRecording`).
+    private func activateAudioSessionForVideoRecording() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(
+            .playAndRecord,
+            mode: .videoRecording,
+            options: [.defaultToSpeaker, .allowBluetooth]
+        )
+        try? session.setActive(true)
     }
 
     /// Stops an in-progress reel clip early (e.g. when the user releases the shutter).
@@ -2007,25 +2040,63 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         momentVideoStopWorkItem = nil
         let completion = momentVideoCompletion
         momentVideoCompletion = nil
+        let wasManual = isManualStopMode
+        let clipDuration = Self.momentVideoClipDuration
 
-        DispatchQueue.main.async {
-            self.isRecordingMomentVideo = false
-            if let error = error as NSError? {
-                let finishedOK = error.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool ?? false
-                if !finishedOK {
-                    try? FileManager.default.removeItem(at: outputFileURL)
-                    completion?(nil)
-                    return
-                }
-            }
-            let recorded = (try? outputFileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            if recorded < 1024 {
+        DispatchQueue.main.async { self.isRecordingMomentVideo = false }
+
+        if let error = error as NSError? {
+            let finishedOK = error.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool ?? false
+            if !finishedOK {
                 try? FileManager.default.removeItem(at: outputFileURL)
-                completion?(nil)
-            } else {
-                completion?(outputFileURL)
+                DispatchQueue.main.async { completion?(nil) }
+                return
             }
         }
+        let recorded = (try? outputFileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        guard recorded >= 1024 else {
+            try? FileManager.default.removeItem(at: outputFileURL)
+            DispatchQueue.main.async { completion?(nil) }
+            return
+        }
+
+        if wasManual {
+            Task {
+                let finalURL = await Self.trimToLastSeconds(clipDuration, from: outputFileURL)
+                DispatchQueue.main.async { completion?(finalURL) }
+            }
+        } else {
+            DispatchQueue.main.async { completion?(outputFileURL) }
+        }
+    }
+
+    /// Trims `url` to the last `seconds` of footage. Returns the original URL unchanged if the
+    /// video is already short enough. Deletes the source file on successful trim.
+    private static func trimToLastSeconds(_ seconds: TimeInterval, from url: URL) async -> URL {
+        let asset = AVAsset(url: url)
+        guard let duration = try? await asset.load(.duration) else { return url }
+        let durationSecs = duration.seconds
+        guard durationSecs > seconds else { return url }
+
+        let start = CMTime(seconds: durationSecs - seconds, preferredTimescale: 600)
+        let range = CMTimeRange(start: start, duration: CMTime(seconds: seconds, preferredTimescale: 600))
+
+        let outURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("moment_trimmed_\(UUID().uuidString).mov")
+
+        guard let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
+            return url
+        }
+        export.outputURL = outURL
+        export.outputFileType = .mov
+        export.timeRange = range
+        await export.export()
+
+        if export.status == .completed {
+            try? FileManager.default.removeItem(at: url)
+            return outURL
+        }
+        return url
     }
 
     // MARK: - AVCapturePhotoCaptureDelegate
@@ -2212,6 +2283,8 @@ struct CameraCaptureView: View {
     /// Max reel clip length — settable directly from the camera in Reel mode.
     @AppStorage(MomentVideoPreferences.userDefaultsKey) private var reelMaxDurationSeconds: Double =
         MomentVideoPreferences.defaultDurationSeconds
+    /// Auto-stop vs manual-stop mode for Reel recording.
+    @AppStorage(ReelStopMode.userDefaultsKey) private var reelStopModeRaw: String = ReelStopMode.auto.rawValue
     /// When enabled, each in-app camera capture is also saved to the user's Photos library.
     @AppStorage("bloggo.camera.saveToPhotosEnabled") private var saveToPhotosEnabled: Bool = false
     @AppStorage("bloggo.camera.hasSeenSaveToPhotosTooltip") private var hasSeenSaveToPhotosTooltip = false
@@ -2220,6 +2293,7 @@ struct CameraCaptureView: View {
     /// True when the most recently captured photo has (or is recording) a moment video clip.
     @State private var lastCaptureHasMomentVideo: Bool = false
     @State private var momentVideoSecondsRemaining: Int = 0
+    @State private var momentVideoSecondsElapsed: Int = 0
     /// Drives the "Capturing Vibe" pill dot pulse animation.
     @State private var vibePulse: Bool = false
     @State private var reelShutterPressActive = false
@@ -3026,12 +3100,19 @@ struct CameraCaptureView: View {
         }
     }
 
-    /// Hold-to-record reel capture (max 5s). Saves a still thumbnail + video clip, then opens caption preview.
+    /// Hold-to-record reel capture. Saves a still thumbnail + video clip, then opens caption preview.
     private func startStandaloneReelRecording() {
         guard !cameraController.isRecordingMomentVideo else { return }
-        momentVideoSecondsRemaining = Int(CameraController.momentVideoClipDuration.rounded())
+        previewVibePlayer.stop()
+        previewVoiceMemoPlayer.stop()
+        if reelStopMode == .auto {
+            momentVideoSecondsRemaining = Int(CameraController.momentVideoClipDuration.rounded())
+        } else {
+            momentVideoSecondsElapsed = 0
+        }
         cameraController.recordMomentVideo { url in
             momentVideoSecondsRemaining = 0
+            momentVideoSecondsElapsed = 0
             reelShutterPressActive = false
             guard let url else {
                 showToast("Couldn't save reel. Try again.")
@@ -3043,7 +3124,8 @@ struct CameraCaptureView: View {
                 image: thumbnail,
                 timestamp: timestamp,
                 vibeURL: nil,
-                preattachedMomentVideoURL: url
+                preattachedMomentVideoURL: url,
+                isContinuousReel: reelStopMode == .manual
             ) != nil else { return }
             enterInPlaceCaptionMode()
         }
@@ -3060,6 +3142,17 @@ struct CameraCaptureView: View {
                     return
                 }
                 momentVideoSecondsRemaining = remaining
+            }
+        }
+    }
+
+    private func beginMomentVideoElapsedTimer() {
+        momentVideoSecondsElapsed = 0
+        Task { @MainActor in
+            while cameraController.isRecordingMomentVideo {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard cameraController.isRecordingMomentVideo else { break }
+                momentVideoSecondsElapsed += 1
             }
         }
     }
@@ -3430,15 +3523,28 @@ struct CameraCaptureView: View {
         }
     }
 
+    private var reelStopMode: ReelStopMode {
+        ReelStopMode(rawValue: reelStopModeRaw) ?? .auto
+    }
+
     private var momentVideoClipProgress: CGFloat {
         let total = CGFloat(CameraController.momentVideoClipDuration)
         guard total > 0 else { return 0 }
+        if reelStopMode == .manual {
+            // Loop the bar so it cycles every `total` seconds, showing the rolling buffer is active.
+            let elapsed = CGFloat(momentVideoSecondsElapsed)
+            let looped = elapsed.truncatingRemainder(dividingBy: total)
+            return looped / total
+        }
         let remaining = CGFloat(max(momentVideoSecondsRemaining, 0))
         return min(1, max(0, 1 - remaining / total))
     }
 
     /// Elapsed seconds while the reel clip is recording (e.g. `0:03`).
     private var reelRecordingElapsedLabel: String {
+        if reelStopMode == .manual {
+            return String(format: "0:%02d", momentVideoSecondsElapsed)
+        }
         let total = Int(CameraController.momentVideoClipDuration.rounded())
         let remaining = max(momentVideoSecondsRemaining, 0)
         let elapsed = min(total, max(0, total - remaining))
@@ -3465,6 +3571,11 @@ struct CameraCaptureView: View {
                 }
             }
             .frame(width: 56, height: 3)
+            if reelStopMode == .manual {
+                Text("· last \(MomentVideoPreferences.label(for: CameraController.momentVideoClipDuration)) saved")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.75))
+            }
         }
         .foregroundColor(.white)
         .padding(.horizontal, 14)
@@ -3472,7 +3583,9 @@ struct CameraCaptureView: View {
         .background(.ultraThinMaterial)
         .clipShape(Capsule())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Recording reel, \(reelRecordingElapsedLabel)")
+        .accessibilityLabel(reelStopMode == .manual
+            ? "Recording reel, \(reelRecordingElapsedLabel), last \(MomentVideoPreferences.label(for: CameraController.momentVideoClipDuration)) will be saved"
+            : "Recording reel, \(reelRecordingElapsedLabel)")
         .allowsHitTesting(false)
     }
 
@@ -3601,9 +3714,14 @@ struct CameraCaptureView: View {
             }
             .onChange(of: cameraController.isRecordingMomentVideo) { _, isRecording in
                 if isRecording {
-                    beginMomentVideoCountdown()
+                    if reelStopMode == .manual {
+                        beginMomentVideoElapsedTimer()
+                    } else {
+                        beginMomentVideoCountdown()
+                    }
                 } else {
                     momentVideoSecondsRemaining = 0
+                    momentVideoSecondsElapsed = 0
                 }
             }
             .onChange(of: sessionCapturesForDisplay.count) { _, _ in
@@ -4220,6 +4338,55 @@ struct CameraCaptureView: View {
         }
     }
 
+    /// Toggles between auto-stop and manual-stop recording mode.
+    /// Segmented stop-mode picker shown below the capture mode row in Reel mode.
+    /// Replaces the old icon-only corner button with a labeled control that explains what each mode does.
+    private var reelStopModePicker: some View {
+        let isManual = reelStopMode == .manual
+        return VStack(spacing: 4) {
+            HStack(spacing: 0) {
+                ForEach([ReelStopMode.auto, ReelStopMode.manual], id: \.self) { mode in
+                    let selected = reelStopMode == mode
+                    Button {
+                        reelStopModeRaw = mode.rawValue
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: mode.systemImage)
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(mode.label)
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(selected ? .white : .white.opacity(0.5))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 34)
+                        .background {
+                            if selected {
+                                Capsule()
+                                    .fill(mode == .manual
+                                        ? Color.orange.opacity(0.35)
+                                        : Color.white.opacity(0.22))
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(mode.label) reel mode")
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+            .padding(3)
+            .frame(maxWidth: .infinity)
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
+
+            Text(isManual
+                ? "Records until you stop · last \(MomentVideoPreferences.label(for: reelMaxDurationSeconds)) saved"
+                : "Auto-stops after \(MomentVideoPreferences.label(for: reelMaxDurationSeconds))")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white.opacity(0.65))
+                .multilineTextAlignment(.center)
+        }
+    }
+
     /// Timer icon that opens a menu to select the max reel clip duration.
     private var reelMaxDurationButton: some View {
         Menu {
@@ -4282,9 +4449,14 @@ struct CameraCaptureView: View {
             }
 
             captureModePicker
+            if isReelCaptureMode && !cameraController.isRecordingMomentVideo {
+                reelStopModePicker
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
         }
         .padding(.horizontal, 24)
         .animation(.easeInOut(duration: 0.2), value: cameraController.isRecordingMomentVideo)
+        .animation(.easeInOut(duration: 0.2), value: isReelCaptureMode)
     }
 
     private var photoShutterButton: some View {
@@ -4541,7 +4713,12 @@ private func momentCount(from moments: [CapturedMoment]) -> Int {
 
 extension CameraCaptureView {
     /// Saves pixels once to app capture storage and mirrors the same UUID into the Bloggo gallery grid so gallery deletes stay in sync with blog references.
-    private func persistInAppCameraCapture(image: UIImage, timestamp: Date, vibeURL: URL?) -> String? {
+    private func persistInAppCameraCapture(
+        image: UIImage,
+        timestamp: Date,
+        vibeURL: URL?,
+        isContinuousReel: Bool = false
+    ) -> String? {
         let location = cameraController.currentLocation
         guard let captureId = try? AppCapturePhotoService.shared.saveCapture(
             image: image, timestamp: timestamp, location: location
@@ -4549,6 +4726,9 @@ extension CameraCaptureView {
         if let url = vibeURL {
             try? AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: url)
             try? FileManager.default.removeItem(at: url)
+        }
+        if isContinuousReel {
+            try? AppCapturePhotoService.shared.markAsContinuousReel(captureId: captureId)
         }
         InAppCameraPhotoStore.shared.addPhoto(id: captureId, image: image, timestamp: timestamp)
         if location != nil {
@@ -4593,12 +4773,15 @@ extension CameraCaptureView {
         image: UIImage?,
         timestamp: Date,
         vibeURL: URL? = nil,
-        preattachedMomentVideoURL: URL? = nil
+        preattachedMomentVideoURL: URL? = nil,
+        isContinuousReel: Bool = false
     ) -> UUID? {
-        saveCapturedImageToPhotosLibraryIfNeeded(image)
+        if preattachedMomentVideoURL == nil {
+            saveCapturedImageToPhotosLibraryIfNeeded(image)
+        }
         var persistedLocalId: String?
         var remainingVibeURL = vibeURL
-        if let image = image, let lid = persistInAppCameraCapture(image: image, timestamp: timestamp, vibeURL: vibeURL) {
+        if let image = image, let lid = persistInAppCameraCapture(image: image, timestamp: timestamp, vibeURL: vibeURL, isContinuousReel: isContinuousReel) {
             persistedLocalId = lid
             remainingVibeURL = nil
         }
@@ -4649,6 +4832,11 @@ extension CameraCaptureView {
         if let videoURL = preattachedMomentVideoURL {
             attachMomentVideo(videoURL, toMomentId: displayMoment.id)
             lastCaptureHasMomentVideo = true
+            saveCapturedReelVideoToPhotosLibraryIfNeeded(
+                momentId: displayMoment.id,
+                persistedLocalIdentifier: persistedLocalId,
+                fallbackVideoURL: videoURL
+            )
         }
 
         if preattachedMomentVideoURL == nil {
@@ -4681,6 +4869,35 @@ extension CameraCaptureView {
         guard saveToPhotosEnabled, let image else { return }
         PHPhotoLibrary.shared().performChanges {
             PHAssetChangeRequest.creationRequestForAsset(from: image)
+        }
+    }
+
+    /// Auto-save for reel captures: exports `moment_video.mov` (not the thumbnail still).
+    private func saveCapturedReelVideoToPhotosLibraryIfNeeded(
+        momentId: UUID,
+        persistedLocalIdentifier: String?,
+        fallbackVideoURL: URL
+    ) {
+        guard saveToPhotosEnabled else { return }
+        let videoURL: URL? = {
+            if let lid = persistedLocalIdentifier,
+               let captureId = AppCapturePhotoService.uuid(from: lid),
+               let persisted = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId) {
+                return persisted
+            }
+            if let moment = sessionCapturesForDisplay.first(where: { $0.id == momentId }),
+               let url = moment.momentVideoURL,
+               FileManager.default.fileExists(atPath: url.path) {
+                return url
+            }
+            if FileManager.default.fileExists(atPath: fallbackVideoURL.path) {
+                return fallbackVideoURL
+            }
+            return nil
+        }()
+        guard let videoURL else { return }
+        PHPhotoLibrary.shared().performChanges {
+            _ = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: videoURL)
         }
     }
 
@@ -5636,19 +5853,12 @@ private struct InAppPhotoGalleryView: View {
     }
 
     private func saveSelectedToPhotoLibrary() {
-        let entriesToSave = store.entries.filter { selectedIds.contains($0.id) }
-        let images = entriesToSave.compactMap { store.image(for: $0) }
-        guard !images.isEmpty else { return }
-        PHPhotoLibrary.shared().performChanges {
-            for image in images {
-                PHAssetChangeRequest.creationRequestForAsset(from: image)
-            }
-        } completionHandler: { success, _ in
-            DispatchQueue.main.async {
-                if success {
-                    downloadToast = "\(images.count) photo\(images.count == 1 ? "" : "s") saved to Photos"
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
-                }
+        let ids = store.entries.filter { selectedIds.contains($0.id) }.map(\.id)
+        guard !ids.isEmpty else { return }
+        AppCapturePhotoService.shared.saveCapturesToPhotoLibrary(captureIds: ids) { count, success in
+            if success, count > 0 {
+                downloadToast = "\(count) item\(count == 1 ? "" : "s") saved to Photos"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
             }
         }
     }

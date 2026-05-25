@@ -250,6 +250,8 @@
 		BB00F004 /* PlaceVisitedDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F003 /* PlaceVisitedDetailView.swift */; };
 		BB00F005 /* PushPermissionPromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F006 /* PushPermissionPromptView.swift */; };
 		BB00F007 /* ForgotUsernameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F008 /* ForgotUsernameView.swift */; };
+		BB00F00A /* PlacesShareDraftBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F009 /* PlacesShareDraftBuilder.swift */; };
+		BB00F00C /* PlacesShareViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F00B /* PlacesShareViews.swift */; };
 		BB00M001 /* BackendDashboardAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00M002 /* BackendDashboardAnalytics.swift */; };
 		C7E087F6AACF99F475844343 /* StoryBookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ABC2F392F2EBDD1636DC399 /* StoryBookView.swift */; };
 		D1E500012F9E00010088C416 /* Momentum - Dy.lon.wav in Resources */ = {isa = PBXBuildFile; fileRef = C1E500012F9E00010088C406 /* Momentum - Dy.lon.wav */; };
@@ -517,6 +519,8 @@
 		BB00F003 /* PlaceVisitedDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceVisitedDetailView.swift; sourceTree = "<group>"; };
 		BB00F006 /* PushPermissionPromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPermissionPromptView.swift; sourceTree = "<group>"; };
 		BB00F008 /* ForgotUsernameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotUsernameView.swift; sourceTree = "<group>"; };
+		BB00F009 /* PlacesShareDraftBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesShareDraftBuilder.swift; sourceTree = "<group>"; };
+		BB00F00B /* PlacesShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesShareViews.swift; sourceTree = "<group>"; };
 		BB00M002 /* BackendDashboardAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendDashboardAnalytics.swift; sourceTree = "<group>"; };
 		BF27B8BE17452A92005EEECF /* PhotoContinuationBlockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PhotoContinuationBlockView.swift; path = StoryBook/PhotoContinuationBlockView.swift; sourceTree = "<group>"; };
 		C1E500012F9E00010088C406 /* Momentum - Dy.lon.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "Momentum - Dy.lon.wav"; sourceTree = "<group>"; };
@@ -713,6 +717,7 @@
 				BB00013D /* MockPhotoView.swift */,
 				BB00013F /* MyBlogsProfileView.swift */,
 				BB00F001 /* PlacesVisitedView.swift */,
+				BB00F00B /* PlacesShareViews.swift */,
 				BB00F003 /* PlaceVisitedDetailView.swift */,
 				BB000141 /* MyMapView.swift */,
 				BB000143 /* PhotoSelectView.swift */,
@@ -815,6 +820,7 @@
 				BB0001F4 /* AuthService.swift */,
 				BB0001F6 /* AuthStateManager.swift */,
 				BB00017F /* CreatedRecapBlogStore.swift */,
+				BB00F009 /* PlacesShareDraftBuilder.swift */,
 				BB0003D2 /* BlogBackupService.swift */,
 				BB000404 /* BlogDropService.swift */,
 				BB000251 /* AppCapturePhotoService.swift */,
@@ -1015,7 +1021,9 @@
 				BB0003C5 /* AppChromeMetrics.swift in Sources */,
 				BB000104 /* fastblogApp.swift in Sources */,
 				BB00F002 /* PlacesVisitedView.swift in Sources */,
+				BB00F00C /* PlacesShareViews.swift in Sources */,
 				BB00F004 /* PlaceVisitedDetailView.swift in Sources */,
+				BB00F00A /* PlacesShareDraftBuilder.swift in Sources */,
 				BB000106 /* MyBlogsProfileViewModel.swift in Sources */,
 				BB000108 /* ProfileMapViewModel.swift in Sources */,
 				BB00010A /* TripCreationViewModel.swift in Sources */,

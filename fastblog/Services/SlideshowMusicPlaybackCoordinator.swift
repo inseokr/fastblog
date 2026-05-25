@@ -6,6 +6,14 @@ import Foundation
 final class SlideshowMusicPlaybackCoordinator {
     private var player: AVPlayer?
     private var loopEndObserver: NSObjectProtocol?
+    private(set) var playbackVolume: Float = 1
+
+    /// Background music level (0…1). Applied immediately to the active player.
+    func setVolume(_ volume: Float) {
+        let clamped = min(1, max(0, volume))
+        playbackVolume = clamped
+        player?.volume = clamped
+    }
 
     func stopAll() async {
         removeLoopObserver()
@@ -31,6 +39,7 @@ final class SlideshowMusicPlaybackCoordinator {
 
         let item = AVPlayerItem(url: url)
         let p = AVPlayer(playerItem: item)
+        p.volume = playbackVolume
         player = p
 
         loopEndObserver = NotificationCenter.default.addObserver(

@@ -47,10 +47,14 @@ struct MomentVideoFullScreenPlayer: View {
 
     private func startPlayback() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try? session.setCategory(.playback, mode: .moviePlayback)
         try? session.setActive(true)
 
         let p = AVPlayer(url: url)
+        p.isMuted = false
+        if let item = p.currentItem {
+            item.audioMix = nil
+        }
         player = p
         p.play()
     }

@@ -6,6 +6,8 @@ struct BlogVideoExportOptionsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let draft: RecapBlogDetail
+    /// My Places collection export — hides day/itinerary controls; maps remain optional per place.
+    var isPlacesCollectionExport: Bool = false
     /// Called on the main actor with the exported video URL after the sheet dismisses.
     let onShare: (URL) -> Void
     /// Opens the in-app camera in Reel mode when the blog has no reels to export.
@@ -60,9 +62,13 @@ struct BlogVideoExportOptionsSheet: View {
                         if options.videoStyle == .cinematic {
                             reelCaptionsSection
                             mapSegmentsSection
-                            dayItineraryCardsSection
+                            if !isPlacesCollectionExport {
+                                dayItineraryCardsSection
+                            }
                         }
-                        daysSection
+                        if !isPlacesCollectionExport {
+                            daysSection
+                        }
                         musicSection
                         reelsSection
                     }
@@ -143,6 +149,10 @@ struct BlogVideoExportOptionsSheet: View {
             options = (try? JSONDecoder().decode(BlogVideoExportOptions.self, from: optionsData))
                 ?? BlogVideoExportOptions()
             options.exportMode = .video
+            if isPlacesCollectionExport {
+                options.showDayItineraryCards = false
+                options.includedDayIDs = nil
+            }
             // Reset reel selection if it belongs to a different blog (stale UUIDs).
             if let ids = options.includedReelPhotoIDs {
                 let currentIDs = CinematicBlogVideoBuilder.allExportableReelPhotoIDs(draft: draft)

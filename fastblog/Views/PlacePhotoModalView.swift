@@ -1562,7 +1562,7 @@ struct PlacePhotoModalView: View {
     private func saveCurrentInAppCaptureToPhotos() {
         guard let localId = currentPhotoLocalIdentifier,
               localId.hasPrefix(AppCapturePhotoService.prefix),
-              let image = AppCapturePhotoService.shared.loadImage(identifier: localId) else {
+              let captureId = AppCapturePhotoService.uuid(from: localId) else {
             presentDownloadToast("Couldn't save to Photos")
             return
         }
@@ -1579,12 +1579,13 @@ struct PlacePhotoModalView: View {
                 return
             }
 
-            PHPhotoLibrary.shared().performChanges({
-                PHAssetChangeRequest.creationRequestForAsset(from: image)
-            }) { success, _ in
-                DispatchQueue.main.async {
-                    presentDownloadToast(success ? "1 photo saved to Photos" : "Couldn't save to Photos")
-                }
+            AppCapturePhotoService.shared.saveToPhotoLibrary(captureId: captureId) { success in
+                let isReel = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId) != nil
+                presentDownloadToast(
+                    success
+                        ? (isReel ? "Reel saved to Photos" : "1 photo saved to Photos")
+                        : "Couldn't save to Photos"
+                )
             }
         }
     }

@@ -1016,12 +1016,22 @@ enum BlogVideoExportService {
             return
         }
 
-        var audioMix: AVMutableAudioMix?
+        // Include every audio track in the mix — export can drop tracks omitted from `inputParameters`.
+        var audioMixInputParameters = [AVMutableAudioMixInputParameters]()
         if let compMusic = compMusicTrack {
             let musicParams = AVMutableAudioMixInputParameters(track: compMusic)
             musicParams.setVolume(resolvedMusicVolume, at: .zero)
+            audioMixInputParameters.append(musicParams)
+        }
+        if insertedClipCount > 0, let compMomentClips {
+            let momentParams = AVMutableAudioMixInputParameters(track: compMomentClips)
+            momentParams.setVolume(1, at: .zero)
+            audioMixInputParameters.append(momentParams)
+        }
+        var audioMix: AVMutableAudioMix?
+        if !audioMixInputParameters.isEmpty {
             audioMix = AVMutableAudioMix()
-            audioMix?.inputParameters = [musicParams]
+            audioMix?.inputParameters = audioMixInputParameters
         }
 
         try await runAssetExportSession(
