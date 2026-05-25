@@ -255,10 +255,10 @@ struct MyBlogsProfileView: View {
         .sheet(isPresented: $showManage) {
             MyBlogsManageSheet { recap in
                 reopenManageSheetAfterRecapDismiss = true
-                showManage = false
                 openRecapInEditMode = false
                 openRecapPresentShareYourBlogSheet = false
                 selectedCreatedRecap = recap
+                showManage = false
             }
             .environmentObject(createdRecapStore)
             .presentationDetents([.fraction(1)])

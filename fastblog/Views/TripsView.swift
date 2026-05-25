@@ -1022,7 +1022,10 @@ struct TripsView: View {
                     }
                 }
 
-                LoadOlderTripsCard(isLoading: viewModel.isLoadingOlderTrips) {
+                LoadOlderTripsCard(
+                    isLoading: viewModel.isLoadingOlderTrips,
+                    debugStatus: viewModel.loadOlderDebugStatus
+                ) {
                     viewModel.loadOlderTrips()
                 }
                 .containerRelativeFrame(.horizontal, count: 5, span: 4, spacing: 16)
@@ -6375,6 +6378,7 @@ struct TripCarouselCard: View {
 
 struct LoadOlderTripsCard: View {
     var isLoading: Bool
+    var debugStatus: String = ""
     var onTap: () -> Void
 
     @State private var isPressing = false
@@ -6435,6 +6439,18 @@ struct LoadOlderTripsCard: View {
                             Text("Tap or swipe to explore")
                                 .font(.caption2)
                                 .foregroundColor(.white.opacity(0.5))
+
+                            #if DEBUG
+                            if !debugStatus.isEmpty {
+                                Text(debugStatus)
+                                    .font(.caption2)
+                                    .foregroundColor(.orange.opacity(0.9))
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(3)
+                                    .padding(.horizontal, 8)
+                                    .padding(.top, 4)
+                            }
+                            #endif
                         }
 
                         // Arrow hint
@@ -6450,11 +6466,9 @@ struct LoadOlderTripsCard: View {
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPressing)
         }
         .buttonStyle(.plain)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressing = true }
-                .onEnded { _ in isPressing = false }
-        )
+        .onLongPressGesture(minimumDuration: 0, pressing: { pressing in
+            isPressing = pressing
+        }, perform: {})
         .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
     }
 }

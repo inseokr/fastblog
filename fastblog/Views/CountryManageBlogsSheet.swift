@@ -273,6 +273,7 @@ struct CountryManageRow: View {
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .onTapGesture {
                 guard !isRemoved else { return }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 onOpenBlog?()
             }
             .opacity(isRemoved ? 0.55 : 1.0)

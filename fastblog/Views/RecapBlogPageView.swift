@@ -962,12 +962,21 @@ struct RecapBlogPageView: View {
 
     @ViewBuilder
     private func coreContentRoot(screenHeight: CGFloat) -> some View {
-        if draft.days.isEmpty && initialTrip != nil && !hasFinishedInitialLoad {
-            ProgressView("Loading…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if !hasFinishedInitialLoad {
+            blogInitialLoadView
         } else {
             mainContent(screenHeight: screenHeight)
         }
+    }
+
+    private var blogInitialLoadView: some View {
+        LoadingScanView(
+            message: "Opening your blog…",
+            useCenteredLayout: true,
+            showsTopTrailingActions: false
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(recapScreenBackground.ignoresSafeArea())
     }
 
     private func coreContent(screenHeight: CGFloat) -> some View {
@@ -6884,17 +6893,13 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
                     }
             )
             .onAppear {
-                if createdRecapStore.isLoading {
-                    createdRecapStore.$isLoading
-                        .filter { !$0 }
-                        .first()
-                        .receive(on: RunLoop.main)
-                        .sink { _ in
-                            loadDraftIfNeeded()
-                            checkFirstTimeTip()
+                // Defer so the first frame can show the loading animation before sync decode work.
+                Task { @MainActor in
+                    if createdRecapStore.isLoading {
+                        for await loading in createdRecapStore.$isLoading.values where !loading {
+                            break
                         }
-                        .store(in: &cancellables)
-                } else {
+                    }
                     loadDraftIfNeeded()
                     checkFirstTimeTip()
                 }

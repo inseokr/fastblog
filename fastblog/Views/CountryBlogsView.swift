@@ -286,10 +286,10 @@ struct CountryBlogsView: View {
                 blogs: liveBlogs,
                 onOpenBlog: { blog in
                     reopenManageSheetAfterRecapDismiss = true
-                    showManageSheet = false
                     openRecapInEditMode = false
                     openRecapPresentShareYourBlogSheet = false
                     selectedBlog = blog
+                    showManageSheet = false
                 }
             )
             .environmentObject(createdRecapStore)

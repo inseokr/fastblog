@@ -101,6 +101,8 @@ final class TripsViewModel: ObservableObject {
     @Published var loadOlderProgress: Double = 0
     /// Result of the load-older scan.
     @Published var olderTripsResult: FindMoreScanResult = .none
+    /// Last load-older action / outcome (shown on the card in DEBUG builds).
+    @Published var loadOlderDebugStatus: String = ""
 
     // MARK: - Load Newer Trips State
     /// True while the "load newer trips" scan is running.
@@ -550,9 +552,57 @@ final class TripsViewModel: ObservableObject {
         return end >= windowStart && start < windowEnd
     }
 
+    private func tripIdentityKey(_ trip: TripDraft) -> String {
+        "\(trip.title)|\(trip.dateRangeText)"
+    }
+
+    /// Whether this draft should appear in the Trips carousel (not saved, not redundant with a blog).
+    private func isTripVisibleInCarousel(_ trip: TripDraft) -> Bool {
+        !createdRecapStore.hasCreatedBlog(sourceTripId: trip.id)
+            && !createdRecapStore.isDraftRedundantWithSavedBlogs(trip)
+    }
+
+    /// Prefer the in-memory draft when the scan rediscovers the same trip (stable id after blog discard).
+    private func tripForWindowDisplay(_ scanned: TripDraft) -> TripDraft? {
+        let key = tripIdentityKey(scanned)
+        if let existing = tripDrafts.first(where: { tripIdentityKey($0) == key }) {
+            return isTripVisibleInCarousel(existing) ? existing : nil
+        }
+        return isTripVisibleInCarousel(scanned) ? scanned : nil
+    }
+
+    /// Visible trips for a scanned window, including drafts already in `tripDrafts`.
+    private func visibleTripsInWindow(_ windowTrips: [TripDraft]) -> [TripDraft] {
+        var seen = Set<UUID>()
+        var result: [TripDraft] = []
+        for scanned in windowTrips {
+            guard let trip = tripForWindowDisplay(scanned), seen.insert(trip.id).inserted else { continue }
+            result.append(trip)
+        }
+        return result
+    }
+
+    /// Keeps carousel / map scoped to the active scan window (~90 days unless Find More set another range).
+    private func filterTripsToActiveScanWindow(_ trips: [TripDraft]) -> [TripDraft] {
+        guard let windowStart = earliestScannedDate, let windowEnd = latestScannedDate else {
+            return trips
+        }
+        return trips.filter { tripOverlapsWindow($0, windowStart: windowStart, windowEnd: windowEnd) }
+    }
+
+    /// Rebuilds `currentWindowTrips` from in-memory drafts that overlap the active window.
+    private func refreshCurrentWindowTripsFromStore() {
+        guard earliestScannedDate != nil, latestScannedDate != nil else {
+            currentWindowTrips = nil
+            return
+        }
+        let candidates = filterTripsToActiveScanWindow(tripDrafts)
+        currentWindowTrips = visibleTripsInWindow(candidates)
+    }
+
     /// Apply a set of window-filtered trips: dedup against created blogs and saved drafts,
     /// then update `tripDrafts`, `currentWindowTrips`, and date bounds.
-    /// Returns the number of trips that survived dedup (0 = empty).
+    /// Returns the number of trips visible in the carousel for this window (0 = empty).
     @discardableResult
     private func applyWindowTrips(
         _ windowTrips: [TripDraft],
@@ -561,10 +611,11 @@ final class TripsViewModel: ObservableObject {
         setCurrentWindow: Bool = true
     ) -> Int {
         let myDraftIds = TripDraftStore.draftTripIds()
-        let existingKeys = Set(tripDrafts.map { "\($0.title)|\($0.dateRangeText)" })
+        let existingKeys = Set(tripDrafts.map { tripIdentityKey($0) })
+        let toDisplay = visibleTripsInWindow(windowTrips)
 
         let deduped = windowTrips.filter { trip in
-            guard !existingKeys.contains("\(trip.title)|\(trip.dateRangeText)")
+            guard !existingKeys.contains(tripIdentityKey(trip))
                 && !createdRecapStore.hasCreatedBlog(sourceTripId: trip.id)
                 && !createdRecapStore.isDraftRedundantWithSavedBlogs(trip)
             else { return false }
@@ -581,13 +632,16 @@ final class TripsViewModel: ObservableObject {
         if !deduped.isEmpty {
             let keptDrafts = tripDrafts.filter { myDraftIds.contains($0.id) }
             tripDrafts = keptDrafts + deduped
-            if setCurrentWindow { currentWindowTrips = deduped }
+        }
+
+        if !toDisplay.isEmpty, setCurrentWindow {
+            currentWindowTrips = toDisplay
             showSelectPhotosIntroAfterScan = false
         }
 
         earliestScannedDate = windowStart
         latestScannedDate   = windowEnd
-        return deduped.count
+        return toDisplay.count
     }
 
     private let photoLibraryService = PhotoLibraryTripService.shared
@@ -676,17 +730,13 @@ final class TripsViewModel: ObservableObject {
             .sorted { $0.monthKey > $1.monthKey }
     }
 
-    /// Trips ordered newest first — reads from the active window when present, but still
-    /// applies the same created/draft filtering so saved trips disappear immediately.
+    /// Trips ordered newest first — only trips in the active scan window (~90 days by default).
     var visibleDraftTripsNewestFirst: [TripDraft] {
         let source: [TripDraft]
         if let window = currentWindowTrips {
-            source = window.filter { draft in
-                !createdRecapStore.hasCreatedBlog(sourceTripId: draft.id)
-                && !createdRecapStore.isDraftRedundantWithSavedBlogs(draft)
-            }
+            source = window.filter { isTripVisibleInCarousel($0) }
         } else {
-            source = visibleDraftTrips
+            source = filterTripsToActiveScanWindow(visibleDraftTrips)
         }
         return source.sorted { lhs, rhs in
             (lhs.earliestDate ?? .distantPast) > (rhs.earliestDate ?? .distantPast)
@@ -753,6 +803,23 @@ final class TripsViewModel: ObservableObject {
                 self?.syncTripDraftsFromStore()
             }
             .store(in: &cancellables)
+
+        createdRecapStore.$needsRescan
+            .filter { $0 }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.handleBlogStoreNeedsRescan()
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Blog deleted or merged — drop cached windows and refresh the carousel within the active window.
+    private func handleBlogStoreNeedsRescan() {
+        windowCache.removeAll()
+        refreshCurrentWindowTripsFromStore()
+        olderTripsResult = .none
+        newerTripsResult = .none
+        createdRecapStore.needsRescan = false
     }
 
     func onAppear() {
@@ -790,7 +857,15 @@ final class TripsViewModel: ObservableObject {
         guard let d = date else { return "nil" }
         return Self.scanDebugFmt.string(from: d)
     }
+
     #endif
+
+    private func noteLoadOlder(_ message: String) {
+        loadOlderDebugStatus = message
+        #if DEBUG
+        debugPrint("[LoadOlder] \(message)")
+        #endif
+    }
 
     /// Deduplicates photos by localIdentifier so the same asset is not added multiple times.
     private func dedupePhotosByLocalId(_ photos: [MockPhoto]) -> [MockPhoto] {
@@ -883,6 +958,7 @@ final class TripsViewModel: ObservableObject {
         #endif
 
         defaultScanTask = Task {
+            let cal = Calendar.current
             let isLimitedAccess = PHPhotoLibrary.authorizationStatus(for: .readWrite) == .limited
 
             if isLimitedAccess {
@@ -912,14 +988,15 @@ final class TripsViewModel: ObservableObject {
                         && !mergedLimitedTrips.contains(where: { $0.id == draft.id })
                 }
                 tripDrafts = preservedCameraDrafts + mergedLimitedTrips
-                currentWindowTrips = nil
                 if let first = mergedLimitedTrips.first?.days.first?.photos.first?.timestamp,
                    let last = mergedLimitedTrips.last?.days.last?.photos.last?.timestamp {
-                    earliestScannedDate = first
+                    earliestScannedDate = cal.startOfDay(for: first)
                     latestScannedDate = last
+                    currentWindowTrips = visibleTripsInWindow(mergedLimitedTrips)
                 } else {
                     earliestScannedDate = nil
                     latestScannedDate = nil
+                    currentWindowTrips = nil
                 }
 
                 AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
@@ -930,7 +1007,6 @@ final class TripsViewModel: ObservableObject {
                 return
             }
 
-            let cal = Calendar.current
             let now = Date()
             let fullWindowStart = cal.startOfDay(for: cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: now) ?? now)
             let windowEnd = now
@@ -1009,6 +1085,12 @@ final class TripsViewModel: ObservableObject {
                     scanEnd: windowEnd,
                     savedCaptureIdentifiers: savedCaptureIds
                 )
+                earliestScannedDate = fullWindowStart
+                latestScannedDate = windowEnd
+                refreshCurrentWindowTripsFromStore()
+                #if DEBUG
+                noteLoadOlder("incremental scan window \(scanDbg(fullWindowStart)) → \(scanDbg(windowEnd))")
+                #endif
                 finishDefaultScanToIdle()
                 presentNewMomentsSheetIfNeeded()
 
@@ -1058,9 +1140,9 @@ final class TripsViewModel: ObservableObject {
                         && !mergedWindowTrips.contains(where: { $0.id == draft.id })
                 }
                 tripDrafts = preservedCameraDrafts + mergedWindowTrips
-                currentWindowTrips = nil
                 earliestScannedDate = fullWindowStart
                 latestScannedDate = windowEnd
+                currentWindowTrips = visibleTripsInWindow(mergedWindowTrips)
 
                 // Detect new moments in draft trips since the last scan.
                 if let lastDate = previousLastScanned {
@@ -1794,10 +1876,6 @@ final class TripsViewModel: ObservableObject {
                 findMoreScanResult = .success(deduped.count)
                 showSelectPhotosIntroAfterScan = false
                 
-                // Reset the window so the carousel shows the fresh scan results
-                // instead of stale loadOlder/loadNewer trips.
-                currentWindowTrips = nil
-
                 // Update the scanned date bounds to match the Find More range.
                 let cal = Calendar.current
                 var startComps = DateComponents(); startComps.year = startYear; startComps.month = startMonth; startComps.day = 1
@@ -1809,6 +1887,7 @@ final class TripsViewModel: ObservableObject {
                    let endOfRange = cal.date(byAdding: .month, value: 1, to: e) {
                     latestScannedDate = endOfRange
                 }
+                currentWindowTrips = visibleTripsInWindow(deduped)
 
                 // Cache the Find More results for instant restore.
                 if let ws = earliestScannedDate, let we = latestScannedDate {
@@ -1990,7 +2069,9 @@ final class TripsViewModel: ObservableObject {
                 if !deduped.isEmpty {
                     tripDrafts = draftOnlyTrips + deduped
                 }
-                currentWindowTrips = nil
+                earliestScannedDate = cal.startOfDay(for: startDate)
+                latestScannedDate = endDate
+                currentWindowTrips = visibleTripsInWindow(deduped)
             }
             isVisitedCityScanning = false
         }
@@ -2027,6 +2108,9 @@ final class TripsViewModel: ObservableObject {
         let selectionSpanDays = (destCal.dateComponents([.day], from: selectionDayStart, to: selectionDayEnd).day ?? 0) + 1
         // Multi-place selections are capped at 7 calendar days in the UI; single-place rows can exceed 7 days with a warning.
         if selectionSpanDays > 7, selected.count > 1 { return false }
+        // Hard safety cap: a single VisitedCityTrip can legitimately span > 7 days (long stay), but never > 90 days.
+        // A year-spanning range (e.g. 365 days) indicates corrupted data — bail rather than scanning a full year.
+        if selectionSpanDays > ScanConfig.windowDays { return false }
 
         // Pad both edges to avoid clipping transit/arrival/departure moments.
         let fetchStart = cal.date(byAdding: .day, value: -2, to: selectionDayStart) ?? selectedStart
@@ -2110,11 +2194,32 @@ final class TripsViewModel: ObservableObject {
             }
         }
 
+        // Split day groups into sessions on gaps > 7 days; use only the most recent session so that
+        // photos from different years (e.g. Sep 2024 + Sep 2025) don't produce a year-spanning draft.
+        let sessionGapDays = 7
+        var sessions: [[(date: Date, assets: [PHAsset])]] = []
+        var currentSession: [(date: Date, assets: [PHAsset])] = []
+        for group in dayGroups {
+            if let prev = currentSession.last {
+                let gap = cal.dateComponents([.day], from: prev.date, to: group.date).day ?? 0
+                if gap > sessionGapDays {
+                    sessions.append(currentSession)
+                    currentSession = [group]
+                } else {
+                    currentSession.append(group)
+                }
+            } else {
+                currentSession.append(group)
+            }
+        }
+        if !currentSession.isEmpty { sessions.append(currentSession) }
+        let activeDayGroups = sessions.last ?? dayGroups
+
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
 
-        let tripDays: [TripDay] = dayGroups.enumerated().map { dayIndex, group in
+        let tripDays: [TripDay] = activeDayGroups.enumerated().map { dayIndex, group in
             let photos: [MockPhoto] = group.assets.map { asset in
                 let coord: PhotoCoordinate? = asset.location.map {
                     PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
@@ -2136,11 +2241,12 @@ final class TripsViewModel: ObservableObject {
             )
         }
 
-        guard let firstDate = dayGroups.first?.date, let lastDate = dayGroups.last?.date else { return }
+        guard let firstDate = activeDayGroups.first?.date, let lastDate = activeDayGroups.last?.date else { return }
         let dateRangeText = cal.isDate(firstDate, inSameDayAs: lastDate)
             ? formatter.string(from: firstDate)
             : "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
 
+        let coverAsset = activeDayGroups.last?.assets.last ?? activeDayGroups.first?.assets.first
         let draft = TripDraft(
             title: "Camera Roll Selection",
             dateRangeText: dateRangeText,
@@ -2150,13 +2256,27 @@ final class TripsViewModel: ObservableObject {
             draftCreatedAgoText: "From your camera roll",
             daysSeasonText: "\(tripDays.count) day\(tripDays.count == 1 ? "" : "s")",
             coverTheme: "default",
-            coverAssetIdentifier: assets.first?.localIdentifier
+            coverAssetIdentifier: coverAsset?.localIdentifier
         )
 
         await MainActor.run { pendingVisitedCitiesCreateTrip = draft }
     }
 
     // MARK: - Load Older Trips
+
+    /// Anchor for sliding the load-older window backward. Uses persisted bounds, or the default 90-day window when unset.
+    private func resolvedLoadOlderAnchorEnd() -> Date? {
+        if let earliest = earliestScannedDate {
+            return earliest
+        }
+        let cal = Calendar.current
+        let now = Date()
+        let fallbackStart = cal.startOfDay(for: cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: now) ?? now)
+        #if DEBUG
+        noteLoadOlder("earliestScannedDate nil — using fallback anchor \(scanDbg(fallbackStart))")
+        #endif
+        return fallbackStart
+    }
 
     /// True when the current window's end date is far enough in the past that a newer window exists.
     var canLoadNewerTrips: Bool {
@@ -2169,28 +2289,56 @@ final class TripsViewModel: ObservableObject {
     /// until at least 3 visible trips are found (or all attempts are exhausted).
     /// Replaces the displayed trips with the first qualifying window.
     func loadOlderTrips() {
-        guard !isLoadingOlderTrips, let earliest = earliestScannedDate else { return }
+        noteLoadOlder("tap — isLoading=\(isLoadingOlderTrips) earliest=\(earliestScannedDate.map { $0.formatted(date: .abbreviated, time: .omitted) } ?? "nil") latest=\(latestScannedDate.map { $0.formatted(date: .abbreviated, time: .omitted) } ?? "nil") carousel=\(visibleDraftTripsNewestFirst.count)")
+
+        guard !isLoadingOlderTrips else {
+            noteLoadOlder("blocked: scan already in progress")
+            return
+        }
+        guard let anchorEnd = resolvedLoadOlderAnchorEnd() else {
+            noteLoadOlder("blocked: could not resolve window anchor")
+            return
+        }
 
         let cal = Calendar.current
         isLoadingOlderTrips = true
         loadOlderProgress = 0
         olderTripsResult = .none
         AppAnalytics.shared.trackEvent(name: "trip_scan_started")
+        #if DEBUG
+        noteLoadOlder("started — anchor \(scanDbg(anchorEnd))")
+        #else
+        noteLoadOlder("started — scanning older windows…")
+        #endif
 
         loadOlderScanTask = Task {
-            var currentWindowEnd = cal.startOfDay(for: earliest)
+            var currentWindowEnd = cal.startOfDay(for: anchorEnd)
             var finalTrips: [TripDraft] = []
             var finalWindowStart = currentWindowEnd
             var finalWindowEnd = currentWindowEnd
+            var bestVisible: [TripDraft] = []
+            var bestWindowTrips: [TripDraft] = []
+            var bestWindowStart = finalWindowStart
+            var bestWindowEnd = finalWindowEnd
 
-            for _ in 1...4 {
-                guard let windowStart = cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: currentWindowEnd) else { break }
+            for attempt in 1...6 {
+                guard let windowStart = cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: currentWindowEnd) else {
+                    await MainActor.run { noteLoadOlder("attempt \(attempt): could not compute windowStart") }
+                    break
+                }
                 let windowEnd = currentWindowEnd
                 let cacheKey = windowCacheKey(start: windowStart, end: windowEnd)
 
                 let windowTrips: [TripDraft]
                 if let cached = windowCache[cacheKey] {
                     windowTrips = cached
+                    await MainActor.run {
+                        #if DEBUG
+                        noteLoadOlder("attempt \(attempt)/6 cache hit \(scanDbg(windowStart))→\(scanDbg(windowEnd)) trips=\(cached.count)")
+                        #else
+                        noteLoadOlder("attempt \(attempt)/6 (cached)…")
+                        #endif
+                    }
                 } else {
                     // Pad the fetch range so trips straddling a window boundary are built in full.
                     let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: windowStart) ?? windowStart
@@ -2214,30 +2362,53 @@ final class TripsViewModel: ObservableObject {
                         tripOverlapsWindow(trip, windowStart: windowStart, windowEnd: windowEnd)
                     }
                     windowCache[cacheKey] = windowTrips
+                    await MainActor.run {
+                        #if DEBUG
+                        noteLoadOlder("attempt \(attempt)/6 scanned \(scanDbg(windowStart))→\(scanDbg(windowEnd)) raw=\(allTrips.count) inWindow=\(windowTrips.count)")
+                        #else
+                        noteLoadOlder("attempt \(attempt)/6 scanned…")
+                        #endif
+                    }
                 }
 
                 finalTrips = windowTrips
                 finalWindowStart = windowStart
                 finalWindowEnd = windowEnd
 
-                // Count visible trips (excluding already-created blogs).
-                let visibleCount = windowTrips.filter { trip in
-                    !createdRecapStore.hasCreatedBlog(sourceTripId: trip.id)
-                        && !createdRecapStore.isDraftRedundantWithSavedBlogs(trip)
-                }.count
+                let visible = visibleTripsInWindow(windowTrips)
+                await MainActor.run {
+                    #if DEBUG
+                    noteLoadOlder("attempt \(attempt)/6 visible=\(visible.count) best=\(bestVisible.count)")
+                    #endif
+                }
+                if visible.count > bestVisible.count {
+                    bestVisible = visible
+                    bestWindowTrips = windowTrips
+                    bestWindowStart = windowStart
+                    bestWindowEnd = windowEnd
+                }
 
-                if visibleCount >= 3 { break }
+                if visible.count >= 3 { break }
 
-                // Not enough trips — slide window further back.
+                // Not enough visible trips — slide window further back.
                 currentWindowEnd = windowStart
             }
 
-            AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
-            AppAnalytics.shared.incrementCounter("trips_detected", by: finalTrips.count)
+            let tripsToApply = bestVisible.isEmpty ? finalTrips : bestWindowTrips
+            let applyStart = bestVisible.isEmpty ? finalWindowStart : bestWindowStart
+            let applyEnd = bestVisible.isEmpty ? finalWindowEnd : bestWindowEnd
 
-            let count = applyWindowTrips(finalTrips, windowStart: finalWindowStart, windowEnd: finalWindowEnd)
+            AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
+            AppAnalytics.shared.incrementCounter("trips_detected", by: tripsToApply.count)
+
+            let count = applyWindowTrips(tripsToApply, windowStart: applyStart, windowEnd: applyEnd)
             olderTripsResult = count > 0 ? .success(count) : .empty
             isLoadingOlderTrips = false
+            #if DEBUG
+            noteLoadOlder("finished — applied \(count) visible (window \(scanDbg(applyStart))→\(scanDbg(applyEnd)), result=\(olderTripsResult))")
+            #else
+            noteLoadOlder(count > 0 ? "finished — \(count) trip(s)" : "finished — no older trips")
+            #endif
         }
     }
 
@@ -2253,6 +2424,7 @@ final class TripsViewModel: ObservableObject {
 
     /// Cancel an in-progress load-older scan.
     func cancelLoadOlderTrips() {
+        noteLoadOlder("cancelled")
         loadOlderScanTask?.cancel()
         loadOlderScanTask = nil
         isLoadingOlderTrips = false
