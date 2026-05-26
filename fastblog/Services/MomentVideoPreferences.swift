@@ -49,6 +49,14 @@ enum ReelStopMode: String, CaseIterable {
         }
     }
 
+    /// Short segment title in the in-camera reel stop-mode picker.
+    var shortLabel: String {
+        switch self {
+        case .auto: return "Auto"
+        case .manual: return "Manual"
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .auto: return "timer"

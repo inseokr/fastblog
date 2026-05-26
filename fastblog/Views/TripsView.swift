@@ -2803,6 +2803,19 @@ struct CameraCaptureView: View {
             .animation(.easeInOut(duration: 0.2), value: showZoomIndicator)
         }
 
+        // Reel stop mode (Auto / Manual) — top-center when in Reel mode
+        if isReelCaptureMode && !cameraController.isRecordingMomentVideo {
+            VStack {
+                reelStopModePicker
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                Spacer()
+            }
+            .padding(.top, 8)
+            .frame(maxWidth: .infinity)
+            .animation(.easeInOut(duration: 0.2), value: isReelCaptureMode)
+            .animation(.easeInOut(duration: 0.2), value: cameraController.isRecordingMomentVideo)
+        }
+
         // "Capturing Vibe" pill - top-center; tap opens the Vibe explainer sheet
         if isVibeCaptureEnabled {
             VStack {
@@ -4339,34 +4352,27 @@ struct CameraCaptureView: View {
     }
 
     /// Toggles between auto-stop and manual-stop recording mode.
-    /// Segmented stop-mode picker shown below the capture mode row in Reel mode.
-    /// Replaces the old icon-only corner button with a labeled control that explains what each mode does.
+    /// Auto / Manual stop-mode picker — top-center in Reel mode.
     private var reelStopModePicker: some View {
         let isManual = reelStopMode == .manual
-        return VStack(spacing: 4) {
+        return VStack(spacing: 6) {
             HStack(spacing: 0) {
                 ForEach([ReelStopMode.auto, ReelStopMode.manual], id: \.self) { mode in
                     let selected = reelStopMode == mode
                     Button {
                         reelStopModeRaw = mode.rawValue
                     } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: mode.systemImage)
-                                .font(.system(size: 11, weight: .semibold))
-                            Text(mode.label)
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .foregroundColor(selected ? .white : .white.opacity(0.5))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 34)
-                        .background {
-                            if selected {
-                                Capsule()
-                                    .fill(mode == .manual
-                                        ? Color.orange.opacity(0.35)
-                                        : Color.white.opacity(0.22))
+                        Text(mode.shortLabel)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(selected ? .white : .white.opacity(0.5))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 32)
+                            .background {
+                                if selected {
+                                    Capsule()
+                                        .fill(Color.white.opacity(0.22))
+                                }
                             }
-                        }
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(mode.label) reel mode")
@@ -4374,7 +4380,7 @@ struct CameraCaptureView: View {
                 }
             }
             .padding(3)
-            .frame(maxWidth: .infinity)
+            .frame(width: 168)
             .background(.ultraThinMaterial)
             .clipShape(Capsule())
 
@@ -4384,6 +4390,7 @@ struct CameraCaptureView: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.white.opacity(0.65))
                 .multilineTextAlignment(.center)
+                .frame(maxWidth: 280)
         }
     }
 
@@ -4449,14 +4456,9 @@ struct CameraCaptureView: View {
             }
 
             captureModePicker
-            if isReelCaptureMode && !cameraController.isRecordingMomentVideo {
-                reelStopModePicker
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
         }
         .padding(.horizontal, 24)
         .animation(.easeInOut(duration: 0.2), value: cameraController.isRecordingMomentVideo)
-        .animation(.easeInOut(duration: 0.2), value: isReelCaptureMode)
     }
 
     private var photoShutterButton: some View {
