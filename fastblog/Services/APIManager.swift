@@ -499,11 +499,33 @@ final class APIManager {
     }
 
     /// Reads EXIF `OffsetTimeOriginal`, then `OffsetTimeDigitized`, from image data (capture offset, not device). Falls back to nil.
-    static func getLocalTimeZone(for asset: PHAsset) async -> TimeZone? {
+    /// - Parameter allowNetwork: When `false`, only on-device metadata is read (trip scans). Avoids stalling on iCloud-only assets.
+    /// - Parameter timeoutSeconds: When set, returns nil if PhotoKit does not respond in time (guards hung `assetsd` callbacks).
+    static func getLocalTimeZone(
+        for asset: PHAsset,
+        allowNetwork: Bool = true,
+        timeoutSeconds: TimeInterval? = nil
+    ) async -> TimeZone? {
+        let timeout = timeoutSeconds ?? (allowNetwork ? 20 : 5)
+        return await withTaskGroup(of: TimeZone?.self) { group in
+            group.addTask {
+                await Self.readLocalTimeZoneFromImageData(for: asset, allowNetwork: allowNetwork)
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(timeout))
+                return nil
+            }
+            let result = await group.next() ?? nil
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private static func readLocalTimeZoneFromImageData(for asset: PHAsset, allowNetwork: Bool) async -> TimeZone? {
         let options = PHImageRequestOptions()
         options.isSynchronous = false
         options.deliveryMode = .fastFormat
-        options.isNetworkAccessAllowed = true
+        options.isNetworkAccessAllowed = allowNetwork
 
         return await withCheckedContinuation { continuation in
             PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
