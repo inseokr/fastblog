@@ -7,6 +7,13 @@ import SwiftUI
 
 private let loadingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
 
+/// Shared vertical placement for scan rings (landing idle CTA + ``LoadingScanView`` centered layout).
+enum ScanRingLayoutMetrics {
+    /// ``LoadingScanView`` `useCenteredLayout` centers the whole stack; the ring sits above the midpoint
+    /// because progress copy and actions are below it. Apply this offset so the landing button matches.
+    static let centeredRingCenterYOffsetFromScreenCenter: CGFloat = -97
+}
+
 struct LoadingScanView: View {
     /// Tint layered on top of `Material` when ``isOverlay`` is true. ``modalGrayGlass`` is for in-modal
     /// loading (e.g. video export); ``tripNavy`` matches the trip scanner overlay.

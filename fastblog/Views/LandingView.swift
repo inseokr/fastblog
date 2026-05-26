@@ -51,7 +51,9 @@ struct LandingView: View {
     @StateObject private var photoAuth = PhotosAuthorizationManager()
 
     private let landingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
-    private let latestEditsLimit  = 5
+    private let latestEditsPageSize = 5
+    @State private var latestEditsVisibleCount = 5
+    @State private var isLoadingLatestEditsBatch = false
 
     /// Used to keep the "Blog Your Trips in Seconds" alternate CTA off smaller iPhones.
     /// iPhone Pro Max models have wider point bounds than non-Max models.
@@ -64,8 +66,7 @@ struct LandingView: View {
         showAlternateText && isIPhoneMax
     }
 
-    /// Used to keep the centered "Tap to Blog" circle from feeling cramped
-    /// against the "Latest Edits" section on smaller (6.1") iPhone heights.
+    /// Used on 6.1" phones to keep the scan ring clear of Latest Edits below.
     private var isCompactIPhone61: Bool {
         guard UIDevice.current.userInterfaceIdiom == .phone else { return false }
         // 6.1" models are non-Max and have shorter point heights than Pro Max (and larger).
@@ -73,7 +74,26 @@ struct LandingView: View {
     }
 
     private var scanCTAOffsetY: CGFloat {
-        isCompactIPhone61 ? -18 : 0
+        var offset = ScanRingLayoutMetrics.centeredRingCenterYOffsetFromScreenCenter
+        if isCompactIPhone61 { offset -= 18 }
+        return offset
+    }
+
+    /// Stable vertical footprint so loading more rows does not shift the footer stack.
+    private var latestEditsSectionHeight: CGFloat {
+        22 + 12 + 128 + 16 + 8
+    }
+
+    private var allLatestEdits: [CreatedRecapBlog] {
+        createdRecapStore.displayRecents
+    }
+
+    private var visibleLatestEdits: [CreatedRecapBlog] {
+        Array(allLatestEdits.prefix(latestEditsVisibleCount))
+    }
+
+    private var hasMoreLatestEdits: Bool {
+        allLatestEdits.count > latestEditsVisibleCount
     }
 
     var body: some View {
@@ -81,12 +101,12 @@ struct LandingView: View {
             landingBackground
                 .ignoresSafeArea()
 
-            // EXACT CENTER CONTENT
+            // Scan CTA: vertically centered on screen (above footer chrome).
             scanCTA
                 .offset(y: scanCTAOffsetY)
 
-            // Top bar and Footer
-            VStack {
+            // Top bar + bottom chrome (Latest Edits, menu).
+            VStack(spacing: 0) {
                 HStack {
                     Button {
                         showSettings = true
@@ -112,6 +132,7 @@ struct LandingView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
                 .padding(.bottom, 12)
+
                 Spacer()
 
                 recentRecapsSection
@@ -406,29 +427,69 @@ struct LandingView: View {
 
     @ViewBuilder
     private var recentRecapsSection: some View {
-        if !createdRecapStore.displayRecents.isEmpty {
+        if !allLatestEdits.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Latest Edits")
                     .font(.headline)
                     .foregroundColor(.white)
                     .padding(.horizontal, 20)
+                    .frame(height: 22, alignment: .leading)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
-                        ForEach(createdRecapStore.displayRecents.prefix(latestEditsLimit)) { recap in
+                        ForEach(visibleLatestEdits) { recap in
                             CreatedRecapCard(recap: recap)
                                 .onTapGesture {
                                     selectedCreatedRecap = recap
                                 }
+                        }
+
+                        if hasMoreLatestEdits {
+                            LatestEditsMoreHintCard {
+                                loadMoreLatestEdits()
+                            }
                         }
                     }
                     .padding(.bottom, 8)
                 }
                 .contentMargins(.horizontal, 20, for: .scrollContent)
                 .frame(height: 128)
+                .clipped()
+                .overlay(alignment: .trailing) {
+                    if hasMoreLatestEdits {
+                        LinearGradient(
+                            colors: [
+                                landingBackground.opacity(0),
+                                landingBackground.opacity(0.75),
+                                landingBackground
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: 36)
+                        .allowsHitTesting(false)
+                    }
+                }
             }
+            .frame(height: latestEditsSectionHeight, alignment: .top)
             .padding(.top, 16)
             .padding(.bottom, 8)
+            .animation(nil, value: latestEditsVisibleCount)
+            .onChange(of: allLatestEdits.count) { _, newCount in
+                latestEditsVisibleCount = min(latestEditsVisibleCount, newCount)
+            }
+        }
+    }
+
+    private func loadMoreLatestEdits() {
+        guard hasMoreLatestEdits, !isLoadingLatestEditsBatch else { return }
+        isLoadingLatestEditsBatch = true
+        latestEditsVisibleCount = min(
+            latestEditsVisibleCount + latestEditsPageSize,
+            allLatestEdits.count
+        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            isLoadingLatestEditsBatch = false
         }
     }
 
@@ -491,6 +552,42 @@ struct LandingView: View {
         .padding(.top, 12)
         // Extra lift so the bar sits a bit farther from the system home / edge gesture band.
         .safeAreaPadding(.bottom, 24)
+    }
+}
+
+private struct LatestEditsMoreHintCard: View {
+    var onLoadMore: () -> Void
+
+    var body: some View {
+        Button(action: onLoadMore) {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.10))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white.opacity(0.75))
+                }
+
+                Text("More")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            .frame(width: 72, height: 100)
+            .padding(.vertical, 10)
+            .background(Color.white.opacity(0.08))
+            .overlay {
+                RoundedRectangle(appChromeBaseRadius: 12)
+                    .strokeBorder(
+                        Color.white.opacity(0.18),
+                        style: StrokeStyle(lineWidth: 1, dash: [5, 4])
+                    )
+            }
+            .appChromeCornerRadius(12)
+        }
+        .buttonStyle(.plain)
     }
 }
 
