@@ -169,33 +169,10 @@ final class VisitedCitiesService {
         progress(0.10)
         guard !filtered.isEmpty else { return [] }
 
-        // ── Phase 2.5: Capture timezone per asset (EXIF offset, then geocoded location; deduped) ──
-        // Buckets yyyy-MM-dd in that zone so "which day" matches APIManager.captureTimeZone / preview digitized line.
-        var tzByAssetId: [String: TimeZone] = [:]
-        await withTaskGroup(of: (String, TimeZone?).self) { group in
-            for asset in filtered {
-                group.addTask {
-                    (asset.localIdentifier, await APIManager.getLocalTimeZone(for: asset))
-                }
-            }
-            for await (id, tz) in group {
-                if let tz { tzByAssetId[id] = tz }
-            }
-        }
-        var tzByGeoKey: [String: TimeZone] = [:]
-        for asset in filtered where tzByAssetId[asset.localIdentifier] == nil {
-            guard let loc = asset.location else { continue }
-            let cl = CLLocation(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
-            let key = geocodeCacheKey(for: cl)
-            if let cached = tzByGeoKey[key] {
-                tzByAssetId[asset.localIdentifier] = cached
-                continue
-            }
-            if let tz = await GeocodingService.shared.timeZone(for: cl) {
-                tzByGeoKey[key] = tz
-                tzByAssetId[asset.localIdentifier] = tz
-            }
-        }
+        // ── Phase 2.5: Capture timezone per asset (local EXIF only — no iCloud download) ──
+        // Buckets yyyy-MM-dd in that zone. Missing offset uses device calendar; phase 4b sets display TZ from geocoded cells.
+        if Task.isCancelled { return [] }
+        let tzByAssetId = await APIManager.buildCaptureTimeZoneMap(for: filtered, allowNetwork: false)
         progress(0.13)
 
         // ── Phase 3: Collect ALL assets per calendar day (local day in capture timezone) ──

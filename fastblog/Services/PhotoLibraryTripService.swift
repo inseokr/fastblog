@@ -64,37 +64,6 @@ final class PhotoLibraryTripService {
         self.radiusMiles = radiusMiles
     }
 
-    /// Caps concurrent `PHImageManager` EXIF reads so trip scans do not stampede `assetsd` / iCloud.
-    private static let scanTimeZoneMaxConcurrent = 6
-
-    /// EXIF capture offset per asset. Trip scans pass `allowNetwork: false` so iCloud-only photos fall back to device calendar TZ instead of blocking.
-    private func buildCaptureTimeZoneMap(for assets: [PHAsset], allowNetwork: Bool) async -> [String: TimeZone] {
-        var tzMap: [String: TimeZone] = [:]
-        guard !assets.isEmpty else { return tzMap }
-
-        var iterator = assets.makeIterator()
-        await withTaskGroup(of: (String, TimeZone?).self) { group in
-            for _ in 0..<min(Self.scanTimeZoneMaxConcurrent, assets.count) {
-                guard let asset = iterator.next() else { break }
-                let id = asset.localIdentifier
-                group.addTask {
-                    let tz = await APIManager.getLocalTimeZone(for: asset, allowNetwork: allowNetwork)
-                    return (id, tz)
-                }
-            }
-            for await (id, tz) in group {
-                if let tz { tzMap[id] = tz }
-                guard let asset = iterator.next() else { continue }
-                let nextId = asset.localIdentifier
-                group.addTask {
-                    let tz = await APIManager.getLocalTimeZone(for: asset, allowNetwork: allowNetwork)
-                    return (nextId, tz)
-                }
-            }
-        }
-        return tzMap
-    }
-
 #if DEBUG
     private func debugDateString(_ date: Date?) -> String {
         guard let date else { return "nil" }
@@ -146,7 +115,7 @@ final class PhotoLibraryTripService {
             debugPrint("[Scan] debug EXIF tz map skipped for \(assets.count) assets (cap=\(cap)); logs use device calendar fallback")
             return [:]
         }
-        return await buildCaptureTimeZoneMap(for: assets, allowNetwork: false)
+        return await APIManager.buildCaptureTimeZoneMap(for: assets, allowNetwork: false)
     }
 
     /// Same digitized format as the API (`yyyy:MM:dd HH:mm:ss`) in capture offset TZ when EXIF has it, else `Calendar.current` timezone.
@@ -1046,7 +1015,7 @@ final class PhotoLibraryTripService {
     /// they are conceptually part of the "previous day".
     private func groupAssetsByDay(_ assets: [PHAsset]) async -> [(date: Date, assets: [PHAsset])] {
         // Local EXIF only (no iCloud download). Falls back to device timezone when offset is absent or not on disk.
-        let tzMap = await buildCaptureTimeZoneMap(for: assets, allowNetwork: false)
+        let tzMap = await APIManager.buildCaptureTimeZoneMap(for: assets, allowNetwork: false)
 
         // Returns a Gregorian calendar set to the asset's capture timezone.
         func localCalendar(for asset: PHAsset) -> Calendar {

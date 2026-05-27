@@ -521,6 +521,41 @@ final class APIManager {
         }
     }
 
+    /// Max concurrent `PHImageManager` metadata reads (trip scan / visited cities). Unbounded parallelism stalls `assetsd`.
+    static let captureTimeZoneMapMaxConcurrent = 6
+
+    /// Reads EXIF capture offset per asset with bounded concurrency. Use `allowNetwork: false` for library scans.
+    static func buildCaptureTimeZoneMap(
+        for assets: [PHAsset],
+        allowNetwork: Bool = false,
+        maxConcurrent: Int = captureTimeZoneMapMaxConcurrent
+    ) async -> [String: TimeZone] {
+        var tzMap: [String: TimeZone] = [:]
+        guard !assets.isEmpty else { return tzMap }
+
+        var iterator = assets.makeIterator()
+        await withTaskGroup(of: (String, TimeZone?).self) { group in
+            for _ in 0..<min(maxConcurrent, assets.count) {
+                guard let asset = iterator.next() else { break }
+                let id = asset.localIdentifier
+                group.addTask {
+                    let tz = await Self.getLocalTimeZone(for: asset, allowNetwork: allowNetwork)
+                    return (id, tz)
+                }
+            }
+            for await (id, tz) in group {
+                if let tz { tzMap[id] = tz }
+                guard let asset = iterator.next() else { continue }
+                let nextId = asset.localIdentifier
+                group.addTask {
+                    let tz = await Self.getLocalTimeZone(for: asset, allowNetwork: allowNetwork)
+                    return (nextId, tz)
+                }
+            }
+        }
+        return tzMap
+    }
+
     private static func readLocalTimeZoneFromImageData(for asset: PHAsset, allowNetwork: Bool) async -> TimeZone? {
         let options = PHImageRequestOptions()
         options.isSynchronous = false
