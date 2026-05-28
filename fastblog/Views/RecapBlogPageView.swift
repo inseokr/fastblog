@@ -6431,14 +6431,18 @@ Your blog remains private unless you choose to share it.
         var existingIds = Set(stop.photos.compactMap(\.localIdentifier))
         var pendingRefinement: [String] = []
 
-        for rawId in assetIdentifiers {
-            let id = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !id.isEmpty, !existingIds.contains(id) else { continue }
+        // Batch-fetch all newly selected PHAssets in a single call instead of one per photo.
+        let newIds = assetIdentifiers
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !existingIds.contains($0) }
+        var fetchedAssets: [String: PHAsset] = [:]
+        if !newIds.isEmpty {
+            let result = PHAsset.fetchAssets(withLocalIdentifiers: newIds, options: nil)
+            result.enumerateObjects { asset, _, _ in fetchedAssets[asset.localIdentifier] = asset }
+        }
 
-            // Single synchronous fetch — no retry delay before appending.
-            // Under limited access, PHAsset can be absent briefly; fallbacks keep the photo visible immediately.
-            let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject
-
+        for id in newIds {
+            let asset = fetchedAssets[id]
             let coord = PlaceLibraryPhotoImport.resolvedCoordinate(asset: asset, stop: stop)
             let timestamp = PlaceLibraryPhotoImport.resolvedTimestamp(asset: asset, stop: stop, day: day, placeTimeZone: placeTZ)
             let recap = RecapPhoto(

@@ -64,10 +64,31 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
     /// Drops photo rows that no longer resolve to pixels (deleted library assets, missing in-app captures),
     /// then removes place stops and days that have no photos left.
     func removingUndisplayablePhotos() -> RecapBlogDetail {
+        // Batch-fetch all library photo IDs in a single PHAsset call to avoid O(n) serial fetches on the main thread.
+        let libraryIds: [String] = days.flatMap(\.placeStops).flatMap(\.photos).compactMap { photo in
+            guard photo.cloudURL?.isEmpty ?? true else { return nil }
+            guard let lid = photo.localIdentifier, !lid.isEmpty else { return nil }
+            guard !lid.hasPrefix(AppCapturePhotoService.prefix) else { return nil }
+            return lid
+        }
+        var existingLibraryIds = Set<String>()
+        if !libraryIds.isEmpty {
+            let fetched = PHAsset.fetchAssets(withLocalIdentifiers: libraryIds, options: nil)
+            existingLibraryIds.reserveCapacity(fetched.count)
+            fetched.enumerateObjects { asset, _, _ in existingLibraryIds.insert(asset.localIdentifier) }
+        }
+
         var result = self
         for dayIdx in result.days.indices {
             for stopIdx in result.days[dayIdx].placeStops.indices {
-                result.days[dayIdx].placeStops[stopIdx].photos.removeAll { !$0.hasDisplayableLocalBacking }
+                result.days[dayIdx].placeStops[stopIdx].photos.removeAll { photo in
+                    if let cloud = photo.cloudURL, !cloud.isEmpty { return false }
+                    guard let lid = photo.localIdentifier, !lid.isEmpty else { return true }
+                    if lid.hasPrefix(AppCapturePhotoService.prefix) {
+                        return AppCapturePhotoService.shared.loadImage(identifier: lid) == nil
+                    }
+                    return !existingLibraryIds.contains(lid)
+                }
             }
             result.days[dayIdx].placeStops.removeAll { $0.photos.isEmpty }
             for stopIdx in result.days[dayIdx].placeStops.indices {
