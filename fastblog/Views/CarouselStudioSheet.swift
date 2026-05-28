@@ -1216,9 +1216,8 @@ struct CarouselSlide: Identifiable {
     /// toggle this via the "no border" option at the start of the Border
     /// color strip.
     var pipBorderEnabled: Bool = true
-    /// How many PIP thumbnails to render (1 ... 3). Clamped at render time
-    /// against the number of available images, so this can be lowered without
-    /// discarding image data — raising it back restores the earlier photos.
+    /// How many inset PIP thumbnails to render (1 ... 3; hero + insets = up to four photos per Multi group).
+    /// Clamped at render time against available images so visibility can be lowered without discarding data.
     var pipVisibleCount: Int = 3
     /// Row vs column layout for the inset PIP thumbnails (`.pip` only).
     var pipClusterStackStyle: CarouselPIPClusterStackStyle = .vertical
@@ -1343,101 +1342,182 @@ struct CarouselSlide: Identifiable {
     }
 }
 
+/// Multi (PIP) shows one hero plus up to three inset thumbnails — four photos per group.
+private enum CarouselStudioMultiPhotoGroup {
+    static let maxPhotos = 4
+    static let maxInsetThumbnails = maxPhotos - 1
+}
+
+/// Photo IDs represented on a `.pip` slide (hero + assigned inset slots, not merely visible count).
+private func multiClusterPhotoIDs(for slide: CarouselSlide) -> Set<UUID> {
+    guard slide.layout == .pip, let hero = slide.heroPhotoID else { return [] }
+    var ids = [hero]
+    ids.append(contentsOf: slide.pipPhotoIDs.prefix(CarouselStudioMultiPhotoGroup.maxInsetThumbnails))
+    return Set(ids)
+}
+
+private func placeStopSiblingIndices(stopID: UUID, in slides: [CarouselSlide]) -> [Int] {
+    slides.indices.filter {
+        slides[$0].kind == .placeStop && slides[$0].placeStop?.id == stopID
+    }.sorted()
+}
+
+/// Deck-order indices for a Multi cluster: `primary` + up to three **following** `.single` slides; stops at the first non-single.
+private func multiClusterCandidateIndices(from primaryIndex: Int, stopID: UUID, in slides: [CarouselSlide]) -> [Int] {
+    let siblings = placeStopSiblingIndices(stopID: stopID, in: slides)
+    guard let start = siblings.firstIndex(of: primaryIndex) else { return [] }
+    var cluster = [primaryIndex]
+    var i = start + 1
+    while cluster.count < CarouselStudioMultiPhotoGroup.maxPhotos, i < siblings.count {
+        let idx = siblings[i]
+        guard slides[idx].layout == .single else { break }
+        cluster.append(idx)
+        i += 1
+    }
+    return cluster
+}
+
+/// Single / Multi / Split row: not on absorbed slides; on Multi/Split so you can exit; on Single only if another Single follows in deck order.
+private func placeStopOffersLayoutModes(at index: Int, in slides: [CarouselSlide]) -> Bool {
+    guard slides.indices.contains(index),
+          slides[index].kind == .placeStop,
+          !isSlideHiddenBySiblingPIP(at: index, in: slides) else { return false }
+    switch slides[index].layout {
+    case .pip, .split:
+        return true
+    case .single:
+        guard let stopID = slides[index].placeStop?.id else { return false }
+        return multiClusterCandidateIndices(from: index, stopID: stopID, in: slides).count > 1
+    }
+}
+
+/// Per-slide PIP payload for re-entering Multi: next singles after this slide only (up to three insets).
+private func repopulatePipPayloadForSlide(at index: Int, stopID: UUID, slides: inout [CarouselSlide]) {
+    guard slides.indices.contains(index), slides[index].kind == .placeStop else { return }
+    let insetIndices = Array(multiClusterCandidateIndices(from: index, stopID: stopID, in: slides).dropFirst())
+    let pipAligned: [(UUID, UIImage)] = insetIndices.compactMap { si in
+        guard let pid = slides[si].heroPhotoID, let img = slides[si].heroImage else { return nil }
+        return (pid, img)
+    }
+    slides[index].pipPhotoIDs = pipAligned.map(\.0)
+    slides[index].pipImages = pipAligned.map(\.1)
+}
+
+private func repopulatePipPayloadsForPlaceStop(stopID: UUID, slides: inout [CarouselSlide]) {
+    for i in placeStopSiblingIndices(stopID: stopID, in: slides) where slides[i].layout == .single {
+        repopulatePipPayloadForSlide(at: i, stopID: stopID, slides: &slides)
+    }
+}
+
+/// Group current slide + following single slides (≤4). Does not move `heroPhotoID` between slides.
+private func applyMultiLayoutGrouping(primaryIndex: Int, slides: inout [CarouselSlide]) {
+    guard slides.indices.contains(primaryIndex),
+          slides[primaryIndex].kind == .placeStop,
+          slides[primaryIndex].layout == .pip,
+          let stopID = slides[primaryIndex].placeStop?.id else { return }
+
+    let clusterIndices = multiClusterCandidateIndices(from: primaryIndex, stopID: stopID, in: slides)
+    guard clusterIndices.count > 1 else { return }
+
+    let insetIndices = Array(clusterIndices.dropFirst())
+    let pipAligned: [(UUID, UIImage)] = insetIndices.compactMap { si in
+        guard let pid = slides[si].heroPhotoID, let img = slides[si].heroImage else { return nil }
+        return (pid, img)
+    }
+    slides[primaryIndex].pipPhotoIDs = pipAligned.map(\.0)
+    slides[primaryIndex].pipImages = pipAligned.map(\.1)
+    slides[primaryIndex].pipThumbnailFramings = []
+    slides[primaryIndex].pipProcessedImages = []
+    slides[primaryIndex].pipVisibleCount = pipAligned.isEmpty
+        ? 1
+        : min(
+            CarouselStudioMultiPhotoGroup.maxInsetThumbnails,
+            max(1, min(slides[primaryIndex].pipVisibleCount, pipAligned.count))
+        )
+
+    let clusterSet = Set(clusterIndices)
+    for si in placeStopSiblingIndices(stopID: stopID, in: slides) {
+        if clusterSet.contains(si) {
+            if si == primaryIndex {
+                slides[si].isSelected = true
+            } else {
+                slides[si].layout = .single
+                slides[si].isSelected = false
+                slides[si].pipImages = []
+                slides[si].pipPhotoIDs = []
+                slides[si].pipThumbnailFramings = []
+                slides[si].pipBackgroundRemoved = false
+                slides[si].pipProcessedImages = []
+            }
+        }
+    }
+}
+
+/// Ungroup Multi without reassigning heroes (avoids duplicate / missing slides after mode changes).
+private func releaseMultiLayoutGrouping(primaryIndex: Int, slides: inout [CarouselSlide]) {
+    guard slides.indices.contains(primaryIndex),
+          slides[primaryIndex].layout == .pip,
+          let stopID = slides[primaryIndex].placeStop?.id else { return }
+    let clusterPhotos = multiClusterPhotoIDs(for: slides[primaryIndex])
+    for si in placeStopSiblingIndices(stopID: stopID, in: slides) {
+        guard let pid = slides[si].heroPhotoID, clusterPhotos.contains(pid) else { continue }
+        slides[si].layout = .single
+        slides[si].isSelected = true
+        if si != primaryIndex {
+            slides[si].pipImages = []
+            slides[si].pipPhotoIDs = []
+            slides[si].pipThumbnailFramings = []
+            slides[si].pipBackgroundRemoved = false
+            slides[si].pipProcessedImages = []
+        }
+    }
+}
+
+private func releaseSplitLayoutGrouping(splitIndex: Int, slides: inout [CarouselSlide]) {
+    guard slides.indices.contains(splitIndex),
+          slides[splitIndex].layout == .split,
+          let stopID = slides[splitIndex].placeStop?.id,
+          let bottomID = slides[splitIndex].splitBottomPhotoID else { return }
+    for si in placeStopSiblingIndices(stopID: stopID, in: slides) {
+        if slides[si].heroPhotoID == bottomID {
+            slides[si].layout = .single
+            slides[si].isSelected = true
+        }
+    }
+    slides[splitIndex].splitBottomImage = nil
+    slides[splitIndex].splitBottomPhotoID = nil
+    slides[splitIndex].splitTopFraming = nil
+    slides[splitIndex].splitBottomFraming = nil
+}
+
 /// Returns `true` when the slide at `index` is a `.placeStop` slide in `.single`
 /// layout whose photo is already represented inside a sibling's grouped mode
 /// (`.pip` or `.split`) for the same stop. The preview and export pipelines
-/// hide these so activating grouped layout collapses the stop down to one slide;
+/// hide only photos in that Multi cluster (up to four), not every photo at the stop;
 /// flipping the sibling back to `.single` resurfaces them.
 private func isSlideHiddenBySiblingPIP(at index: Int, in slides: [CarouselSlide]) -> Bool {
     guard slides.indices.contains(index) else { return false }
     let slide = slides[index]
     guard slide.kind == .placeStop,
           slide.layout == .single,
-          let stopID = slide.placeStop?.id else { return false }
+          let stopID = slide.placeStop?.id,
+          let photoID = slide.heroPhotoID else { return false }
     return slides.contains { other in
         guard other.id != slide.id,
               other.kind == .placeStop,
               other.placeStop?.id == stopID,
               other.isSelected else { return false }
         if other.layout == .pip {
-            return true
+            return multiClusterPhotoIDs(for: other).contains(photoID)
         }
         if other.layout == .split {
             guard let hiddenPhotoID = other.splitBottomPhotoID else { return false }
-            return hiddenPhotoID == slide.heroPhotoID
+            return hiddenPhotoID == photoID
         }
         return false
     }
 }
 
-/// Flattens Multi (PIP) hero + inset photo order onto sibling `.placeStop` slides for the same
-/// stop (`slides` index order). Call while the primary slide is still `layout == .pip` so swaps
-/// don't leave two singles showing the same `heroPhotoID` after returning to Single layout.
-private func distributeCollapsedPIPHeroesAcrossStopSiblings(slides: inout [CarouselSlide], primaryIndex: Int) {
-    guard slides.indices.contains(primaryIndex),
-          slides[primaryIndex].kind == .placeStop,
-          slides[primaryIndex].layout == .pip else { return }
-    guard let stopID = slides[primaryIndex].placeStop?.id else { return }
-    let donor = slides[primaryIndex]
-    var ordered: [(UUID, UIImage)] = []
-    if let id = donor.heroPhotoID, let img = donor.heroImage {
-        ordered.append((id, img))
-    }
-    let insetImages = donor.effectivePIPImages
-    let insetCount = min(donor.pipPhotoIDs.count, insetImages.count)
-    for i in 0..<insetCount {
-        ordered.append((donor.pipPhotoIDs[i], insetImages[i]))
-    }
-    let stopIndices = slides.indices.filter {
-        slides[$0].kind == .placeStop && slides[$0].placeStop?.id == stopID
-    }.sorted()
-    for (j, si) in stopIndices.enumerated() {
-        if j < ordered.count {
-            slides[si].heroPhotoID = ordered[j].0
-            slides[si].heroImage = ordered[j].1
-        }
-        slides[si].pipImages = []
-        slides[si].pipPhotoIDs = []
-        slides[si].pipThumbnailFramings = []
-        slides[si].pipBackgroundRemoved = false
-        slides[si].pipProcessedImages = []
-        slides[si].pipVisibleCount = 3
-        slides[si].pipOffset = .zero
-        slides[si].pipClusterSizeScale = 1.0
-        slides[si].pipIsUngrouped = false
-        slides[si].pipPhotoOffsets = []
-        slides[si].pipUngroupedZOrder = []
-    }
-}
-
-/// Maps Split top→bottom photo order onto sibling slides when returning to Single so "Swap"
-/// does not revive a stale `heroPhotoID` on another slide at the stop.
-private func distributeCollapsedSplitHeroesAcrossStopSiblings(slides: inout [CarouselSlide], splitIndex: Int) {
-    guard slides.indices.contains(splitIndex),
-          slides[splitIndex].kind == .placeStop,
-          slides[splitIndex].layout == .split else { return }
-    guard let stopID = slides[splitIndex].placeStop?.id else { return }
-    var ordered: [(UUID, UIImage)] = []
-    if let id = slides[splitIndex].heroPhotoID, let img = slides[splitIndex].heroImage {
-        ordered.append((id, img))
-    }
-    if let id = slides[splitIndex].splitBottomPhotoID, let img = slides[splitIndex].splitBottomImage {
-        ordered.append((id, img))
-    }
-    let stopIndices = slides.indices.filter {
-        slides[$0].kind == .placeStop && slides[$0].placeStop?.id == stopID
-    }.sorted()
-    for (j, si) in stopIndices.enumerated() {
-        if j < ordered.count {
-            slides[si].heroPhotoID = ordered[j].0
-            slides[si].heroImage = ordered[j].1
-        }
-        slides[si].splitBottomImage = nil
-        slides[si].splitBottomPhotoID = nil
-        slides[si].splitTopFraming = nil
-        slides[si].splitBottomFraming = nil
-    }
-}
 
 /// Export order matching `SocialPostStudioSheet.orderedExportSlideIndices` — PIP-collapsed siblings
 /// excluded and only `isSelected` slides; Reel / single-slide mode takes the first selected only.
@@ -1655,8 +1735,52 @@ private func expectedSocialPostStudioDeckSlideCountAfterReload(
     return max(count, 1)
 }
 
+/// Bounds of this day's place slides in deck order: after the day route map through the next `.mapRoute`, or the
+/// contiguous place-intro / place-stop block when the day has no route map (e.g. My Places).
+private func dayPlaceDeckSliceBounds(
+    day: RecapBlogDay,
+    blog: RecapBlogDetail,
+    slides: [CarouselSlide]
+) -> (start: Int, boundary: Int)? {
+    let mapSlideId = "map-\(day.id.uuidString)"
+    if let mapIdx = slides.firstIndex(where: { $0.id == mapSlideId }) {
+        let start = slides.index(after: mapIdx)
+        let boundary = slides[start...].firstIndex(where: { $0.kind == .mapRoute }) ?? slides.endIndex
+        return (start, boundary)
+    }
+    let stopIDs = Set(day.placeStops.map(\.id))
+    let indices = slides.indices.filter { idx in
+        guard let sid = slides[idx].placeStop?.id else { return false }
+        return stopIDs.contains(sid)
+    }
+    if let lo = indices.min(), let hi = indices.max() {
+        return (lo, hi + 1)
+    }
+    guard let dayIdx = blog.days.firstIndex(where: { $0.id == day.id }) else { return nil }
+    if dayIdx == 0 {
+        if let coverIdx = slides.firstIndex(where: { $0.kind == .cover }) {
+            return (slides.index(after: coverIdx), slides.count)
+        }
+        return (0, slides.count)
+    }
+    let prevDay = blog.days[dayIdx - 1]
+    if let prev = dayPlaceDeckSliceBounds(day: prevDay, blog: blog, slides: slides) {
+        return (prev.boundary, slides.count)
+    }
+    return (slides.count, slides.count)
+}
+
+private func isFirstExpectedPhotoTupleOfStop(
+    expected: [(stop: UUID, photo: UUID)],
+    at index: Int
+) -> Bool {
+    index == 0 || expected[index - 1].stop != expected[index].stop
+}
+
+/// Deck index where a restored / inserted place photo belongs — matches `loadSlides` (intro map, then each photo).
 private func insertIndexForPlacePhotoInDay(
     day: RecapBlogDay,
+    blog: RecapBlogDetail,
     stopID: UUID,
     photoID: UUID,
     slides: [CarouselSlide],
@@ -1666,29 +1790,96 @@ private func insertIndexForPlacePhotoInDay(
     guard let tupIdx = expected.firstIndex(where: { $0.stop == stopID && $0.photo == photoID }) else {
         return slides.count
     }
-    let mapSlideId = "map-\(day.id.uuidString)"
-    guard let mapIdx = slides.firstIndex(where: { $0.id == mapSlideId }) else { return slides.count }
-    let afterMap = slides.index(after: mapIdx)
-    let boundary = slides[afterMap...].firstIndex(where: { $0.kind == .mapRoute }) ?? slides.endIndex
+    guard let bounds = dayPlaceDeckSliceBounds(day: day, blog: blog, slides: slides) else {
+        return slides.count
+    }
 
-    var consumedPhotos = 0
-    var i = afterMap
-    while consumedPhotos < tupIdx && i < boundary {
-        switch slides[i].kind {
-        case .placeIntroMap:
+    var i = bounds.start
+    var expIdx = 0
+    while expIdx < tupIdx && i < bounds.boundary {
+        let exp = expected[expIdx]
+        if isFirstExpectedPhotoTupleOfStop(expected: expected, at: expIdx),
+           slides[i].kind == .placeIntroMap,
+           slides[i].placeStop?.id == exp.stop {
             i = slides.index(after: i)
-        case .placeStop:
-            consumedPhotos += 1
-            i = slides.index(after: i)
-        case .cover, .mapRoute:
+            if i >= bounds.boundary { break }
+        }
+        if slides[i].kind == .placeStop,
+           slides[i].placeStop?.id == exp.stop,
+           slides[i].heroPhotoID == exp.photo {
             i = slides.index(after: i)
         }
+        expIdx += 1
     }
-    let isFirstTupleOfItsStop = tupIdx == 0 || expected[tupIdx - 1].stop != expected[tupIdx].stop
-    if isFirstTupleOfItsStop, i < boundary, slides[i].kind == .placeIntroMap {
-        i = slides.index(after: i)
+
+    if expIdx == tupIdx {
+        if isFirstExpectedPhotoTupleOfStop(expected: expected, at: tupIdx),
+           i < bounds.boundary,
+           slides[i].kind == .placeIntroMap,
+           slides[i].placeStop?.id == stopID {
+            i = slides.index(after: i)
+        }
+        return i
     }
-    return i
+    return min(i, slides.count)
+}
+
+/// Re-sorts each day's place slides to match `loadSlides` when a photo was inserted out of order.
+private func reconcilePlaceSlidesOrderInDeck(
+    slides: inout [CarouselSlide],
+    blog: RecapBlogDetail,
+    excludedKeys: Set<String>,
+    placesOnlyMode: Bool
+) {
+    for day in blog.days {
+        guard let bounds = dayPlaceDeckSliceBounds(day: day, blog: blog, slides: slides),
+              bounds.start < bounds.boundary else { continue }
+
+        let segment = Array(slides[bounds.start..<bounds.boundary])
+        let drawableForMap = carouselDrawableStopsForStudioDay(day: day, excludedKeys: excludedKeys)
+        var isFirstDrawableStop = true
+        var introByStop: [UUID: CarouselSlide] = [:]
+        var photoByKey: [String: CarouselSlide] = [:]
+        for slide in segment {
+            switch slide.kind {
+            case .placeIntroMap:
+                if let id = slide.placeStop?.id { introByStop[id] = slide }
+            case .placeStop:
+                if let stop = slide.placeStop?.id, let photo = slide.heroPhotoID {
+                    photoByKey["\(stop.uuidString)-\(photo.uuidString)"] = slide
+                }
+            case .cover, .mapRoute:
+                break
+            }
+        }
+
+        var ordered: [CarouselSlide] = []
+        for stop in day.placeStops {
+            let included = stop.photos.filter { $0.isIncluded }
+                .filter { !excludedKeys.contains(studioExclusionKey(stop: stop.id, photo: $0.id)) }
+            guard !included.isEmpty else { continue }
+
+            if shouldIncludePlaceIntroMapSlide(
+                placesOnlyMode: placesOnlyMode,
+                isFirstDrawableStop: isFirstDrawableStop,
+                stopID: stop.id,
+                drawableForMap: drawableForMap
+            ), let intro = introByStop[stop.id] {
+                ordered.append(intro)
+            }
+            isFirstDrawableStop = false
+
+            for photo in included {
+                let key = "\(stop.id.uuidString)-\(photo.id.uuidString)"
+                if let slide = photoByKey[key] {
+                    ordered.append(slide)
+                }
+            }
+        }
+
+        guard ordered.count == segment.count else { continue }
+        slides.replaceSubrange(bounds.start..<bounds.boundary, with: ordered)
+    }
 }
 
 // MARK: - Slides Management (unified grid: in-deck + session-excluded place photos)
@@ -1883,10 +2074,11 @@ private func buildPlaceCarouselSlideForStudio(
     let hero = stopImages[photoIdx]
     let pipPairs: [(UIImage, UUID)] = included.enumerated()
         .compactMap { (idx, candidate) -> (UIImage, UUID)? in
-            guard idx != photoIdx, let img = stopImages[idx] else { return nil }
+            guard idx > photoIdx,
+                  idx <= photoIdx + CarouselStudioMultiPhotoGroup.maxInsetThumbnails,
+                  let img = stopImages[idx] else { return nil }
             return (img, candidate.id)
         }
-        .prefix(3)
         .map { $0 }
     let heroPhoto = included[photoIdx]
     return CarouselSlide(
@@ -3352,15 +3544,15 @@ struct CarouselSlideView: View {
                     }
                 }
             }
-            mapSplitSeamOutline(photoJoinY: seamOutlineY)
+            splitSeamOutline(photoJoinY: seamOutlineY)
         }
         .frame(width: width, height: height)
         .clipped()
     }
 
-    /// White seam on the photo/map boundary (straight bar or curved stroke aligned with split masks).
+    /// White seam on the split boundary (straight bar or curved stroke aligned with split masks). Map + place slides.
     @ViewBuilder
-    private func mapSplitSeamOutline(photoJoinY: CGFloat) -> some View {
+    private func splitSeamOutline(photoJoinY: CGFloat) -> some View {
         let curveBandH: CGFloat = 48
         Group {
             if slide.splitDividerStyle == .straight {
@@ -3403,7 +3595,11 @@ struct CarouselSlideView: View {
         // Curved seams need vertical bleed so the bezier can travel above/below the
         // nominal split line without flattening near the corners (especially bottom-left).
         let seamBleed = useCurvedMasks ? min(22, max(10, slotW * 0.038)) : 0
-        return VStack(spacing: useCurvedMasks ? -seamBleed : 0) {
+        let seamOutlineY = useCurvedMasks
+            ? (slotH + seamBleed * 0.50 + 0.5)
+            : slotH
+        return ZStack(alignment: .top) {
+            VStack(spacing: useCurvedMasks ? -seamBleed : 0) {
                 Group {
                     if useCurvedMasks {
                         Group {
@@ -3496,6 +3692,8 @@ struct CarouselSlideView: View {
                     }
                 }
             }
+            splitSeamOutline(photoJoinY: seamOutlineY)
+        }
         .frame(width: width, height: height)
         .clipped()
     }
@@ -5646,9 +5844,9 @@ struct SlideTextEditorView: View {
         withTransaction(layoutTxn) {
             if layout == .single {
                 if slides[index].layout == .pip {
-                    distributeCollapsedPIPHeroesAcrossStopSiblings(slides: &slides, primaryIndex: index)
+                    releaseMultiLayoutGrouping(primaryIndex: index, slides: &slides)
                 } else if slides[index].layout == .split {
-                    distributeCollapsedSplitHeroesAcrossStopSiblings(slides: &slides, splitIndex: index)
+                    releaseSplitLayoutGrouping(splitIndex: index, slides: &slides)
                 }
             }
             slides[index].layout = layout
@@ -5663,12 +5861,24 @@ struct SlideTextEditorView: View {
             if layout != .pip {
                 slides[index].pipThumbnailFramings = []
             }
-            for i in slides.indices where i != index {
-                guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
-                slides[i].isSelected = (layout != .pip)
+            if layout == .pip {
+                guard let stopID,
+                      multiClusterCandidateIndices(from: index, stopID: stopID, in: slides).count > 1 else {
+                    slides[index].layout = .single
+                    return
+                }
+                applyMultiLayoutGrouping(primaryIndex: index, slides: &slides)
+            } else if let stopID {
+                for i in slides.indices where i != index {
+                    guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
+                    slides[i].isSelected = true
+                }
+                if placeStopSiblingIndices(stopID: stopID, in: slides).count > 1 {
+                    repopulatePipPayloadsForPlaceStop(stopID: stopID, slides: &slides)
+                }
             }
         }
-        if layout == .pip {
+        if slides[index].layout == .pip {
             activeStyleCategory = nil
             withAnimation(.easeOut(duration: 0.18)) {
                 selectedBlock = .pipCluster
@@ -5677,7 +5887,7 @@ struct SlideTextEditorView: View {
             if selectedBlock == .pipCluster { selectedBlock = nil }
             activePIPCategory = nil
             pipInsetReplaceSession = nil
-            if layout == .split {
+            if slides[index].layout == .split {
                 autoFillSplitBottomIfTwoPhotos(slideIndex: index)
             }
             invalidatePIPBackgroundRemovalForMutation(at: index)
@@ -5715,7 +5925,7 @@ struct SlideTextEditorView: View {
         if let slide = currentSlide {
             switch slide.kind {
             case .placeStop:
-                if !slide.pipImages.isEmpty {
+                if placeStopOffersLayoutModes(at: editorPagerFocusedSlideIndex, in: slides) {
                     let layouts = CarouselSlideLayout.allCases
                     let focusedIndex = editorPagerFocusedSlideIndex
                     let modeTrackCorner: CGFloat = 11
@@ -6118,14 +6328,13 @@ struct SlideTextEditorView: View {
         guard slides.indices.contains(slideIndex) else { return }
         guard slides[slideIndex].kind == .placeStop else { return }
         let stopID = slides[slideIndex].placeStop?.id
-        distributeCollapsedPIPHeroesAcrossStopSiblings(slides: &slides, primaryIndex: slideIndex)
+        releaseMultiLayoutGrouping(primaryIndex: slideIndex, slides: &slides)
         slides[slideIndex].layout = .single
         slides[slideIndex].splitTopFraming = nil
         slides[slideIndex].splitBottomFraming = nil
         invalidatePIPBackgroundRemovalForMutation(at: slideIndex)
-        for i in slides.indices where i != slideIndex {
-            guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
-            slides[i].isSelected = true
+        if let stopID {
+            repopulatePipPayloadsForPlaceStop(stopID: stopID, slides: &slides)
         }
     }
 
@@ -6848,11 +7057,10 @@ struct SlideTextEditorView: View {
         guard slides.indices.contains(slideIndex),
               slides[slideIndex].layout == .split,
               let stop = slides[slideIndex].placeStop else { return }
-        let included = stop.photos.filter(\.isIncluded)
-        guard included.count == 2 else { return }
-        guard let heroID = slides[slideIndex].heroPhotoID else { return }
-        guard let partner = included.first(where: { $0.id != heroID }) else { return }
-        // If we've already got this exact pair set, keep it.
+        let cluster = multiClusterCandidateIndices(from: slideIndex, stopID: stop.id, in: slides)
+        guard cluster.count >= 2,
+              let bottomID = slides[cluster[1]].heroPhotoID,
+              let partner = stop.photos.first(where: { $0.id == bottomID }) else { return }
         if slides[slideIndex].splitBottomPhotoID == partner.id,
            slides[slideIndex].splitBottomImage != nil { return }
         setSplitBottomPhoto(partner, slideIndex: slideIndex)
@@ -10968,8 +11176,8 @@ struct SocialPostStudioSheet: View {
 
                 Spacer(minLength: 0)
 
-                // Layout toggle — only for placeStop slides with multiple photos loaded
-                if slide.kind == .placeStop, !slide.pipImages.isEmpty {
+                // Layout toggle — multi-photo places (payload restored after leaving Multi).
+                if slide.kind == .placeStop, placeStopOffersLayoutModes(at: index, in: slides) {
                     HStack(spacing: 6) {
                         ForEach(CarouselSlideLayout.allCases) { layout in
                             let isActive = slide.layout == layout
@@ -11014,9 +11222,9 @@ struct SocialPostStudioSheet: View {
         withTransaction(layoutTxn) {
             if layout == .single {
                 if slides[index].layout == .pip {
-                    distributeCollapsedPIPHeroesAcrossStopSiblings(slides: &slides, primaryIndex: index)
+                    releaseMultiLayoutGrouping(primaryIndex: index, slides: &slides)
                 } else if slides[index].layout == .split {
-                    distributeCollapsedSplitHeroesAcrossStopSiblings(slides: &slides, splitIndex: index)
+                    releaseSplitLayoutGrouping(splitIndex: index, slides: &slides)
                 }
             }
             slides[index].layout = layout
@@ -11033,15 +11241,30 @@ struct SocialPostStudioSheet: View {
                 slides[index].pipProcessedImages = []
                 slides[index].pipThumbnailFramings = []
             }
-            for i in slides.indices where i != index {
-                guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
-                slides[i].isSelected = (layout != .pip)
+            if layout == .pip {
+                guard let stopID,
+                      multiClusterCandidateIndices(from: index, stopID: stopID, in: slides).count > 1 else {
+                    slides[index].layout = .single
+                    return
+                }
+                applyMultiLayoutGrouping(primaryIndex: index, slides: &slides)
+            } else if let stopID {
+                for i in slides.indices where i != index {
+                    guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
+                    slides[i].isSelected = true
+                }
+                if placeStopSiblingIndices(stopID: stopID, in: slides).count > 1 {
+                    repopulatePipPayloadsForPlaceStop(stopID: stopID, slides: &slides)
+                }
             }
         }
-        if layout == .pip {
+        if slides[index].layout == .pip {
             previewRecenterAfterPIPIndex = index
             previewRecenterAfterPIPNonce += 1
-        } else if layout == .split {
+            if let stopID {
+                Task { await rebuildPIPPayloadsForStop(stopID: stopID) }
+            }
+        } else if slides[index].layout == .split {
             autoFillSplitBottomIfTwoPhotos(forSlideAt: index)
         }
     }
@@ -11058,26 +11281,24 @@ struct SocialPostStudioSheet: View {
         guard slides.indices.contains(index),
               slides[index].layout == .split,
               let stop = slides[index].placeStop else { return }
-        let included = stop.photos.filter(\.isIncluded)
-        guard included.count == 2 else { return }
-        guard let heroID = slides[index].heroPhotoID else { return }
-        guard let other = included.first(where: { $0.id != heroID }) else { return }
-        slides[index].splitBottomPhotoID = other.id
+        let cluster = multiClusterCandidateIndices(from: index, stopID: stop.id, in: slides)
+        guard cluster.count >= 2,
+              let bottomID = slides[cluster[1]].heroPhotoID else { return }
+        slides[index].splitBottomPhotoID = bottomID
         slides[index].splitBottomFraming = nil
-        if let pipIdx = slides[index].pipPhotoIDs.firstIndex(of: other.id),
+        if let pipIdx = slides[index].pipPhotoIDs.firstIndex(of: bottomID),
            slides[index].pipImages.indices.contains(pipIdx) {
             slides[index].splitBottomImage = slides[index].pipImages[pipIdx]
+        } else if let img = slides[cluster[1]].heroImage {
+            slides[index].splitBottomImage = img
         }
-        // Keep only the chosen second photo collapsed in split mode.
-        let stopID = slides[index].placeStop?.id
-        if let stopID {
-            for i in slides.indices where i != index {
-                guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
-                if slides[i].heroPhotoID == other.id {
-                    slides[i].isSelected = false
-                } else {
-                    slides[i].isSelected = true
-                }
+        let stopID = stop.id
+        for i in slides.indices where i != index {
+            guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
+            if slides[i].heroPhotoID == bottomID {
+                slides[i].isSelected = false
+            } else {
+                slides[i].isSelected = true
             }
         }
     }
@@ -11096,27 +11317,18 @@ struct SocialPostStudioSheet: View {
                       let stopID = slides[i].placeStop?.id,
                       !seenStopIDs.contains(stopID) else { continue }
                 seenStopIDs.insert(stopID)
+                guard multiClusterCandidateIndices(from: i, stopID: stopID, in: slides).count > 1 else { continue }
                 slides[i].layout = .pip
-                for j in slides.indices where j != i {
-                    guard slides[j].kind == .placeStop,
-                          slides[j].placeStop?.id == stopID else { continue }
-                    slides[j].isSelected = false
-                    // Release pip payload from hidden siblings — the .pip slide owns the cluster.
-                    // Sibling heroImages stay (needed for Slides Management thumbnails).
-                    slides[j].pipImages = []
-                    slides[j].pipPhotoIDs = []
-                    slides[j].pipThumbnailFramings = []
-                    slides[j].pipProcessedImages = []
-                }
+                applyMultiLayoutGrouping(primaryIndex: i, slides: &slides)
             }
         }
     }
 
     /// Called after `loadSlides()` completes. If selected slide count > 34 (common social carousel cap),
-    /// first auto-enables PIP for every multi-photo stop, then alerts if still over limit.
+    /// alerts so the user can deselect slides or merge photos with Multi (PIP) — we no longer auto-enable PIP,
+    /// so each included photo stays its own slide for share/export order.
     private func checkSocialCarouselOverflow() {
         guard !exportFormat.isSingleSlide, selectedSlides.count > 34 else { return }
-        autoEnablePIPForAllGroups()
         let remaining = selectedSlides.count
         guard remaining > 34 else { return }
         socialCarouselOverflowSlideCount = remaining
@@ -11131,10 +11343,6 @@ struct SocialPostStudioSheet: View {
             pendingOverflowAfterFirstRunLayoutPicker = true
             return
         }
-        // Defer to the next main-actor hop so the withTransaction mutations inside
-        // autoEnablePIPForAllGroups are fully committed before the alert is presented.
-        // Presenting an alert in the same transaction as a withTransaction state change
-        // can cause SwiftUI to immediately dismiss it.
         Task { @MainActor in
             showSocialCarouselOverflowAlert = true
         }
@@ -11201,7 +11409,7 @@ struct SocialPostStudioSheet: View {
         var newExcluded = excludedStudioPhotoKeys
         newExcluded.remove(key)
         let insertAt = insertIndexForPlacePhotoInDay(
-            day: day, stopID: stopID, photoID: photoID,
+            day: day, blog: blog, stopID: stopID, photoID: photoID,
             slides: slides, excludedKeys: newExcluded
         )
         let ew = exportWidth
@@ -11218,6 +11426,12 @@ struct SocialPostStudioSheet: View {
                 excludedStudioPhotoKeys = newExcluded
                 let bounded = min(max(0, insertAt), slides.count)
                 slides.insert(slide, at: bounded)
+                reconcilePlaceSlidesOrderInDeck(
+                    slides: &slides,
+                    blog: blog,
+                    excludedKeys: newExcluded,
+                    placesOnlyMode: placesOnlyMode
+                )
             }
             await rebuildPIPPayloadsForStop(stopID: stopID)
         }
@@ -11287,7 +11501,9 @@ struct SocialPostStudioSheet: View {
                 slides[i].pipProcessedImages = []
                 continue
             }
-            let pipIDs = Array(orderedPresentIDs.filter { $0 != hid }.prefix(3))
+            let pipIDs = multiClusterCandidateIndices(from: i, stopID: stopID, in: slides)
+                .dropFirst()
+                .compactMap { slides[$0].heroPhotoID }
             // Keep `pipPhotoIDs` and `pipImages` index-aligned: `compactMap` on images
             // alone shifts thumbnails when any neighbor fails to load, so the cluster
             // can show the wrong photo next to each id (and SwiftUI reuse looks worse).
@@ -11471,16 +11687,14 @@ struct SocialPostStudioSheet: View {
                 for (photoIdx, photo) in included.enumerated() {
                     // Always emit a `.placeStop` for each included photo (including when the place intro map already shows a single photo).
                     let hero = stopImages[photoIdx]
-                    // PIP images = all other loaded images from this stop (up to 3).
-                    // We zip image + photo ID so the editor can compute the
-                    // "available to add" set (photos at this place that aren't
-                    // currently shown in the cluster) without a second lookup.
+                    // PIP payload for Multi: the next up to three photos after this hero (four per group total).
                     let pipPairs: [(UIImage, UUID)] = included.enumerated()
                         .compactMap { (idx, candidate) -> (UIImage, UUID)? in
-                            guard idx != photoIdx, let img = stopImages[idx] else { return nil }
+                            guard idx > photoIdx,
+                                  idx <= photoIdx + CarouselStudioMultiPhotoGroup.maxInsetThumbnails,
+                                  let img = stopImages[idx] else { return nil }
                             return (img, candidate.id)
                         }
-                        .prefix(3)
                         .map { $0 }
                     let pipImages: [UIImage] = pipPairs.map(\.0)
                     let pipPhotoIDs: [UUID] = pipPairs.map(\.1)
@@ -11523,7 +11737,14 @@ struct SocialPostStudioSheet: View {
         // All @State touches must run on the main actor (async load work may finish off-main).
         await MainActor.run {
             guard generation == loadSlidesGeneration else { return }
-            slides = result
+            var deck = result
+            reconcilePlaceSlidesOrderInDeck(
+                slides: &deck,
+                blog: blog,
+                excludedKeys: excludedSnapshot,
+                placesOnlyMode: placesOnlyMode
+            )
+            slides = deck
             exportRenderAspectRatio = formatAspectRatio
             slidePreparationProgress = 1
             isLoading = false
