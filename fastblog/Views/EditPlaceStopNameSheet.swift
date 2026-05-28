@@ -48,6 +48,10 @@ struct EditPlaceStopNameSheet: View {
     @State private var pendingPhotoCoordinateMismatchSave: PendingPhotoCoordinateMismatchSave?
     @State private var showMapTapPOIDisambiguation = false
     @State private var mapTapPOIDisambiguationCandidates: [MapTapPOICandidate] = []
+    /// True when the picker lists Kakao Local rows around a direct tile POI tap (SDK has no label).
+    @State private var mapTapPOIListModeNearby = false
+    /// Pushed inside the nearby picker stack (not a second sheet).
+    @State private var mapTapPOIDetailCandidate: MapTapPOICandidate?
     /// ISO country code for the place's location, resolved on appear. Drives provider selection and map link choice.
     @State private var placeCountryCode: String = ""
     /// Incremented to request zoom on the embedded `MKMapView` (handled in `TappableMapView.updateUIView`).
@@ -158,7 +162,9 @@ struct EditPlaceStopNameSheet: View {
                         "“\(pending.finalName)” is about \(formattedPlaceSeparation(pending.separationMeters)) from where your photo was taken — farther than a typical golf course. Move the map pin to your photo’s location?"
                     )
                 }
-                .sheet(isPresented: $showMapTapPOIDisambiguation) {
+                .sheet(isPresented: $showMapTapPOIDisambiguation, onDismiss: {
+                    mapTapPOIDetailCandidate = nil
+                }) {
                     mapTapPOIDisambiguationSheet
                 }
                 .sheet(isPresented: $showMapTapCoachmarkSheet, onDismiss: {
@@ -579,62 +585,100 @@ struct EditPlaceStopNameSheet: View {
         mapTapResolvedAsPOI = true
         showMapTapPOIDisambiguation = false
         mapTapPOIDisambiguationCandidates = []
+        mapTapPOIListModeNearby = false
+        mapTapPOIDetailCandidate = nil
     }
 
     private var mapTapPOIDisambiguationSheet: some View {
         NavigationStack {
             List(mapTapPOIDisambiguationCandidates) { candidate in
-                Button {
-                    applyMapTapPOIChoice(candidate)
-                } label: {
-                    let p = PlacePOICategoryPresentation.presentation(forRaw: candidate.category)
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: p.symbol)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(p.color)
-                            .frame(width: 24, height: 24)
-                            .background(
-                                Circle()
-                                    .fill(p.color.opacity(0.18))
-                            )
-                            .overlay(
-                                Circle()
-                                    .stroke(p.color.opacity(0.35), lineWidth: 1)
-                            )
-                            .frame(width: 24, alignment: .leading)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(candidate.name)
-                                .font(.body.weight(.medium))
-                                .foregroundStyle(.primary)
-                            Text(
-                                candidate.distanceMeters < 8
-                                    ? "Very near your tap"
-                                    : String(format: "About %.0f m from your tap", candidate.distanceMeters)
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        }
+                HStack(alignment: .center, spacing: 8) {
+                    Button {
+                        applyMapTapPOIChoice(candidate)
+                    } label: {
+                        mapTapPOICandidateRowLabel(candidate)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
+                    .buttonStyle(.plain)
+
+                    if candidate.detailWebURL != nil {
+                        Button {
+                            mapTapPOIDetailCandidate = candidate
+                        } label: {
+                            Image(systemName: "info.circle")
+                                .font(.title3)
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 36, height: 36)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("View place details on Kakao Map")
+                    }
                 }
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 12))
+            }
+            .navigationDestination(item: $mapTapPOIDetailCandidate) { candidate in
+                KakaoPlaceDetailSheet(candidate: candidate)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 2) {
-                        Text("Which place is this?")
+                        Text(mapTapPOIListModeNearby ? "Places near your tap" : "Which place is this?")
                             .font(.headline)
-                        Text("Choose the correct place name.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Text(
+                            mapTapPOIListModeNearby
+                                ? "Pick the place you tapped on the map."
+                                : "Choose the correct place name."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
                 }
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    private func mapTapPOICandidateRowLabel(_ candidate: MapTapPOICandidate) -> some View {
+        let p = PlacePOICategoryPresentation.presentation(forRaw: candidate.category)
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: p.symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(p.color)
+                .frame(width: 24, height: 24)
+                .background(
+                    Circle()
+                        .fill(p.color.opacity(0.18))
+                )
+                .overlay(
+                    Circle()
+                        .stroke(p.color.opacity(0.35), lineWidth: 1)
+                )
+                .frame(width: 24, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(candidate.name)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                if let address = candidate.addressSubtitle {
+                    Text(address)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Text(
+                    candidate.distanceMeters < 8
+                        ? "Very near your tap"
+                        : String(format: "About %.0f m from your tap", candidate.distanceMeters)
+                )
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
     }
 
     private var hasChanges: Bool {
@@ -936,6 +980,21 @@ struct EditPlaceStopNameSheet: View {
             guard !Task.isCancelled else { return }
             switch result {
             case .single(let name, let category, let coord):
+                let singleResult = MapTapPOIResult.single(name: name, category: category, coordinate: coord)
+                if let nearbyPicker = await searchViewModel.kakaoNearbyPickerCandidatesIfNeeded(
+                    for: singleResult,
+                    near: coordinate,
+                    kakaoZoomLevel: kakaoZoomLevel,
+                    isDirectPOITap: isDirectPOITap
+                ) {
+                    debugPrint("[KakaoMap] resolveKakaoPOI nearby picker (\(nearbyPicker.count) places)")
+                    selectedCoordinate = coordinate
+                    mapTapPOIDisambiguationCandidates = nearbyPicker
+                    mapTapPOIListModeNearby = true
+                    showMapTapPOIDisambiguation = true
+                    mapTapResolvedAsPOI = true
+                    return
+                }
                 debugPrint("[KakaoMap] resolveKakaoPOI POI single '\(name)'")
                 editedTitle = name
                 selectedCoordinate = coord
@@ -948,6 +1007,7 @@ struct EditPlaceStopNameSheet: View {
                 debugPrint("[KakaoMap] resolveKakaoPOI ambiguous (\(candidates.count) choices)")
                 selectedCoordinate = coordinate
                 mapTapPOIDisambiguationCandidates = candidates
+                mapTapPOIListModeNearby = isDirectPOITap
                 showMapTapPOIDisambiguation = true
             case .none:
                 let name = await searchViewModel.resolveCoordinateName(at: coordinate)

@@ -33,11 +33,15 @@ struct KakaoPlace: Decodable {
     let x: String
     /// Latitude string
     let y: String
+    /// Kakao Map place detail page (`http://place.map.kakao.com/{id}`).
+    let place_url: String
+    let phone: String
     /// Meters from search center when `x`/`y`/`radius` (or category search center) are used; may be absent.
     let distance: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, place_name, category_name, category_group_code, address_name, road_address_name, x, y, distance
+        case id, place_name, category_name, category_group_code, address_name, road_address_name, x, y
+        case place_url, phone, distance
     }
 
     init(from decoder: Decoder) throws {
@@ -50,6 +54,8 @@ struct KakaoPlace: Decodable {
         road_address_name = try c.decodeIfPresent(String.self, forKey: .road_address_name) ?? ""
         x = try c.decode(String.self, forKey: .x)
         y = try c.decode(String.self, forKey: .y)
+        place_url = try c.decodeIfPresent(String.self, forKey: .place_url) ?? ""
+        phone = try c.decodeIfPresent(String.self, forKey: .phone) ?? ""
         if let s = try c.decodeIfPresent(String.self, forKey: .distance) {
             distance = s
         } else if let i = try c.decodeIfPresent(Int.self, forKey: .distance) {
@@ -75,6 +81,27 @@ struct KakaoPlace: Decodable {
     /// Road address preferred over lot address for display.
     var displaySubtitle: String {
         road_address_name.isEmpty ? address_name : road_address_name
+    }
+
+    /// HTTPS URL for the Kakao Map place detail page (API `place_url` or `place.map.kakao.com/{id}`).
+    var mapDetailURL: URL? {
+        let trimmed = place_url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            let normalized = trimmed.hasPrefix("http://")
+                ? "https://" + trimmed.dropFirst("http://".count)
+                : trimmed
+            if let url = URL(string: normalized) { return url }
+        }
+        let placeId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !placeId.isEmpty else { return nil }
+        return URL(string: "https://place.map.kakao.com/\(placeId)")
+    }
+
+    /// `kakaomap://place?id=` deep link when the Kakao Map app is installed.
+    var kakaoMapAppPlaceURL: URL? {
+        let placeId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !placeId.isEmpty else { return nil }
+        return URL(string: "kakaomap://place?id=\(placeId)")
     }
 
     /// Maps Kakao category fields to an MKPointOfInterestCategory raw value.
@@ -259,8 +286,7 @@ actor KakaoLocalService {
         "CS2",  // convenience stores
         "MT1",  // supermarkets
         "SW8",  // subway stations
-        "PK6",  // parking
-        "OL7",  // gas / charging
+        // PK6 (parking) and OL7 (gas/charging) omitted — infrastructure, not travel destinations.
         "BK9",  // banks
         "HP8",  // hospitals
         "PM9",  // pharmacies
@@ -353,11 +379,12 @@ actor KakaoLocalService {
     private static func landmarkTierSearchParams(for code: String, baseRadius: Int, isDirectPOITap: Bool) -> (radius: Int, size: Int) {
         switch code {
         case "AT4":
-            return (max(baseRadius, isDirectPOITap ? 900 : 520), 15)
+            // Large parks/resorts/islands often have Kakao centroids several hundred meters from the visible map label.
+            return (max(baseRadius, isDirectPOITap ? 1200 : 900), 15)
         case "CT1":
-            return (max(baseRadius, isDirectPOITap ? 720 : 450), 12)
+            return (max(baseRadius, isDirectPOITap ? 900 : 650), 12)
         case "PO3":
-            return (max(baseRadius, isDirectPOITap ? 520 : 360), 10)
+            return (max(baseRadius, isDirectPOITap ? 650 : 450), 10)
         default:
             return (baseRadius, 10)
         }

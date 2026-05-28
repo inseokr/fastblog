@@ -243,6 +243,7 @@
 		BB000409 /* EditBlogPhotoFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000408 /* EditBlogPhotoFlowView.swift */; };
 		BB00040B /* CameraRollToBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00040A /* CameraRollToBlogView.swift */; };
 		BB00040D /* POIInfoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00040C /* POIInfoSheet.swift */; };
+		BB00040F /* KakaoPlaceDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00040E /* KakaoPlaceDetailSheet.swift */; };
 		BB00A001 /* Analytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00A002 /* Analytics.swift */; };
 		BB00AE01 /* AnalyticsEventType.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AE02 /* AnalyticsEventType.swift */; };
 		BB00AI01 /* AnalyticsIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AI02 /* AnalyticsIdentity.swift */; };
@@ -512,6 +513,7 @@
 		BB000408 /* EditBlogPhotoFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditBlogPhotoFlowView.swift; sourceTree = "<group>"; };
 		BB00040A /* CameraRollToBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollToBlogView.swift; sourceTree = "<group>"; };
 		BB00040C /* POIInfoSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = POIInfoSheet.swift; sourceTree = "<group>"; };
+		BB00040E /* KakaoPlaceDetailSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KakaoPlaceDetailSheet.swift; sourceTree = "<group>"; };
 		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
 		BB00AE02 /* AnalyticsEventType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsEventType.swift; sourceTree = "<group>"; };
 		BB00AI02 /* AnalyticsIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsIdentity.swift; sourceTree = "<group>"; };
@@ -772,6 +774,7 @@
 				B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */,
 				BB0003E0 /* GoogleSearchEmbeddedWebView.swift */,
 				BB00040C /* POIInfoSheet.swift */,
+				BB00040E /* KakaoPlaceDetailSheet.swift */,
 				4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */,
 				5FSCME01E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift */,
 				BB0002A2 /* StoryWritingStyleSheet.swift */,
@@ -1224,6 +1227,7 @@
 				719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */,
 				BB0003E1 /* GoogleSearchEmbeddedWebView.swift in Sources */,
 				BB00040D /* POIInfoSheet.swift in Sources */,
+				BB00040F /* KakaoPlaceDetailSheet.swift in Sources */,
 				3A9F2B1C4D8E5F7A2B0C6E91 /* PhotoCaptionEditSheet.swift in Sources */,
 				5FSCME02E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift in Sources */,
 				BB0002A1 /* StoryWritingStyleSheet.swift in Sources */,

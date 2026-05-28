@@ -9,13 +9,103 @@ import MapKit
 import SwiftUI
 
 /// A named POI returned for a map tap when several places are too close to pick automatically.
-struct MapTapPOICandidate: Identifiable {
-    var id: String { "\(name)|\(coordinate.latitude)|\(coordinate.longitude)" }
+struct MapTapPOICandidate: Identifiable, Hashable {
+    var id: String {
+        if let kakaoPlaceId, !kakaoPlaceId.isEmpty { return "kakao|\(kakaoPlaceId)" }
+        return "\(name)|\(coordinate.latitude)|\(coordinate.longitude)"
+    }
     let name: String
     let category: String?
     let coordinate: CLLocationCoordinate2D
     /// Distance from the user's tap to this POI's placemark (meters).
     let distanceMeters: Double
+    /// Kakao Local place id — used for `place.map.kakao.com` and `kakaomap://` links.
+    let kakaoPlaceId: String?
+    let kakaoPlaceURLString: String?
+    let addressSubtitle: String?
+    let categoryLabel: String?
+    let phone: String?
+
+    init(
+        name: String,
+        category: String?,
+        coordinate: CLLocationCoordinate2D,
+        distanceMeters: Double,
+        kakaoPlaceId: String? = nil,
+        kakaoPlaceURLString: String? = nil,
+        addressSubtitle: String? = nil,
+        categoryLabel: String? = nil,
+        phone: String? = nil
+    ) {
+        self.name = name
+        self.category = category
+        self.coordinate = coordinate
+        self.distanceMeters = distanceMeters
+        self.kakaoPlaceId = kakaoPlaceId
+        self.kakaoPlaceURLString = kakaoPlaceURLString
+        self.addressSubtitle = addressSubtitle
+        self.categoryLabel = categoryLabel
+        self.phone = phone
+    }
+
+    static func from(
+        kakaoPlace place: KakaoPlace,
+        distanceMeters: Double,
+        fallbackCoordinate: CLLocationCoordinate2D
+    ) -> MapTapPOICandidate {
+        let trimmedName = place.place_name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let categoryLabel = place.category_name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let address = place.displaySubtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return MapTapPOICandidate(
+            name: trimmedName,
+            category: place.poiCategoryRaw,
+            coordinate: place.coordinate ?? fallbackCoordinate,
+            distanceMeters: distanceMeters,
+            kakaoPlaceId: place.id,
+            kakaoPlaceURLString: place.place_url,
+            addressSubtitle: address.isEmpty ? nil : address,
+            categoryLabel: categoryLabel.isEmpty ? nil : categoryLabel,
+            phone: place.phone.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        )
+    }
+
+    /// In-app Kakao Map place page (prefers API `place_url`, then place id, then name search).
+    var detailWebURL: URL? {
+        if let raw = kakaoPlaceURLString?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            let normalized = raw.hasPrefix("http://")
+                ? "https://" + raw.dropFirst("http://".count)
+                : raw
+            if let url = URL(string: normalized) { return url }
+        }
+        if let placeId = kakaoPlaceId?.trimmingCharacters(in: .whitespacesAndNewlines), !placeId.isEmpty,
+           let url = URL(string: "https://place.map.kakao.com/\(placeId)") {
+            return url
+        }
+        let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
+        return URL(string: "https://map.kakao.com/?q=\(encoded)")
+    }
+
+    var kakaoMapAppURL: URL? {
+        guard let placeId = kakaoPlaceId?.trimmingCharacters(in: .whitespacesAndNewlines), !placeId.isEmpty else {
+            return nil
+        }
+        return URL(string: "kakaomap://place?id=\(placeId)")
+    }
+
+    static func == (lhs: MapTapPOICandidate, rhs: MapTapPOICandidate) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        let t = trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
 }
 
 /// Result of resolving a bare map tap (no `MKMapFeatureAnnotation`) to a place.
@@ -335,6 +425,321 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         }
     }
 
+    /// Kakao category groups omitted from map-tap nearby lists and auto-pick (infrastructure, not destinations).
+    private static let kakaoExcludedMapTapCategoryCodes: Set<String> = [
+        "PK6",  // parking
+        "OL7",  // gas / EV charging only
+    ]
+
+    /// Boarding gates, ticket booths, etc. — not the main destination when the user taps a map label
+    /// (e.g. "돌산 탑승장" vs "여수해상케이블카" at the same site).
+    private static func kakaoMapTapPOINameIsSubFacility(_ name: String) -> Bool {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { return false }
+        let markers = [
+            "탑승장", "승강장", "하차장", "승하차", "매표소", "매표실", "발권",
+            "입구", "출구", "정문", "후문", "동문", "서문", "남문", "북문",
+            "안내소", "안내센터", "관광안내", "주차타워",
+        ]
+        return markers.contains { n.localizedCaseInsensitiveContains($0) }
+    }
+
+    /// Restrooms, parking, transit stops, etc. — excluded from nearby picker and auto-resolve.
+    private static func kakaoMapTapPOINameIsExcluded(_ name: String) -> Bool {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { return true }
+        let blocked = [
+            "화장실", "공중화장실", "변기", "장애인화장실",
+            "주차장", "주차타워", "주차빌딩", "기계식주차", "코인주차", "발렛",
+            "지하주차", "옥외주차",
+            "승하차장", "버스정류", "정류장", "택시승강",
+            "ATM", "에이티엠", "무인민원", "경비실", "관리사무소",
+            "쓰레기", "분리수거", "택배함", "우편함",
+            "전기차충전", "충전소", "주유소", "LPG",
+        ]
+        return blocked.contains { n.localizedCaseInsensitiveContains($0) }
+    }
+
+    private static func kakaoMapTapPlaceIsExcluded(_ place: KakaoPlace) -> Bool {
+        if kakaoExcludedMapTapCategoryCodes.contains(place.category_group_code) {
+            return true
+        }
+        return kakaoMapTapPOINameIsExcluded(place.place_name)
+    }
+
+    private struct KakaoMapTapScoredPlace {
+        let place: KakaoPlace
+        let rawDistanceMeters: Double
+        let effectiveDistanceMeters: Double
+    }
+
+    private static func kakaoMapTapScoreMultiplier(for place: KakaoPlace) -> Double {
+        var m = categoryPriorityMultiplier(for: place.category_group_code)
+        if kakaoMapTapPOINameIsSubFacility(place.place_name) { m *= 1.45 }
+        return m
+    }
+
+    private static func kakaoMapTapLandmarkSortDistance(rawMeters: Double, placeName: String) -> Double {
+        rawMeters * (kakaoMapTapPOINameIsSubFacility(placeName) ? 1.45 : 1.0)
+    }
+
+    /// Extra diagnostic output (console filter: `[POI-debug] mapTap-score`).
+    /// Keep `false` for normal use; flip on when debugging missing candidates.
+    private static let kakaoMapTapExplainScoreDebug = true
+
+    private static func kakaoMaxAcceptDistanceMeters(
+        for place: KakaoPlace,
+        searchRadius: Int,
+        isDirectPOITap: Bool
+    ) -> Double {
+        switch place.category_group_code {
+        case "AT4": return Double(max(searchRadius, isDirectPOITap ? 1200 : 900))
+        case "CT1": return Double(max(searchRadius, isDirectPOITap ? 900 : 650))
+        case "PO3": return Double(max(searchRadius, isDirectPOITap ? 650 : 450))
+        default:    return Double(searchRadius)
+        }
+    }
+
+    private func kakaoScorePlacesForMapTap(
+        places: [KakaoPlace],
+        coordinate: CLLocationCoordinate2D,
+        searchRadius: Int,
+        isDirectPOITap: Bool
+    ) -> [KakaoMapTapScoredPlace] {
+        let tapLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        enum DropReason: String {
+            case excluded = "excluded(name/category)"
+            case missingCoordinate = "missing coordinate"
+            case emptyName = "empty name"
+            case beyondMaxAccept = "beyond maxAccept"
+        }
+
+        var kept: [KakaoMapTapScoredPlace] = []
+        var dropCounts: [DropReason: Int] = [:]
+        var dropSamples: [String] = []
+        var keepSamples: [String] = []
+
+        func recordDrop(_ reason: DropReason, place: KakaoPlace, detail: String) {
+            dropCounts[reason, default: 0] += 1
+            guard Self.kakaoMapTapExplainScoreDebug, dropSamples.count < 14 else { return }
+            let name = place.place_name.trimmingCharacters(in: .whitespacesAndNewlines)
+            dropSamples.append("drop=\(reason.rawValue) '\(name)' [\(place.category_group_code)] \(detail)")
+        }
+
+        for place in places {
+            if Self.kakaoMapTapPlaceIsExcluded(place) {
+                recordDrop(.excluded, place: place, detail: "")
+                continue
+            }
+            guard let coord = place.coordinate else {
+                recordDrop(.missingCoordinate, place: place, detail: "")
+                continue
+            }
+            let name = place.place_name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else {
+                recordDrop(.emptyName, place: place, detail: "")
+                continue
+            }
+
+            let rawDist = place.distanceMetersFromAPI
+                ?? tapLocation.distance(from: CLLocation(latitude: coord.latitude, longitude: coord.longitude))
+            let maxAccept = Self.kakaoMaxAcceptDistanceMeters(
+                for: place,
+                searchRadius: searchRadius,
+                isDirectPOITap: isDirectPOITap
+            )
+            if rawDist > maxAccept {
+                recordDrop(.beyondMaxAccept, place: place, detail: "raw=\(Int(rawDist))m max=\(Int(maxAccept))m")
+                continue
+            }
+
+            let categoryMult = Self.categoryPriorityMultiplier(for: place.category_group_code)
+            let subFacilityMult: Double = Self.kakaoMapTapPOINameIsSubFacility(name) ? 1.45 : 1.0
+            let mult = categoryMult * subFacilityMult
+            let effective = rawDist * mult
+
+            if Self.kakaoMapTapExplainScoreDebug, keepSamples.count < 14 {
+                let catStr = String(format: "%.2f", categoryMult)
+                let subStr = String(format: "%.2f", subFacilityMult)
+                keepSamples.append(
+                    "keep '\(name)' [\(place.category_group_code)] raw=\(Int(rawDist))m max=\(Int(maxAccept))m ×cat=\(catStr) ×sub=\(subStr) → eff=\(Int(effective))m"
+                )
+            }
+
+            kept.append(
+                KakaoMapTapScoredPlace(
+                    place: place,
+                    rawDistanceMeters: rawDist,
+                    effectiveDistanceMeters: effective
+                )
+            )
+        }
+
+        if Self.kakaoMapTapExplainScoreDebug {
+            let keptCount = kept.count
+            let droppedCount = places.count - keptCount
+            let dropSummary = dropCounts
+                .sorted { $0.key.rawValue < $1.key.rawValue }
+                .map { "\($0.key.rawValue)=\($0.value)" }
+                .joined(separator: " · ")
+            Self.poiDebugTrace(
+                "mapTap-score R=\(searchRadius)m directPOI=\(isDirectPOITap) in=\(places.count) kept=\(keptCount) dropped=\(droppedCount) (\(dropSummary))"
+            )
+            for line in keepSamples { Self.poiDebugTrace("mapTap-score \(line)") }
+            for line in dropSamples { Self.poiDebugTrace("mapTap-score \(line)") }
+        }
+
+        return kept.sorted { $0.effectiveDistanceMeters < $1.effectiveDistanceMeters }
+    }
+
+    private func mapTapCandidates(
+        from scored: [KakaoMapTapScoredPlace],
+        fallbackCoordinate: CLLocationCoordinate2D,
+        limit: Int
+    ) -> [MapTapPOICandidate] {
+        let slice = Array(scored.prefix(limit))
+        if Self.kakaoMapTapExplainScoreDebug {
+            let keptTotal = scored.count
+            let returned = slice.count
+            let cutoffEff = slice.last?.effectiveDistanceMeters ?? -1
+            Self.poiDebugTrace(
+                "mapTap-candidates limit=\(limit) returned=\(returned)/kept=\(keptTotal) cutoffEff=\(Int(cutoffEff))m"
+            )
+            for (i, row) in slice.enumerated() {
+                let name = row.place.place_name.trimmingCharacters(in: .whitespacesAndNewlines)
+                let code = row.place.category_group_code.trimmingCharacters(in: .whitespacesAndNewlines)
+                Self.poiDebugTrace(
+                    "mapTap-candidates #\(i + 1) eff=\(Int(row.effectiveDistanceMeters))m raw=\(Int(row.rawDistanceMeters))m · \(name) [\(code)]"
+                )
+            }
+        }
+
+        return slice.map { row in
+            MapTapPOICandidate.from(
+                kakaoPlace: row.place,
+                distanceMeters: row.rawDistanceMeters,
+                fallbackCoordinate: fallbackCoordinate
+            )
+        }
+    }
+
+    /// Ranked nearby places for a Kakao map tap — shared by auto-resolve and the "what's around" picker.
+    func fetchKakaoMapTapNearbyCandidates(
+        near coordinate: CLLocationCoordinate2D,
+        kakaoZoomLevel: Int,
+        isDirectPOITap: Bool = false
+    ) async -> [MapTapPOICandidate] {
+        guard activeProvider == .kakao, KakaoLocalService.shared.isAvailable else { return [] }
+        let strictRadius = Self.kakaoTapRadiusMeters(zoomLevel: kakaoZoomLevel)
+        let searchRadius = isDirectPOITap
+            ? max(strictRadius, Self.kakaoWidePOIFallbackRadiusMeters)
+            : strictRadius
+        let places = await KakaoLocalService.shared.searchNearbyPlacesForMapTap(
+            coordinate: coordinate,
+            radius: searchRadius,
+            isDirectPOITap: isDirectPOITap
+        )
+        let scored = kakaoScorePlacesForMapTap(
+            places: places,
+            coordinate: coordinate,
+            searchRadius: searchRadius,
+            isDirectPOITap: isDirectPOITap
+        )
+        let candidates = mapTapCandidates(from: scored, fallbackCoordinate: coordinate, limit: 20)
+        await MainActor.run {
+            debugLastTapCoordinate = coordinate
+            debugPOICandidates = scored.prefix(50).map { row in
+                DebugPOIEntry(
+                    name: row.place.place_name,
+                    categoryCode: row.place.category_group_code,
+                    rawDistanceMeters: row.rawDistanceMeters,
+                    effectiveDistanceMeters: row.effectiveDistanceMeters
+                )
+            }
+        }
+        return candidates
+    }
+
+    /// Direct tile POI taps: show the nearby list when several places share the tap (SDK has no label).
+    func kakaoNearbyPickerCandidatesIfNeeded(
+        for result: MapTapPOIResult,
+        near coordinate: CLLocationCoordinate2D,
+        kakaoZoomLevel: Int,
+        isDirectPOITap: Bool
+    ) async -> [MapTapPOICandidate]? {
+        guard isDirectPOITap else { return nil }
+        if case .ambiguous = result { return nil }
+
+        var nearby = await fetchKakaoMapTapNearbyCandidates(
+            near: coordinate,
+            kakaoZoomLevel: kakaoZoomLevel,
+            isDirectPOITap: true
+        )
+
+        if case .single(let name, _, _) = result, Self.kakaoMapTapPOINameIsSubFacility(name) {
+            let widened = await fetchKakaoDirectTapLandmarkAlternatives(near: coordinate)
+            nearby = mergeMapTapCandidates(nearby, widened)
+            Self.poiDebugTrace(
+                "nearbyPicker sub-facility single '\(name)' → merged \(nearby.count) choices (landmark widen)"
+            )
+            if nearby.count >= 2 { return nearby }
+            if let parent = nearby.first(where: { !Self.kakaoMapTapPOINameIsSubFacility($0.name) }) {
+                return [parent]
+            }
+            return nil
+        }
+
+        guard nearby.count >= 2 else { return nil }
+        if case .single(let name, _, _) = result, Self.kakaoMapTapPOINameIsExcluded(name) {
+            return nearby
+        }
+        // Always offer the picker on direct POI taps when multiple Kakao Local rows are in range.
+        return nearby
+    }
+
+    /// Wider AT4/CT1 pull when coord2address or ranking surfaced a sub-facility (탑승장, 매표소, …).
+    private func fetchKakaoDirectTapLandmarkAlternatives(
+        near coordinate: CLLocationCoordinate2D
+    ) async -> [MapTapPOICandidate] {
+        guard activeProvider == .kakao, KakaoLocalService.shared.isAvailable else { return [] }
+        let places = await KakaoLocalService.shared.searchLandmarkPlacesNear(
+            coordinate: coordinate,
+            radius: Self.kakaoLandmarkIdentitySearchRadiusMeters(isDirectPOITap: true)
+        )
+        let tapLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        let scored: [(place: KakaoPlace, rawMeters: Double, sortMeters: Double)] = places.compactMap { place in
+            guard !Self.kakaoMapTapPlaceIsExcluded(place) else { return nil }
+            guard let coord = place.coordinate else { return nil }
+            let name = place.place_name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
+            let raw = place.distanceMetersFromAPI
+                ?? tapLocation.distance(from: CLLocation(latitude: coord.latitude, longitude: coord.longitude))
+            guard raw <= 900 else { return nil }
+            let sortDist = Self.kakaoMapTapLandmarkSortDistance(rawMeters: raw, placeName: name)
+            return (place, raw, sortDist)
+        }
+        .sorted { $0.sortMeters < $1.sortMeters }
+        return scored.prefix(12).map { row in
+            MapTapPOICandidate.from(
+                kakaoPlace: row.place,
+                distanceMeters: row.rawMeters,
+                fallbackCoordinate: coordinate
+            )
+        }
+    }
+
+    private func mergeMapTapCandidates(
+        _ a: [MapTapPOICandidate],
+        _ b: [MapTapPOICandidate]
+    ) -> [MapTapPOICandidate] {
+        var seen = Set<String>()
+        var merged: [MapTapPOICandidate] = []
+        for c in a + b {
+            if seen.insert(c.id).inserted { merged.append(c) }
+        }
+        return merged
+    }
+
     // MARK: - Kakao Local POI tap resolution
 
     /// Search radius (meters) around a tap from Kakao map zoom level (1 = far out … 21 = close in).
@@ -557,11 +962,10 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
 
         if scored.count >= 2 {
             let capped = scored.prefix(12).map { pair in
-                MapTapPOICandidate(
-                    name: pair.place.place_name.trimmingCharacters(in: .whitespacesAndNewlines),
-                    category: pair.place.poiCategoryRaw,
-                    coordinate: pinCoordinate,
-                    distanceMeters: pair.distance
+                MapTapPOICandidate.from(
+                    kakaoPlace: pair.place,
+                    distanceMeters: pair.distance,
+                    fallbackCoordinate: pinCoordinate
                 )
             }
             let result = MapTapPOIResult.ambiguous(candidates: Array(capped))
@@ -601,6 +1005,14 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
             Self.poiDebugTrace("buildingName SKIP: building_name empty")
             return nil
         }
+        if Self.kakaoMapTapPOINameIsExcluded(buildingName) {
+            Self.poiDebugTrace("buildingName SKIP: excluded building_name '\(buildingName)' → use nearby list")
+            return nil
+        }
+        if Self.kakaoMapTapPOINameIsSubFacility(buildingName) {
+            Self.poiDebugTrace("buildingName SKIP: sub-facility building_name '\(buildingName)' → landmark/nearby list")
+            return nil
+        }
         Self.poiDebugTrace("buildingName TRY '\(buildingName)'")
 
         let radius = 600
@@ -622,6 +1034,7 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         Self.poiDebugDumpPlaces(prefix: "buildingName '\(buildingName)'", places: places, tapLoc: tapLoc, limit: 8)
 
         let nearby: [(KakaoPlace, Double)] = places.compactMap { place in
+            guard !Self.kakaoMapTapPlaceIsExcluded(place) else { return nil }
             guard let coord = place.coordinate else { return nil }
             let name = place.place_name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return nil }
@@ -639,6 +1052,25 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
             return .single(name: buildingName, category: nil, coordinate: coordinate)
         }
         let name = place.place_name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if Self.kakaoMapTapPOINameIsExcluded(name) {
+            Self.poiDebugTrace("buildingName SKIP: nearest keyword hit is excluded '\(name)'")
+            return nil
+        }
+        if Self.kakaoMapTapPOINameIsSubFacility(name) {
+            Self.poiDebugTrace("buildingName SKIP: nearest keyword hit is sub-facility '\(name)'")
+            return nil
+        }
+        if nearby.count >= 2 {
+            let candidates = nearby.prefix(8).map { place, d in
+                MapTapPOICandidate.from(
+                    kakaoPlace: place,
+                    distanceMeters: d,
+                    fallbackCoordinate: coordinate
+                )
+            }
+            Self.poiDebugTrace("buildingName OUT ambiguous(\(candidates.count)) for '\(buildingName)'")
+            return .ambiguous(candidates: Array(candidates))
+        }
         Self.poiDebugTrace("buildingName OUT single '\(name)' dist=\(Int(dist))m cat=\(place.category_group_code)")
         return .single(name: name, category: place.poiCategoryRaw, coordinate: coordinate)
     }
@@ -690,11 +1122,13 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
             return d
         }
 
-        let scoredLandmarks: [(place: KakaoPlace, distance: Double)] = landmarks.compactMap { place in
+        let scoredLandmarks: [(place: KakaoPlace, rawMeters: Double, sortMeters: Double)] = landmarks.compactMap { place in
             guard let d = rawLandmarkDistance(to: place) else { return nil }
-            return (place, d)
+            let name = place.place_name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let sortDist = Self.kakaoMapTapLandmarkSortDistance(rawMeters: d, placeName: name)
+            return (place, d, sortDist)
         }
-        .sorted { $0.distance < $1.distance }
+        .sorted { $0.sortMeters < $1.sortMeters }
 
         if !landmarks.isEmpty && scoredLandmarks.isEmpty {
             Self.poiDebugTrace(
@@ -703,7 +1137,7 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
             Self.poiDebugDumpPlaces(prefix: "landmark-bias unscored snapshot", places: landmarks, tapLoc: tapLoc, limit: 20)
         }
 
-        guard let nearestLandmarkDist = scoredLandmarks.first?.distance else {
+        guard let nearestRawLandmarkDist = scoredLandmarks.first?.rawMeters else {
             Self.poiDebugTrace("landmark-bias SKIP: no scored landmarks → fall through")
             return nil
         }
@@ -711,22 +1145,22 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         let minFoodDist: Double = foods.compactMap { rawFoodDistanceForLandmarkBias(to: $0, tapLoc: tapLoc) }.min() ?? .infinity
 
         let foodLabel = minFoodDist.isInfinite ? "none" : "\(Int(minFoodDist))"
-        let threshold = nearestLandmarkDist + Self.landmarkOverDiningProximityGapMeters
+        let threshold = nearestRawLandmarkDist + Self.landmarkOverDiningProximityGapMeters
         Self.poiDebugTrace(
-            "landmark-bias compare nearestLandmark=\(Int(nearestLandmarkDist))m + gap\(Int(Self.landmarkOverDiningProximityGapMeters))m=\(Int(threshold))m vs nearestFood=\(foodLabel) → \(threshold < minFoodDist ? "TAKE landmark-only" : "SKIP (dining wins proximity)")"
+            "landmark-bias compare nearestLandmark=\(Int(nearestRawLandmarkDist))m + gap\(Int(Self.landmarkOverDiningProximityGapMeters))m=\(Int(threshold))m vs nearestFood=\(foodLabel) → \(threshold < minFoodDist ? "TAKE landmark-only" : "SKIP (dining wins proximity)")"
         )
 
-        guard nearestLandmarkDist + Self.landmarkOverDiningProximityGapMeters < minFoodDist else {
-            debugPrint("[POI] landmark bias skipped (dining as close or closer: food=\(foodLabel)m landmark=\(Int(nearestLandmarkDist))m)")
+        guard nearestRawLandmarkDist + Self.landmarkOverDiningProximityGapMeters < minFoodDist else {
+            debugPrint("[POI] landmark bias skipped (dining as close or closer: food=\(foodLabel)m landmark=\(Int(nearestRawLandmarkDist))m)")
             Self.poiDebugTrace("landmark-bias SKIP: dining too close · \(Self.poiDebugWatchHits(places: landmarks, tapLoc: tapLoc))")
             return nil
         }
 
-        debugPrint("[POI] landmark bias: resolving from AT4/CT1 only (landmark=\(Int(nearestLandmarkDist))m vs food=\(minFoodDist.isInfinite ? "∞" : "\(Int(minFoodDist))")m)")
+        debugPrint("[POI] landmark bias: resolving from AT4/CT1 only (landmark=\(Int(nearestRawLandmarkDist))m vs food=\(minFoodDist.isInfinite ? "∞" : "\(Int(minFoodDist))")m)")
 
         let allDebug: [DebugPOIEntry] = (scoredLandmarks.map { pair in
             DebugPOIEntry(name: pair.place.place_name, categoryCode: pair.place.category_group_code,
-                          rawDistanceMeters: pair.distance, effectiveDistanceMeters: pair.distance)
+                          rawDistanceMeters: pair.rawMeters, effectiveDistanceMeters: pair.sortMeters)
         } + foods.compactMap { place -> DebugPOIEntry? in
             guard let d = rawFoodDistanceForLandmarkBias(to: place, tapLoc: tapLoc) else { return nil }
             return DebugPOIEntry(name: place.place_name, categoryCode: place.category_group_code,
@@ -739,7 +1173,8 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
             debugPOICandidates = Array(allDebug.prefix(50))
         }
 
-        return mapTapResultFromScoredKakaoPlacesRawDistance(scored: scoredLandmarks, fallbackCoordinate: coordinate)
+        let rawScored = scoredLandmarks.map { ($0.place, $0.rawMeters) }
+        return mapTapResultFromScoredKakaoPlacesRawDistance(scored: rawScored, fallbackCoordinate: coordinate)
     }
 
     private func rawFoodDistanceForLandmarkBias(to place: KakaoPlace, tapLoc: CLLocation) -> Double? {
@@ -767,11 +1202,10 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
 
         if scored.count >= 2, gapToSecond < ambiguousGapMeters {
             let capped = scored.prefix(8).map { pair in
-                MapTapPOICandidate(
-                    name: pair.place.place_name.trimmingCharacters(in: .whitespacesAndNewlines),
-                    category: pair.place.poiCategoryRaw,
-                    coordinate: pair.place.coordinate ?? fallbackCoordinate,
-                    distanceMeters: pair.distance
+                MapTapPOICandidate.from(
+                    kakaoPlace: pair.place,
+                    distanceMeters: pair.distance,
+                    fallbackCoordinate: fallbackCoordinate
                 )
             }
             debugPrint("[POI] landmark bias ambiguous: \(capped.count) candidates (gap \(Int(gapToSecond))m)")
@@ -864,50 +1298,28 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
                 limit: 10
             )
 
-            let scored: [(place: KakaoPlace, distance: Double)] = places.compactMap { place in
-                guard let coord = place.coordinate else { return nil }
-                let name = place.place_name.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !name.isEmpty else { return nil }
-                let rawDist = place.distanceMetersFromAPI
-                    ?? tapLocation.distance(from: CLLocation(latitude: coord.latitude, longitude: coord.longitude))
-                // Landmark-tier categories are fetched with wide radii (AT4 up to 900 m);
-                // use those same bounds here so heritage sites don't get discarded by the
-                // generic tap radius before effective-distance ranking can consider them.
-                let maxAcceptDist: Double
-                switch place.category_group_code {
-                case "AT4": maxAcceptDist = Double(isDirectPOITap ? 900 : 520)
-                case "CT1": maxAcceptDist = Double(isDirectPOITap ? 720 : 450)
-                case "PO3": maxAcceptDist = Double(isDirectPOITap ? 520 : 360)
-                default:    maxAcceptDist = Double(radius)
-                }
-                guard rawDist <= maxAcceptDist else { return nil }
-                // Weight distance by category priority so attractions outrank nearby cafes/restaurants.
-                let effectiveDist = rawDist * Self.categoryPriorityMultiplier(for: place.category_group_code)
-                return (place, effectiveDist)
-            }
-            .sorted { $0.distance < $1.distance }
+            let scored = kakaoScorePlacesForMapTap(
+                places: places,
+                coordinate: coordinate,
+                searchRadius: radius,
+                isDirectPOITap: isDirectPOITap
+            )
 
-            // Debug: record all candidates (unsorted raw list, up to 50) with distances.
-            let allDebug: [DebugPOIEntry] = places.compactMap { place in
-                guard let coord = place.coordinate else { return nil }
-                let name = place.place_name.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !name.isEmpty else { return nil }
-                let rawDist = place.distanceMetersFromAPI
-                    ?? tapLocation.distance(from: CLLocation(latitude: coord.latitude, longitude: coord.longitude))
-                let effDist = rawDist * Self.categoryPriorityMultiplier(for: place.category_group_code)
-                return DebugPOIEntry(name: name, categoryCode: place.category_group_code,
-                                     rawDistanceMeters: rawDist, effectiveDistanceMeters: effDist)
-            }
-            .sorted { $0.effectiveDistanceMeters < $1.effectiveDistanceMeters }
             await MainActor.run {
                 self.debugLastTapCoordinate = coordinate
-                self.debugPOICandidates = Array(allDebug.prefix(50))
+                self.debugPOICandidates = scored.prefix(50).map { row in
+                    DebugPOIEntry(
+                        name: row.place.place_name,
+                        categoryCode: row.place.category_group_code,
+                        rawDistanceMeters: row.rawDistanceMeters,
+                        effectiveDistanceMeters: row.effectiveDistanceMeters
+                    )
+                }
             }
 
-            for (i, pair) in scored.prefix(12).enumerated() {
-                let rawM = Self.poiDebugTapDistance(place: pair.place, tapLoc: tapLocation).map { Int($0) } ?? -1
+            for (i, row) in scored.prefix(12).enumerated() {
                 Self.poiDebugTrace(
-                    "  rank#\(i + 1) eff=\(Int(pair.distance))m raw=\(rawM)m · \(pair.place.place_name) [\(pair.place.category_group_code)]"
+                    "  rank#\(i + 1) eff=\(Int(row.effectiveDistanceMeters))m raw=\(Int(row.rawDistanceMeters))m · \(row.place.place_name) [\(row.place.category_group_code)]"
                 )
             }
 
@@ -920,19 +1332,14 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
             // On effective-distance scale, cafés/restaurants separated by tens of metres often want a chooser —
             // 12 would auto-pick a single café too aggressively.
             let ambiguousGapMeters: Double = 38
-            let gapToSecond = scored.count >= 2 ? scored[1].distance - first.distance : Double.greatestFiniteMagnitude
+            let gapToSecond = scored.count >= 2
+                ? scored[1].effectiveDistanceMeters - first.effectiveDistanceMeters
+                : Double.greatestFiniteMagnitude
 
             if scored.count >= 2, gapToSecond < ambiguousGapMeters {
-                let capped = scored.prefix(12).map { pair in
-                    MapTapPOICandidate(
-                        name: pair.place.place_name.trimmingCharacters(in: .whitespacesAndNewlines),
-                        category: pair.place.poiCategoryRaw,
-                        coordinate: pair.place.coordinate ?? coordinate,
-                        distanceMeters: pair.distance
-                    )
-                }
+                let capped = mapTapCandidates(from: scored, fallbackCoordinate: coordinate, limit: 20)
                 debugPrint("[POI] Kakao ambiguous tap: \(capped.count) candidates (gap \(Int(gapToSecond))m)")
-                let result = MapTapPOIResult.ambiguous(candidates: Array(capped))
+                let result = MapTapPOIResult.ambiguous(candidates: capped)
                 Self.poiDebugTrace("multiCategory R=\(radius)m OUT \(Self.poiDebugDescribeResult(result)) gap=\(Int(gapToSecond))m")
                 return result
             }
@@ -942,13 +1349,13 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
                 Self.poiDebugTrace("multiCategory R=\(radius)m OUT none (winner name empty)")
                 return .none
             }
-            debugPrint("[POI] Kakao single place '\(name)' dist=\(Int(first.distance))m radius=\(radius)m")
+            debugPrint("[POI] Kakao single place '\(name)' dist=\(Int(first.rawDistanceMeters))m radius=\(radius)m")
             let result = MapTapPOIResult.single(
                 name: name,
                 category: first.place.poiCategoryRaw,
                 coordinate: first.place.coordinate ?? coordinate
             )
-            Self.poiDebugTrace("multiCategory R=\(radius)m OUT \(Self.poiDebugDescribeResult(result)) winnerEffDist=\(Int(first.distance))m")
+            Self.poiDebugTrace("multiCategory R=\(radius)m OUT \(Self.poiDebugDescribeResult(result)) winnerEffDist=\(Int(first.effectiveDistanceMeters))m")
             return result
         }
 
