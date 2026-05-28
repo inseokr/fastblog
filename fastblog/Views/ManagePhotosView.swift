@@ -34,6 +34,9 @@ struct ManagePhotosView: View {
     @State private var provisionalLibraryAssetIds: Set<String> = []
     @State private var visiblePhotoCount: Int = 0
     @State private var existingAssetIdsRefreshTask: Task<Void, Never>? = nil
+    /// Sorted, filtered photo IDs — recomputed only when the photo set or asset availability changes.
+    /// Avoids synchronous PHAsset/disk I/O on every SwiftUI render cycle.
+    @State private var sortedDisplayablePhotoIds: [UUID] = []
 
     /// Bottom Split / Add chips — wider “balloon” hit targets.
     private let cornerActionChipWidth: CGFloat = 84
@@ -45,16 +48,17 @@ struct ManagePhotosView: View {
         GridItem(.flexible(), spacing: 2)
     ]
 
+    /// Point width of each grid cell (3 equal columns with 2 pt gaps).
+    private var cellWidth: CGFloat { (UIScreen.main.bounds.width - 4) / 3 }
+
     /// Pixel size for PHCachingImageManager / `ImageLoader` so grid cells hit the same cache keys as other ~⅓-screen thumbnails.
     private var gridThumbnailPixelSize: CGSize {
-        let w = (UIScreen.main.bounds.width - 4) / 3
         let s = UIScreen.main.scale
-        return CGSize(width: w * s, height: w * s)
+        return CGSize(width: cellWidth * s, height: cellWidth * s)
     }
 
     /// Slots that should resolve to pixels (grid + full-screen pager use the same rules).
     private func isPhotoDisplayableInManageGrid(_ photo: RecapPhoto) -> Bool {
-        guard photo.hasDisplayableLocalBacking else { return false }
         guard let lid = photo.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !lid.isEmpty else {
             return false
         }
@@ -64,10 +68,17 @@ struct ManagePhotosView: View {
         return existingPhotoLibraryAssetIds.contains(lid) || provisionalLibraryAssetIds.contains(lid)
     }
 
+    /// Always returns fresh photo structs (so isIncluded/etc stay live) while keeping sort order stable.
     private var manageGridPhotos: [RecapPhoto] {
-        photos
+        let lookup = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0) })
+        return sortedDisplayablePhotoIds.compactMap { lookup[$0] }
+    }
+
+    private func recomputeSortedDisplayablePhotoIds() {
+        sortedDisplayablePhotoIds = photos
             .filter(isPhotoDisplayableInManageGrid)
             .sorted { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }
+            .map(\.id)
     }
 
     /// Drops rows that cannot render so the binding, grid, and full-screen pager stay in sync.
@@ -384,6 +395,7 @@ struct ManagePhotosView: View {
         .onAppear {
             refreshExistingAssetIds()
             pruneUndisplayablePhotosFromBinding()
+            recomputeSortedDisplayablePhotoIds()
             scheduleExistingAssetIdRefreshRetriesIfNeeded()
             cachedAiRanks = photos.aiRanksByPhotoId()
             ensureInitialBatch()
@@ -399,6 +411,9 @@ struct ManagePhotosView: View {
                 didPrimeGridCache = true
                 ImageLoader.shared.startCachingThumbnails(assetIdentifiers: visibleGridAssetIdentifiers, targetSize: gridThumbnailPixelSize)
             }
+        }
+        .onChange(of: existingPhotoLibraryAssetIds) { _, _ in
+            recomputeSortedDisplayablePhotoIds()
         }
         .onDisappear {
             existingAssetIdsRefreshTask?.cancel()
@@ -432,6 +447,7 @@ struct ManagePhotosView: View {
             Task { @MainActor in
                 refreshExistingAssetIds()
                 pruneUndisplayablePhotosFromBinding()
+                recomputeSortedDisplayablePhotoIds()
             }
             scheduleExistingAssetIdRefreshRetriesIfNeeded()
             cachedAiRanks = photos.aiRanksByPhotoId()
@@ -448,6 +464,7 @@ struct ManagePhotosView: View {
                 ForEach(visibleGridPhotos) { photo in
                     ManagePhotoGridCell(
                         photo: photo,
+                        cellWidth: cellWidth,
                         thumbnailTargetSize: gridThumbnailPixelSize,
                         isSelectMode: isSelectMode,
                         rank: cachedAiRanks[photo.id],
@@ -461,6 +478,7 @@ struct ManagePhotosView: View {
                             }
                         }
                     )
+                    .equatable()
                     .onAppear { maybeLoadMoreIfNeeded(currentPhoto: photo) }
                 }
             }
@@ -478,6 +496,7 @@ struct ManagePhotosView: View {
 
 private struct ManagePhotoGridCell: View {
     let photo: RecapPhoto
+    let cellWidth: CGFloat
     var thumbnailTargetSize: CGSize
     let isSelectMode: Bool
     let rank: Int?
@@ -486,17 +505,14 @@ private struct ManagePhotoGridCell: View {
     var body: some View {
         Button(action: onTap) {
             ZStack(alignment: .topLeading) {
-                GeometryReader { geo in
-                    RecapPhotoThumbnail(
-                        photo: photo,
-                        cornerRadius: 0,
-                        showIcon: false,
-                        targetSize: thumbnailTargetSize
-                    )
-                        .frame(width: geo.size.width, height: geo.size.width)
-                        .clipped()
-                }
-                .aspectRatio(1, contentMode: .fit)
+                RecapPhotoThumbnail(
+                    photo: photo,
+                    cornerRadius: 0,
+                    showIcon: false,
+                    targetSize: thumbnailTargetSize
+                )
+                .frame(width: cellWidth, height: cellWidth)
+                .clipped()
 
                 // AI rank badge (top-left)
                 if let rank = rank {
@@ -555,10 +571,19 @@ private struct ManagePhotoGridCell: View {
                         .padding(6)
                 }
             }
-            // Full tile is tappable (avoids tiny/incorrect hit regions from nested GeometryReader + overlays).
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+extension ManagePhotoGridCell: Equatable {
+    static func == (lhs: ManagePhotoGridCell, rhs: ManagePhotoGridCell) -> Bool {
+        lhs.photo == rhs.photo &&
+        lhs.cellWidth == rhs.cellWidth &&
+        lhs.thumbnailTargetSize == rhs.thumbnailTargetSize &&
+        lhs.isSelectMode == rhs.isSelectMode &&
+        lhs.rank == rhs.rank
     }
 }
 
