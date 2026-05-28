@@ -222,6 +222,9 @@ struct RecapBlogPageView: View {
     @State private var showMissingPhotosTooltip = false
     @State private var sessionDismissedMissingPhotosTooltip = false
     @State private var missingPhotosTooltipDebounceTask: Task<Void, Never>?
+    /// Debounced autosave for rapid photo include/exclude toggles (Manage Photos).
+    /// Prevents losing selection state if the app is killed before leaving the screen.
+    @State private var photoSelectionAutosaveTask: Task<Void, Never>?
     @StateObject private var blogReelAutoplay = BlogReelAutoplayCoordinator()
 
     // Undo State
@@ -937,7 +940,9 @@ struct RecapBlogPageView: View {
                         let draftBeforeMerge = draft
                         let snapshotBeforeMerge = draftSnapshot
                         mergeResolvedBlogDaysFromStore(updated: updated, into: &draft)
-                        pruneEmptyPhotoGroupsFromDraft()
+                        Task { @MainActor in
+                            _ = await pruneEmptyPhotoGroupsFromDraftAsync()
+                        }
                         // If the user hadn't changed anything since the snapshot, keep the snapshot aligned with
                         // background geocode/cover updates so we don't show a false "Unsaved changes" prompt.
                         if let snap = snapshotBeforeMerge, draftBeforeMerge == snap {
@@ -1285,9 +1290,11 @@ struct RecapBlogPageView: View {
                 // Equivalent of onDismiss: save and sync after user navigates back.
                 skipDefaultDayPageScrollOnNextAppear = true
                 print("📸 [ManagePhotos] dismissed — editInfo=\(managePhotosEditInfo != nil ? "set(stopId=\(managePhotosEditInfo!.stopId))" : "nil")")
-                pruneEmptyPhotoGroupsFromDraft()
-                persistRecapBlogDetail()
-                syncPhotoChangesWithCloud()
+                Task { @MainActor in
+                    _ = await pruneEmptyPhotoGroupsFromDraftAsync()
+                    persistRecapBlogDetail()
+                    syncPhotoChangesWithCloud()
+                }
             }
             .sheet(isPresented: $showRestorePlaces) {
                 RemovedPlacesSheet(draft: $draft, selectedDayIndex: $selectedDayIndex) {
@@ -3341,13 +3348,14 @@ struct RecapBlogPageView: View {
         guard !hasFinishedInitialLoad else { return }
         if let saved = createdRecapStore.getBlogDetail(blogId: blogId) {
             draft = saved
-            let beforePrune = draft
-            pruneEmptyPhotoGroupsFromDraft()
-            if draft != beforePrune {
-                persistRecapBlogDetail()
-            }
             hasFinishedInitialLoad = true
             if draftSnapshot == nil { draftSnapshot = draft }
+            Task { @MainActor in
+                let didChange = await pruneEmptyPhotoGroupsFromDraftAsync()
+                if didChange {
+                    persistRecapBlogDetail()
+                }
+            }
             // Score already-geocoded days (day 0) and process remaining days in background.
             Task { @MainActor in await createdRecapStore.scoreResolvedDaysInBackground(blogId: blogId) }
             Task { @MainActor in await createdRecapStore.continueGeocodingDays(blogId: blogId) }
@@ -3367,13 +3375,12 @@ struct RecapBlogPageView: View {
             let detail = await createdRecapStore.buildBlogDetailFirstDayOnly(from: trip)
             createdRecapStore.saveBlogDetail(detail, asDraft: true)
             draft = detail
-            let beforePrune = draft
-            pruneEmptyPhotoGroupsFromDraft()
-            if draft != beforePrune {
-                createdRecapStore.saveBlogDetail(draft, asDraft: true)
-            }
             hasFinishedInitialLoad = true
             if draftSnapshot == nil { draftSnapshot = draft }
+            let didChange = await pruneEmptyPhotoGroupsFromDraftAsync()
+            if didChange {
+                createdRecapStore.saveBlogDetail(draft, asDraft: true)
+            }
             // Process remaining days in background (rate limit: 50 geocode/min).
             await createdRecapStore.continueGeocodingDays(blogId: blogId)
             refreshMissingPhotosTooltipVisibility()
@@ -4448,7 +4455,7 @@ Your blog remains private unless you choose to share it.
                         stop.photos[pIdx].isIncluded = true
                         day.placeStops[stopIdx] = stop
                         draft.days[dayIdx] = day
-                        if let placeKey = stop.visitedTimeDigitized {
+                        if isCloudEditingEnabled, let placeKey = stop.visitedTimeDigitized {
                             if photo.cloudURL != nil {
                                 Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "add") }
                             } else {
@@ -4626,8 +4633,21 @@ Your blog remains private unless you choose to share it.
                 stop.photos = newPhotos
                 day.placeStops[stopIdx] = stop
                 draft.days[dayIdx] = day
+                scheduleAutosaveAfterPhotoSelectionChange()
             }
         )
+    }
+
+    /// Debounced autosave for Manage Photos toggles so selection survives force-quit.
+    @MainActor
+    private func scheduleAutosaveAfterPhotoSelectionChange() {
+        photoSelectionAutosaveTask?.cancel()
+        photoSelectionAutosaveTask = Task { @MainActor in
+            // Small delay batches rapid taps without feeling laggy.
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            persistRecapBlogDetail()
+        }
     }
 
     private func placeStop(dayId: UUID, stopId: UUID) -> PlaceStop? {
@@ -6172,17 +6192,21 @@ Your blog remains private unless you choose to share it.
 
     /// Captures photo inclusion state for a stop before ManagePhotosView opens so we can diff on dismiss.
     private func openManagePhotos(dayId: UUID, stopId: UUID) {
-        pruneEmptyPhotoGroupsFromDraft()
-        guard let stop = placeStop(dayId: dayId, stopId: stopId) else { return }
-        guard stop.photos.contains(where: \.hasDisplayableLocalBacking) else {
-            removePlaceStop(dayId: dayId, stopId: stopId)
-            return
+        // `removingUndisplayablePhotos()` does a bulk PHAsset fetch, which can be slow for large stops.
+        // Run it off the critical path so opening Manage Photos is instant.
+        Task { @MainActor in
+            _ = await pruneEmptyPhotoGroupsFromDraftAsync()
+            guard let stop = placeStop(dayId: dayId, stopId: stopId) else { return }
+            guard stop.photos.contains(where: \.hasDisplayableLocalBacking) else {
+                removePlaceStop(dayId: dayId, stopId: stopId)
+                return
+            }
+            managePhotosEditInfo = ManagePhotosEditInfo(
+                dayId: dayId, stopId: stopId,
+                photoInclusionBefore: Dictionary(uniqueKeysWithValues: stop.photos.map { ($0.id, $0.isIncluded) })
+            )
+            showManagePhotosForStop = ManagePhotosItem(dayId: dayId, stopId: stopId)
         }
-        managePhotosEditInfo = ManagePhotosEditInfo(
-            dayId: dayId, stopId: stopId,
-            photoInclusionBefore: Dictionary(uniqueKeysWithValues: stop.photos.map { ($0.id, $0.isIncluded) })
-        )
-        showManagePhotosForStop = ManagePhotosItem(dayId: dayId, stopId: stopId)
     }
 
     /// Strips broken photo rows and removes place stops / days that no longer have any photos.
@@ -6200,12 +6224,45 @@ Your blog remains private unless you choose to share it.
         }
     }
 
+    /// Async variant of `pruneEmptyPhotoGroupsFromDraft()` that runs PHAsset fetch work off the main thread.
+    /// Returns true when `draft` was mutated.
+    @MainActor
+    private func pruneEmptyPhotoGroupsFromDraftAsync() async -> Bool {
+        let captured = draft
+        let sanitized = await Task.detached(priority: .userInitiated) { captured.removingUndisplayablePhotos() }.value
+        if draft != captured {
+            // Draft changed while we were sanitizing (e.g. user toggled photos). Re-run once on latest state.
+            let latest = draft
+            let sanitizedLatest = await Task.detached(priority: .userInitiated) { latest.removingUndisplayablePhotos() }.value
+            guard sanitizedLatest != latest else { return false }
+            draft = sanitizedLatest
+        } else {
+            guard sanitized != captured else { return false }
+            draft = sanitized
+        }
+
+        if selectedDayIndex >= draft.days.count {
+            selectedDayIndex = max(0, draft.days.count - 1)
+        }
+        let allIncludedPhotos = draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
+        if let currentCover = draft.selectedCoverPhotoIdentifier,
+           !allIncludedPhotos.contains(where: { $0.localIdentifier == currentCover }) {
+            draft.selectedCoverPhotoIdentifier = allIncludedPhotos.compactMap(\.localIdentifier).first
+        }
+        return true
+    }
+
     /// Diffs photo inclusion changes made in ManagePhotosView and fires targeted updatePhoto calls.
     /// For newly included photos that have never been uploaded, uploads first then adds.
     /// Photos added mid-session (e.g. library import) are not in `photoInclusionBefore`; they are treated as newly included.
     private func syncPhotoChangesWithCloud() {
         guard let info = managePhotosEditInfo else {
             print("📸 [syncPhoto] ⚠️ managePhotosEditInfo is nil — skipping cloud sync")
+            return
+        }
+        guard isCloudEditingEnabled else {
+            print("📸 [syncPhoto] cloud editing disabled (cloudState=localOnly) — skipping cloud calls")
+            managePhotosEditInfo = nil
             return
         }
         guard let stop = placeStop(dayId: info.dayId, stopId: info.stopId) else {
@@ -6524,6 +6581,13 @@ Your blog remains private unless you choose to share it.
             return true // If not found in recents, it's in the process of being created (draft)
         }
         return blog.cloudState == .localOnly
+    }
+
+    /// True only when this blog is in a cloud-enabled lifecycle state.
+    /// When false, **never** call cloud photo endpoints from Manage Photos / Undo flows.
+    private var isCloudEditingEnabled: Bool {
+        guard let blog = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) else { return false }
+        return blog.cloudState != .localOnly
     }
 
     private var currentBlogKey: Int? {
