@@ -3335,7 +3335,6 @@ struct RecapBlogPageView: View {
                       updatedPhoto.qualityScore != nil else { continue }
                 draftPhotos[photoIdx].qualityScore = updatedPhoto.qualityScore
                 draftPhotos[photoIdx].isFavorite = updatedPhoto.isFavorite
-                draftPhotos[photoIdx].isIncluded = updatedPhoto.isIncluded
                 continue
             }
             if let lid = updatedPhoto.localIdentifier, existingLocalIds.contains(lid) { continue }

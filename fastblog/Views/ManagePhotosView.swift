@@ -488,7 +488,11 @@ struct ManagePhotosView: View {
 
     private func toggleInclusion(for photo: RecapPhoto) {
         guard let idx = photos.firstIndex(where: { $0.id == photo.id }) else { return }
-        withAnimation(.easeInOut(duration: 0.2)) { photos[idx].isIncluded.toggle() }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            var updated = photos
+            updated[idx].isIncluded.toggle()
+            photos = updated
+        }
     }
 }
 
@@ -599,6 +603,8 @@ private struct ManagePhotoDetailView: View {
     @State private var currentPhotoId: UUID
     @State private var zoomScale: CGFloat = 1.0
     @State private var baseZoomScale: CGFloat = 1.0
+    @State private var panOffset: CGSize = .zero
+    @State private var basePanOffset: CGSize = .zero
 
     init(
         photos: Binding<[RecapPhoto]>,
@@ -633,6 +639,8 @@ private struct ManagePhotoDetailView: View {
         detailPhotos.first(where: { $0.id == currentPhotoId }) ?? detailPhotos.first
     }
 
+    private var isZoomed: Bool { zoomScale > 1.01 }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.black.ignoresSafeArea()
@@ -640,46 +648,14 @@ private struct ManagePhotoDetailView: View {
             VStack(spacing: 12) {
                 TabView(selection: $currentPhotoId) {
                     ForEach(detailPhotos) { photo in
-                        ZStack {
-                            RecapPhotoThumbnail(
-                                photo: photo,
-                                cornerRadius: 0,
-                                showIcon: false,
-                                targetSize: detailMainPixelSize
-                            )
-                            .aspectRatio(contentMode: .fill)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                            .scaleEffect(zoomScale)
+                        GeometryReader { proxy in
+                            let size = proxy.size
 
-                            // Subtle in-blog badge — centered pill
-                            if photo.isIncluded {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 10, weight: .bold))
-                                    Text("Photo included in blog")
-                                        .font(.system(size: 12, weight: .semibold))
-                                }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(Color.blue.opacity(0.85))
-                                .appChromeCornerRadius(12)
-                                .allowsHitTesting(false)
-                                .transaction { $0.animation = nil }
-                            }
+                            zoomablePhotoPage(photo: photo, viewSize: size)
+                                .contentShape(Rectangle())
+                                .onTapGesture { toggleInclusion() }
                         }
-                        .contentShape(Rectangle())
                         .tag(photo.id)
-                        .onTapGesture {
-                            if zoomScale > 1.01 {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    zoomScale = 1.0; baseZoomScale = 1.0
-                                }
-                            } else {
-                                toggleInclusion()
-                            }
-                        }
                         .simultaneousGesture(
                             MagnificationGesture()
                                 .onChanged { value in
@@ -689,6 +665,7 @@ private struct ManagePhotoDetailView: View {
                                     if zoomScale < 1.1 {
                                         withAnimation(.easeInOut(duration: 0.2)) {
                                             zoomScale = 1.0; baseZoomScale = 1.0
+                                            panOffset = .zero; basePanOffset = .zero
                                         }
                                     } else {
                                         baseZoomScale = zoomScale
@@ -698,6 +675,7 @@ private struct ManagePhotoDetailView: View {
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
+                .scrollDisabled(isZoomed)
                 .id(detailPhotos.map(\.id))
 
                 VStack(spacing: 4) {
@@ -814,14 +792,84 @@ private struct ManagePhotoDetailView: View {
         .onChange(of: currentPhotoId) { _, _ in
             withAnimation(.easeInOut(duration: 0.2)) {
                 zoomScale = 1.0; baseZoomScale = 1.0
+                panOffset = .zero; basePanOffset = .zero
             }
         }
+    }
+
+    @ViewBuilder
+    private func zoomablePhotoPage(photo: RecapPhoto, viewSize: CGSize) -> some View {
+        let page = ZStack {
+            RecapPhotoThumbnail(
+                photo: photo,
+                cornerRadius: 0,
+                showIcon: false,
+                targetSize: detailMainPixelSize
+            )
+            .aspectRatio(contentMode: .fill)
+            .frame(width: viewSize.width, height: viewSize.height)
+            .clipped()
+            .scaleEffect(zoomScale)
+            .offset(panOffset)
+
+            if photo.isIncluded {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("Photo included in blog")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.blue.opacity(0.85))
+                .appChromeCornerRadius(12)
+                .allowsHitTesting(false)
+                .transaction { $0.animation = nil }
+            }
+        }
+
+        if isZoomed {
+            // minimumDistance leaves short taps for include/exclude; scrollDisabled blocks paging.
+            page.gesture(zoomPanGesture(viewSize: viewSize))
+        } else {
+            page
+        }
+    }
+
+    private func zoomPanGesture(viewSize: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .onChanged { value in
+                let t = value.translation
+                panOffset = clampedPanOffset(
+                    CGSize(width: basePanOffset.width + t.width, height: basePanOffset.height + t.height),
+                    viewSize: viewSize
+                )
+            }
+            .onEnded { _ in
+                basePanOffset = panOffset
+            }
+    }
+
+    private func clampedPanOffset(_ proposed: CGSize, viewSize: CGSize) -> CGSize {
+        // The image is scaled about its center. The additional "overflow" beyond the viewport is:
+        // overflow = viewSize * (zoomScale - 1). We allow panning up to half that overflow in each axis.
+        let maxX = max(0, (viewSize.width * (zoomScale - 1)) / 2)
+        let maxY = max(0, (viewSize.height * (zoomScale - 1)) / 2)
+        return CGSize(
+            width: min(max(proposed.width, -maxX), maxX),
+            height: min(max(proposed.height, -maxY), maxY)
+        )
     }
 
     private func toggleInclusion() {
         guard let id = currentPhoto?.id,
               let idx = photos.firstIndex(where: { $0.id == id }) else { return }
-        withAnimation(.easeInOut(duration: 0.2)) { photos[idx].isIncluded.toggle() }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            var updated = photos
+            updated[idx].isIncluded.toggle()
+            photos = updated
+        }
     }
 }
 

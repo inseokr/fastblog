@@ -2893,6 +2893,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         _ photos: inout [RecapPhoto],
         scorer: PhotoQualityScorer
     ) async -> Bool {
+        let hadAnyScoreBeforeThisPass = photos.contains { $0.qualityScore != nil }
         let identifiersToScore = Set(photos.localIdentifiersForQualityScoring())
         let libraryIdsToScore = identifiersToScore.filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
 
@@ -2908,13 +2909,14 @@ final class CreatedRecapBlogStore: ObservableObject {
 
             for photoIdx in photos.indices {
                 let photo = photos[photoIdx]
-                if let id = photo.localIdentifier, let score = scores[id] {
-                    photos[photoIdx].qualityScore = score
-                    didScoreNew = true
-                }
                 if let id = photo.localIdentifier, libraryIdsToScore.contains(id) {
                     photos[photoIdx].isFavorite = favoriteIdentifiers.contains(id)
                 }
+                guard photo.qualityScore == nil,
+                      let id = photo.localIdentifier,
+                      let score = scores[id] else { continue }
+                photos[photoIdx].qualityScore = score
+                didScoreNew = true
             }
         }
 
@@ -2929,12 +2931,11 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
         }
 
-        let includedCount = photos.filter(\.isIncluded).count
-        let needsInclusionCap = includedCount > photos.maxAutoIncludedCount()
-        guard didScoreNew || needsInclusionCap else { return false }
+        guard didScoreNew, !hadAnyScoreBeforeThisPass else { return didScoreNew }
 
+        // Initial auto-select only when no photo in this stop had been scored before.
         let topIds = photos.autoSelectedIds()
-        guard !topIds.isEmpty else { return didScoreNew }
+        guard !topIds.isEmpty else { return true }
 
         for photoIdx in photos.indices {
             photos[photoIdx].isIncluded = topIds.contains(photos[photoIdx].id)
