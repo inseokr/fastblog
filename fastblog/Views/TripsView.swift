@@ -2236,6 +2236,9 @@ struct CameraCaptureView: View {
     /// When set, all captured photos are always routed to this blog regardless of date/on-the-go state.
     /// Used when the camera is opened from inside an existing blog.
     var forcedTargetBlogId: UUID? = nil
+    /// Bottom nav callbacks — wired by ContentView when camera is the home screen.
+    var onShowMyBlogs: () -> Void = {}
+    var onShowMyPlaces: () -> Void = {}
 
     @StateObject private var cameraController = CameraController()
 
@@ -2856,22 +2859,7 @@ struct CameraCaptureView: View {
             .animation(.easeInOut(duration: 0.3), value: isVibeCaptureEnabled)
         }
 
-        // Top controls: X (top-left) + Reverse / Flash / Save to Photos (top-right)
-        Button {
-            closeCamera()
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.white)
-                .frame(width: 44, height: 44)
-                .background(.ultraThinMaterial)
-                .clipShape(Circle())
-        }
-        .accessibilityLabel("Close camera")
-        .padding(.top, 8)
-        .padding(.leading, 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
+        // Top controls: Reverse / Flash / Save to Photos (top-right)
         VStack(spacing: 16) {
             Button {
                 cameraController.flipCamera()
@@ -3649,13 +3637,6 @@ struct CameraCaptureView: View {
                         guard !isCaptionModeActive else { return }
                         if value.translation.height < -50 {
                             isShowingCapturesGallery = true
-                        } else if value.translation.height > 50 {
-                            // Swipe-down dismiss is allowed only before any photo is captured.
-                            let hasCapturedPhotos = photosCapturedThisSession > 0
-                                || !sessionCapturesForDisplay.isEmpty
-                                || !sessionMoments.isEmpty
-                            guard !hasCapturedPhotos else { return }
-                            closeCamera()
                         }
                     }
             )
@@ -3677,6 +3658,18 @@ struct CameraCaptureView: View {
                     .ignoresSafeArea()
             )
             .overlay(alignment: .top) { toastOverlay }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !isCaptionModeActive {
+                    BottomNavBar(
+                        activeTab: .camera,
+                        onMyBlogs: onShowMyBlogs,
+                        onCamera: {},
+                        onMyPlaces: onShowMyPlaces
+                    )
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.2), value: isCaptionModeActive)
+                }
+            }
     }
 
     /// Lifecycle and core camera-state updates.
