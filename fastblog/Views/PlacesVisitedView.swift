@@ -16,12 +16,17 @@ private func filterChipUnselectedFill() -> Color {
 // MARK: - Standalone full-screen Places Visited (from home icon)
 struct PlacesVisitedStandaloneView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @EnvironmentObject private var authService: AuthService
+    @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialScrollToStopIdForRecap: UUID?
     var onDismiss: () -> Void
+    var onShowCamera: (() -> Void)? = nil
+    var onShowMyBlogs: (() -> Void)? = nil
 
     @State private var searchText: String = ""
     @State private var showPlacesMap: Bool = false
+    @State private var showSettings = false
 
     private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
 
@@ -31,7 +36,8 @@ struct PlacesVisitedStandaloneView: View {
             showPlacesMap: $showPlacesMap,
             selectedCreatedRecap: $selectedCreatedRecap,
             initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
-            standaloneOnDismiss: onDismiss
+            standaloneOnDismiss: onDismiss,
+            onShowSettings: { showSettings = true }
         )
         .background(backgroundBlue.ignoresSafeArea())
         .scrollContentBackground(.hidden)
@@ -40,6 +46,20 @@ struct PlacesVisitedStandaloneView: View {
         .navigationBarBackButtonHidden(true)
         .preferredColorScheme(.dark)
         .dynamicTypeSize(.large)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            BottomNavBar(
+                activeTab: .myPlaces,
+                onMyBlogs: { onShowMyBlogs?() },
+                onCamera: { onShowCamera?() },
+                onMyPlaces: {}
+            )
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environmentObject(authService)
+                .environmentObject(photoAuth)
+                .environmentObject(createdRecapStore)
+        }
     }
 }
 
@@ -52,6 +72,7 @@ struct PlacesVisitedView: View {
     @Binding var initialScrollToStopIdForRecap: UUID?
     /// When set (standalone presentation), shows a leading dismiss control in the navigation bar.
     var standaloneOnDismiss: (() -> Void)? = nil
+    var onShowSettings: (() -> Void)? = nil
 
     @State private var selectedYear: Int? = nil
     @State private var selectedCountry: String? = nil
@@ -386,14 +407,12 @@ struct PlacesVisitedView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarLeading) {
-                if let standaloneOnDismiss {
+                if standaloneOnDismiss != nil {
                     Button {
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            standaloneOnDismiss()
-                        }
+                        onShowSettings?()
                     } label: {
-                        Image(systemName: "xmark")
+                        Image(systemName: "gearshape.fill")
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.primary)
                     }
