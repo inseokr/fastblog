@@ -229,6 +229,7 @@
 		BB0003B3 /* VisitedCitiesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B2 /* VisitedCitiesSheet.swift */; };
 		BB0003B5 /* WeatherEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B4 /* WeatherEditSheet.swift */; };
 		BB0003B7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B6 /* SettingsView.swift */; };
+		BB0003B9 /* BottomNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B8 /* BottomNavBar.swift */; };
 		BB0003C1 /* SplitPlaceStopView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003C0 /* SplitPlaceStopView.swift */; };
 		BB0003C5 /* AppChromeMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003C4 /* AppChromeMetrics.swift */; };
 		BB0003D1 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = AA000063 /* ZIPFoundation */; };
@@ -501,6 +502,7 @@
 		BB0003B2 /* VisitedCitiesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesSheet.swift; sourceTree = "<group>"; };
 		BB0003B4 /* WeatherEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherEditSheet.swift; sourceTree = "<group>"; };
 		BB0003B6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		BB0003B8 /* BottomNavBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomNavBar.swift; sourceTree = "<group>"; };
 		BB0003C0 /* SplitPlaceStopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPlaceStopView.swift; sourceTree = "<group>"; };
 		BB0003C4 /* AppChromeMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppChromeMetrics.swift; sourceTree = "<group>"; };
 		BB0003D2 /* BlogBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogBackupService.swift; sourceTree = "<group>"; };
@@ -906,6 +908,7 @@
 			isa = PBXGroup;
 			children = (
 				BB000307 /* AtmosphericWaveformView.swift */,
+				BB0003B8 /* BottomNavBar.swift */,
 				BB000313 /* MomentVideoFullScreenPlayer.swift */,
 				BB000346 /* InlineMomentReelMedia.swift */,
 				BB0001C1 /* KeyboardCaptionToolbar.swift */,
@@ -1176,6 +1179,7 @@
 				BB000226 /* LocalLLMStoryCaptionGenerator.swift in Sources */,
 				BB0001C0 /* PlaceSearchViewModel.swift in Sources */,
 				BB000306 /* AtmosphericWaveformView.swift in Sources */,
+				BB0003B9 /* BottomNavBar.swift in Sources */,
 				BB000312 /* MomentVideoFullScreenPlayer.swift in Sources */,
 				BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */,
 				BB0001C4 /* UndoOverlayView.swift in Sources */,
