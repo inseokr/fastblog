@@ -19,10 +19,8 @@ struct ContentView: View {
     /// Without this, .transition(.identity) removes the view immediately and Metal fires
     /// MTLDebugDevice notifyExternalReferencesNonZeroOnDealloc.
     @State private var tripsViewKeepMounted = false
-    @State private var showProfile = false
     @State private var showSeeAll = false
     @State private var showPlacesVisited = false
-    @State private var showCameraFromHome = false
     @State private var postCameraToastMessage: String?
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var initialDayIndexForRecap: Int?
@@ -48,7 +46,6 @@ struct ContentView: View {
     var body: some View {
         rootContent
             .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
-            .animation(.easeInOut(duration: 0.18), value: showCameraFromHome)
             .animation(.easeInOut(duration: 0.25), value: showSeeAll)
             .animation(.easeInOut(duration: 0.18), value: showPlacesVisited)
             .animation(.easeInOut(duration: 0.35), value: showTrips)
@@ -121,6 +118,15 @@ struct ContentView: View {
                     }
                 }
             }
+            .onChange(of: postCameraToastMessage) { _, msg in
+                if msg != nil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            postCameraToastMessage = nil
+                        }
+                    }
+                }
+            }
             .onAppear {
                 if justFinishedOnboarding {
                     justFinishedOnboarding = false
@@ -136,67 +142,72 @@ struct ContentView: View {
 
     private var rootContent: some View {
         ZStack {
-            NavigationStack {
-                LandingView(
-                    showTrips: $showTrips,
-                    showProfile: $showProfile,
-                    showSeeAll: $showSeeAll,
-                    showPlacesVisited: $showPlacesVisited,
-                    showCameraFromHome: $showCameraFromHome,
-                    selectedCreatedRecap: $selectedCreatedRecap,
-                    postCameraToastMessage: $postCameraToastMessage,
-                    tripsViewModel: tripsViewModel,
-                    onTapToBlog: handleTapToBlog
-                )
-                .navigationDestination(isPresented: $showProfile) {
-                    ProfileView(selectedCreatedRecap: $selectedCreatedRecap)
-                        .environmentObject(createdRecapStore)
+            // Camera is the permanent home base layer.
+            CameraCaptureView(
+                tripsViewModel: tripsViewModel,
+                postDismissToast: { msg in postCameraToastMessage = msg },
+                onShowMyBlogs: {
+                    withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = true }
+                },
+                onShowMyPlaces: {
+                    withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = true }
                 }
-            }
-            .opacity(showSeeAll || showPlacesVisited || showTrips || showCameraFromHome || selectedCreatedRecap != nil ? 0 : 1)
-            // Opacity alone still receives touches — disable hit testing whenever a full-screen overlay covers landing
-            // so gestures (e.g. swipe-down to dismiss Capture) cannot fall through to the hidden bottom bar.
-            .allowsHitTesting(!(showSeeAll || showPlacesVisited || showTrips || showCameraFromHome || selectedCreatedRecap != nil))
+            )
+            .environmentObject(createdRecapStore)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Camera overlay (fade in/out).
-            if showCameraFromHome {
-                NavigationStack {
-                    CameraCaptureView(
-                        tripsViewModel: tripsViewModel,
-                        postDismissToast: { msg in
-                            postCameraToastMessage = msg
-                        },
-                        onDismissOverlay: {
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                showCameraFromHome = false
-                            }
-                        },
-                        onNavigateToBlog: { sourceTripId in
-                            if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == sourceTripId }) {
-                                selectedCreatedRecap = blog
-                            }
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                showCameraFromHome = false
+            // Post-camera toast banner (appears over camera base layer)
+            if let toastMsg = postCameraToastMessage {
+                VStack {
+                    HStack(spacing: 12) {
+                        Group {
+                            if toastMsg.contains("added to") {
+                                Image("MyBlogsIcon")
+                                    .resizable()
+                                    .renderingMode(.template)
+                                    .foregroundColor(.green)
+                                    .frame(width: 28, height: 28)
+                            } else {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.green)
                             }
                         }
-                    )
-                    .environmentObject(createdRecapStore)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
-                .transition(.opacity)
-                .zIndex(2)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 24).onEnded { value in
-                        guard isDownwardDismissSwipe(value) else { return }
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            showCameraFromHome = false
+                        Text(toastMsg)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                        Spacer()
+                        Button {
+                            withAnimation { postCameraToastMessage = nil }
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.body)
+                                .foregroundColor(.white.opacity(0.8))
+                                .padding(8)
+                                .contentShape(Rectangle())
                         }
                     }
-                )
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(appChromeBaseRadius: 14)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(appChromeBaseRadius: 14)
+                                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            )
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                    .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(1)
             }
 
-            // My Blogs overlay (fade in/out). preferredColorScheme on container avoids color flash during dismiss.
+            // My Blogs overlay (fade in/out).
             if showSeeAll {
                 NavigationStack {
                     MyBlogsProfileView(
@@ -207,9 +218,18 @@ struct ContentView: View {
                         openRecapPresentShareYourBlogSheet: $openRecapPresentShareYourBlogSheet,
                         tripsViewModel: tripsViewModel,
                         onDismissCover: {
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                showSeeAll = false
-                            }
+                            withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = false }
+                        },
+                        onTapToBlog: {
+                            withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = false }
+                            handleTapToBlog()
+                        },
+                        onShowCamera: {
+                            withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = false }
+                        },
+                        onShowMyPlaces: {
+                            withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = false }
+                            withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = true }
                         }
                     )
                     .environmentObject(createdRecapStore)
@@ -228,9 +248,14 @@ struct ContentView: View {
                         selectedCreatedRecap: $selectedCreatedRecap,
                         initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
                         onDismiss: {
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                showPlacesVisited = false
-                            }
+                            withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = false }
+                        },
+                        onShowCamera: {
+                            withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = false }
+                        },
+                        onShowMyBlogs: {
+                            withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = false }
+                            withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = true }
                         }
                     )
                     .environmentObject(createdRecapStore)
@@ -241,9 +266,7 @@ struct ContentView: View {
                 .zIndex(4)
             }
 
-            // Trips overlay — added when user taps "Tap to Blog"; opacity-only fade (no slide).
-            // tripsViewKeepMounted extends the lifetime after dismissal so MapKit's CAMetalLayer
-            // can finish in-flight GPU work before the view is torn down.
+            // Trips overlay.
             if showTrips || pendingShowTripsWhenIdle || tripsViewKeepMounted {
                 NavigationStack {
                     TripsView(
@@ -260,8 +283,8 @@ struct ContentView: View {
                 .zIndex(5)
                 .transition(.identity)
             }
-            
-            // Blog overlay: fade in/out when user selects a blog from anywhere (Map, Country List, Recent List).
+
+            // Blog overlay.
             if let recap = selectedCreatedRecap {
                 NavigationStack {
                     RecapBlogPageView(
@@ -279,7 +302,6 @@ struct ContentView: View {
                             selectedCreatedRecap = nil
                         }
                     )
-                    // Fresh scroll/deep-link state per open; include stop id so repeat opens to another place work.
                     .id("\(recap.sourceTripId.uuidString)-\(initialScrollToStopIdForRecap?.uuidString ?? "none")")
                     .environmentObject(createdRecapStore)
                 }
@@ -321,11 +343,6 @@ struct ContentView: View {
             guard !showTrips, !pendingShowTripsWhenIdle else { return }
             tripsViewKeepMounted = false
         }
-    }
-
-    private func isDownwardDismissSwipe(_ value: DragGesture.Value) -> Bool {
-        value.translation.height > 100 &&
-        abs(value.translation.height) > abs(value.translation.width) * 1.15
     }
 
     // MARK: - Landing CTA handling
