@@ -17,6 +17,8 @@ private let searchBarHeight: CGFloat = 56
 private let myMapButtonSize: CGFloat = 52
 private let cardSpacing: CGFloat = 16
 private let horizontalPadding: CGFloat = 20
+/// Clears the shared `ContentView` bottom nav so search + map float above it.
+private let bottomNavClearance = BottomNavBar.floatingChromeBottomPadding
 
 private struct MyBlogsScrollOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
@@ -37,11 +39,11 @@ struct MyBlogsProfileView: View {
     /// Passed to `CountryBlogsView` for kebab "Share Blog"; consumed by `RecapBlogPageView` as `forcePresentShareYourBlogSheet`.
     @Binding var openRecapPresentShareYourBlogSheet: Bool
     @ObservedObject var tripsViewModel: TripsViewModel
+    /// When true, `ContentView` hides the shared bottom nav (My Map / country map is pushed).
+    @Binding var hidesRootBottomNav: Bool
     /// Called when user taps "View" on new-moments alert so the parent can dismiss the fullScreenCover.
     var onDismissCover: (() -> Void)? = nil
     var onTapToBlog: (() -> Void)? = nil
-    var onShowCamera: (() -> Void)? = nil
-    var onShowMyPlaces: (() -> Void)? = nil
     /// Reports whether the visible scroll is at top (for swipe-to-dismiss gating).
     var onTopScrollStateChange: ((Bool) -> Void)? = nil
     @StateObject private var viewModel = MyBlogsProfileViewModel()
@@ -83,10 +85,9 @@ struct MyBlogsProfileView: View {
         openRecapInEditMode: Binding<Bool> = .constant(false),
         openRecapPresentShareYourBlogSheet: Binding<Bool> = .constant(false),
         tripsViewModel: TripsViewModel,
+        hidesRootBottomNav: Binding<Bool> = .constant(false),
         onDismissCover: (() -> Void)? = nil,
         onTapToBlog: (() -> Void)? = nil,
-        onShowCamera: (() -> Void)? = nil,
-        onShowMyPlaces: (() -> Void)? = nil,
         onTopScrollStateChange: ((Bool) -> Void)? = nil
     ) {
         _selectedCreatedRecap = selectedCreatedRecap
@@ -94,10 +95,9 @@ struct MyBlogsProfileView: View {
         _openRecapInEditMode = openRecapInEditMode
         _openRecapPresentShareYourBlogSheet = openRecapPresentShareYourBlogSheet
         _tripsViewModel = ObservedObject(wrappedValue: tripsViewModel)
+        _hidesRootBottomNav = hidesRootBottomNav
         self.onDismissCover = onDismissCover
         self.onTapToBlog = onTapToBlog
-        self.onShowCamera = onShowCamera
-        self.onShowMyPlaces = onShowMyPlaces
         self.onTopScrollStateChange = onTopScrollStateChange
     }
 
@@ -173,8 +173,8 @@ struct MyBlogsProfileView: View {
                         }
                         .padding(.horizontal, horizontalPadding)
                         .padding(.top, 16)
-                        // Leave room for the bottom search bar + map button
-                        .padding(.bottom, searchBarHeight + myMapButtonSize + 40)
+                        // Leave room for the bottom search bar + map button + bottom nav
+                        .padding(.bottom, searchBarHeight + myMapButtonSize + 40 + bottomNavClearance)
                     }
                 }
                 .transition(.opacity)
@@ -186,6 +186,7 @@ struct MyBlogsProfileView: View {
                     Spacer()
                     MyMapButton {
                         isSearchFocused = false
+                        hidesRootBottomNav = true
                         switch currentPage {
                         case .blogs:   showMyMap = true
                         case .country: showCountryMap = true
@@ -196,6 +197,7 @@ struct MyBlogsProfileView: View {
                 }
                 adaptiveSearchBar
             }
+            .padding(.bottom, bottomNavClearance)
             .allowsHitTesting(true)
         }
         .navigationTitle(pageTitle)
@@ -255,6 +257,9 @@ struct MyBlogsProfileView: View {
                 }
             }
         }
+        .onChange(of: showMyMap) { _, showing in if !showing { hidesRootBottomNav = false } }
+        .onChange(of: showCountryMap) { _, showing in if !showing { hidesRootBottomNav = false } }
+        .onDisappear { hidesRootBottomNav = false }
         .navigationDestination(isPresented: $showMyMap) {
             MyMapView(selectedCreatedRecap: $selectedCreatedRecap)
         }
@@ -289,14 +294,7 @@ struct MyBlogsProfileView: View {
                 .environmentObject(photoAuth)
                 .environmentObject(createdRecapStore)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            BottomNavBar(
-                activeTab: .myBlogs,
-                onMyBlogs: {},
-                onCamera: { onShowCamera?() },
-                onMyPlaces: { onShowMyPlaces?() }
-            )
-        }
+
         .onChange(of: selectedCreatedRecap?.id) { oldValue, newValue in
             guard reopenManageSheetAfterRecapDismiss, oldValue != nil, newValue == nil else { return }
             reopenManageSheetAfterRecapDismiss = false
@@ -365,6 +363,10 @@ struct MyBlogsProfileView: View {
         return false
     }
 
+    private func syncRootBottomNavVisibility() {
+        hidesRootBottomNav = showMyMap || showCountryMap
+    }
+
     private var isCurrentPageAtTop: Bool {
         switch currentPage {
         case .blogs:
@@ -414,9 +416,10 @@ struct MyBlogsProfileView: View {
                     .stroke(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.25), lineWidth: 1)
             )
             .appChromeCornerRadius(12)
-            .padding(.horizontal, horizontalPadding)
+            .contentShape(RoundedRectangle(appChromeBaseRadius: 12))
         }
         .buttonStyle(.plain)
+        .zIndex(1)
     }
 
     private var allLatestEdits: [CreatedRecapBlog] { createdRecapStore.displayRecents }
@@ -432,14 +435,19 @@ struct MyBlogsProfileView: View {
                 Text("Latest Edits")
                     .font(.headline)
                     .foregroundColor(.white)
-                    .padding(.horizontal, horizontalPadding)
                     .frame(height: 22, alignment: .leading)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(visibleLatestEdits) { recap in
-                            CreatedRecapCard(recap: recap)
-                                .onTapGesture { selectedCreatedRecap = recap }
+                            Button {
+                                openRecapInEditMode = false
+                                openRecapPresentShareYourBlogSheet = false
+                                selectedCreatedRecap = recap
+                            } label: {
+                                CreatedRecapCard(recap: recap)
+                            }
+                            .buttonStyle(.plain)
                         }
                         if hasMoreLatestEdits {
                             LatestEditsMoreHintCard { loadMoreLatestEdits() }
@@ -447,9 +455,9 @@ struct MyBlogsProfileView: View {
                     }
                     .padding(.bottom, 8)
                 }
-                .contentMargins(.horizontal, horizontalPadding, for: .scrollContent)
                 .frame(height: 128)
                 .clipped()
+                .contentShape(Rectangle())
                 .overlay(alignment: .trailing) {
                     if hasMoreLatestEdits {
                         LinearGradient(
@@ -463,6 +471,7 @@ struct MyBlogsProfileView: View {
                 }
             }
             .padding(.top, 16)
+            .zIndex(1)
             .animation(nil, value: latestEditsVisibleCount)
             .onChange(of: allLatestEdits.count) { _, newCount in
                 latestEditsVisibleCount = min(latestEditsVisibleCount, newCount)
@@ -511,7 +520,20 @@ struct MyBlogsProfileView: View {
             let allSections = MyBlogsProfileViewModel.sections(from: createdRecapStore.countrySummaries)
             let searched = viewModel.filteredSections(from: allSections)
             let sections = searched
-            Group {
+            VStack(alignment: .leading, spacing: 0) {
+                Color.clear
+                    .frame(height: 0)
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear
+                                .preference(
+                                    key: MyBlogsScrollOffsetKey.self,
+                                    value: proxy.frame(in: .named("MyBlogsScroll")).minY
+                                )
+                        }
+                        .allowsHitTesting(false)
+                    }
+
                 if false && !isSearchActive && !viewModel.unsavedTrips.isEmpty {
                     unsavedTripsSection
                 }
@@ -535,14 +557,12 @@ struct MyBlogsProfileView: View {
                             .frame(maxWidth: .infinity)
                         }
                     }
+                    .zIndex(0)
                 }
             }
-            .background(GeometryReader { proxy in
-                Color.clear.preference(key: MyBlogsScrollOffsetKey.self, value: proxy.frame(in: .named("MyBlogsScroll")).minY)
-            })
             .padding(.horizontal, horizontalPadding)
             .padding(.top, 12)
-            .padding(.bottom, searchBarHeight + myMapButtonSize + 24)
+            .padding(.bottom, searchBarHeight + myMapButtonSize + 24 + bottomNavClearance)
         }
         .coordinateSpace(name: "MyBlogsScroll")
         .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in scrollOffset = value }
@@ -1046,6 +1066,7 @@ struct LatestEditsMoreHintCard: View {
                     )
             }
             .appChromeCornerRadius(12)
+            .contentShape(RoundedRectangle(appChromeBaseRadius: 12))
         }
         .buttonStyle(.plain)
     }
@@ -1101,6 +1122,7 @@ struct CreatedRecapCard: View {
         .padding(10)
         .background(Color.white.opacity(0.1))
         .appChromeCornerRadius(12)
+        .contentShape(RoundedRectangle(appChromeBaseRadius: 12))
     }
 
     private var lastEditedText: String {

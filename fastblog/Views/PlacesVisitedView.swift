@@ -13,6 +13,9 @@ private func filterChipUnselectedFill() -> Color {
     })
 }
 
+/// Clears the shared `ContentView` bottom nav so search + map float above it.
+private let placesBottomNavClearance = BottomNavBar.floatingChromeBottomPadding
+
 // MARK: - Standalone full-screen Places Visited (from home icon)
 struct PlacesVisitedStandaloneView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
@@ -20,9 +23,9 @@ struct PlacesVisitedStandaloneView: View {
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialScrollToStopIdForRecap: UUID?
+    /// When true, `ContentView` hides the shared bottom nav (places map is pushed).
+    @Binding var hidesRootBottomNav: Bool
     var onDismiss: () -> Void
-    var onShowCamera: (() -> Void)? = nil
-    var onShowMyBlogs: (() -> Void)? = nil
 
     @State private var searchText: String = ""
     @State private var showPlacesMap: Bool = false
@@ -36,6 +39,7 @@ struct PlacesVisitedStandaloneView: View {
             showPlacesMap: $showPlacesMap,
             selectedCreatedRecap: $selectedCreatedRecap,
             initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
+            hidesRootBottomNav: $hidesRootBottomNav,
             standaloneOnDismiss: onDismiss,
             onShowSettings: { showSettings = true }
         )
@@ -46,14 +50,7 @@ struct PlacesVisitedStandaloneView: View {
         .navigationBarBackButtonHidden(true)
         .preferredColorScheme(.dark)
         .dynamicTypeSize(.large)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            BottomNavBar(
-                activeTab: .myPlaces,
-                onMyBlogs: { onShowMyBlogs?() },
-                onCamera: { onShowCamera?() },
-                onMyPlaces: {}
-            )
-        }
+
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(authService)
@@ -70,6 +67,8 @@ struct PlacesVisitedView: View {
     @Binding var showPlacesMap: Bool
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialScrollToStopIdForRecap: UUID?
+    /// When true, `ContentView` hides the shared bottom nav (places map is pushed).
+    @Binding var hidesRootBottomNav: Bool
     /// When set (standalone presentation), shows a leading dismiss control in the navigation bar.
     var standaloneOnDismiss: (() -> Void)? = nil
     var onShowSettings: (() -> Void)? = nil
@@ -269,18 +268,18 @@ struct PlacesVisitedView: View {
                         }
                     }
                     .padding(.horizontal, horizontalPadding)
-                    .padding(.bottom, 140)
+                    .padding(.bottom, searchBarHeight + mapButtonSize + 40 + placesBottomNavClearance)
                 }
                 .scrollDismissesKeyboard(.immediately)
             }
 
             // Persistent bottom bar (search + map), same design as My Blogs
             VStack(spacing: 0) {
-                Spacer()
                 HStack {
                     Spacer()
                     Button {
                         isSearchFocused = false
+                        hidesRootBottomNav = true
                         showPlacesMap = true
                     } label: {
                         Image(systemName: "map.fill")
@@ -297,6 +296,7 @@ struct PlacesVisitedView: View {
                 }
                 placesSearchBar
             }
+            .padding(.bottom, placesBottomNavClearance)
             .allowsHitTesting(true)
 
             // Full-screen place viewer (matches blog overlay, not a sheet).
@@ -394,6 +394,8 @@ struct PlacesVisitedView: View {
                 .zIndex(300)
             }
         }
+        .onChange(of: showPlacesMap) { _, showing in if !showing { hidesRootBottomNav = false } }
+        .onDisappear { hidesRootBottomNav = false }
         .navigationDestination(isPresented: $showPlacesMap) {
             PlacesVisitedMapView(
                 selectedYear: $selectedYear,
@@ -617,6 +619,10 @@ struct PlacesVisitedView: View {
                 .lineLimit(1)
         }
         .buttonStyle(.plain)
+    }
+
+    private func syncRootBottomNavVisibility() {
+        hidesRootBottomNav = showPlacesMap
     }
 
     private func placesVisitedCategoryChip(raw: String, isSelected: Bool, action: @escaping () -> Void) -> some View {

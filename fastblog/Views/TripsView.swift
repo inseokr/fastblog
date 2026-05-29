@@ -1698,6 +1698,8 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     @Published var isConfigured = false
     @Published var authorizationDenied = false
     @Published private(set) var zoomFactor: CGFloat = 1.0
+    /// Minimum zoom the current device supports (< 1.0 on devices with an ultra-wide camera).
+    @Published private(set) var minAvailableZoom: CGFloat = 1.0
     /// Current location for embedding in captured photos. Updated when camera runs.
     @Published private(set) var currentLocation: CLLocation?
     /// Current camera position (front or back). Updated when user taps flip button.
@@ -1756,7 +1758,12 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             self.hasAudioInput = false
 
             do {
-                guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
+                // Prefer the dual-wide virtual device for back camera so 0.5× ultra-wide zoom is available.
+                let preferredDevice: AVCaptureDevice? = position == .back
+                    ? AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: .back)
+                    : nil
+                guard let device = preferredDevice
+                    ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
                     DispatchQueue.main.async { self.authorizationDenied = true }
                     self.session.commitConfiguration()
                     return
@@ -1770,8 +1777,10 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                     self.session.addOutput(self.photoOutput)
                 }
                 self.ensureMovieOutputConfiguredLocked()
+                let minZoom = device.minAvailableVideoZoomFactor
                 DispatchQueue.main.async {
                     self.position = position
+                    self.minAvailableZoom = minZoom
                 }
             } catch {
                 DispatchQueue.main.async { self.authorizationDenied = true }
@@ -1796,7 +1805,11 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                 self.session.removeInput(input)
             }
             self.hasAudioInput = false
-            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: nextPosition) else {
+            let preferredDevice: AVCaptureDevice? = nextPosition == .back
+                ? AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: .back)
+                : nil
+            guard let device = preferredDevice
+                ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: nextPosition) else {
                 self.session.commitConfiguration()
                 return
             }
@@ -1812,9 +1825,11 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             }
             self.ensureMovieOutputConfiguredLocked()
             self.session.commitConfiguration()
+            let minZoom = device.minAvailableVideoZoomFactor
             DispatchQueue.main.async {
                 self.position = nextPosition
                 self.zoomFactor = 1.0
+                self.minAvailableZoom = minZoom
             }
         }
     }
@@ -1850,7 +1865,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     func setZoomFactor(_ factor: CGFloat) {
         sessionQueue.async {
             guard let device = self.videoDevice else { return }
-            let clamped = max(1.0, min(factor, device.maxAvailableVideoZoomFactor))
+            let clamped = max(device.minAvailableVideoZoomFactor, min(factor, device.maxAvailableVideoZoomFactor))
             do {
                 try device.lockForConfiguration()
                 device.videoZoomFactor = clamped
@@ -2224,9 +2239,25 @@ private enum CameraCaptureMode: String, CaseIterable, Identifiable {
 }
 
 /// Camera UI that shows a live preview and session counter. Moment plumbing is added separately.
+private enum InAppCameraChromeLayout {
+    static let horizontalInset: CGFloat = 16
+    /// 8 pt of breathing room below the status bar. Reads the live safe-area top so
+    /// the camera chrome clears the Dynamic Island / notch on every device.
+    static var topInsetBelowSafeArea: CGFloat {
+        let safeTop = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first(where: { $0.isKeyWindow })?
+            .safeAreaInsets.top ?? 47
+        return safeTop + 8
+    }
+}
+
 struct CameraCaptureView: View {
     @ObservedObject var tripsViewModel: TripsViewModel
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @EnvironmentObject private var authService: AuthService
+    @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     @Environment(\.dismiss) private var dismiss
     /// When set, receives the summary message (e.g. "3 moments added to Trip") when user leaves with attached photos.
     var postDismissToast: ((String) -> Void)? = nil
@@ -2236,9 +2267,8 @@ struct CameraCaptureView: View {
     /// When set, all captured photos are always routed to this blog regardless of date/on-the-go state.
     /// Used when the camera is opened from inside an existing blog.
     var forcedTargetBlogId: UUID? = nil
-    /// Bottom nav callbacks — wired by ContentView when camera is the home screen.
-    var onShowMyBlogs: () -> Void = {}
-    var onShowMyPlaces: () -> Void = {}
+    /// Called when post-capture caption overlay enters/exits so the parent can hide the shared nav bar.
+    var onCaptionModeChanged: ((Bool) -> Void)? = nil
 
     @StateObject private var cameraController = CameraController()
 
@@ -2279,6 +2309,8 @@ struct CameraCaptureView: View {
     @State private var zoomBaseScale: CGFloat = 1.0
     @State private var showZoomIndicator: Bool = false
     @State private var zoomIndicatorTask: Task<Void, Never>? = nil
+    /// The preset zoom level selected via the Reel zoom picker (0.5, 1, or 3).
+    @State private var selectedReelZoom: CGFloat = 1.0
     // Vibe recording
     @StateObject private var vibeRecorder = VibeRecorder()
     /// Photo / Vibe / Reel — persisted across camera sessions.
@@ -2331,6 +2363,7 @@ struct CameraCaptureView: View {
     @State private var showPreviewDiscardConfirm = false
     /// Confirm before deleting only the vibe clip from the current previewed photo.
     @State private var showRemoveVibeConfirm = false
+    @State private var showSettings = false
     /// Resolved once when the post-capture preview opens — **never** re-hit `FileManager`/disk from SwiftUI `body`
     /// (those checks were stacking every layout pass and could freeze UI for seconds).
     @State private var previewChromeHasVibe = false
@@ -2454,6 +2487,7 @@ struct CameraCaptureView: View {
         withAnimation(.easeOut(duration: 0.2)) {
             isCaptionModeActive = true
         }
+        onCaptionModeChanged?(true)
         // Let the freeze-frame commit first — then hydrate place title/geocode asynchronously.
         DispatchQueue.main.async {
             guard self.captionModeMomentId == moment.id else { return }
@@ -2490,6 +2524,7 @@ struct CameraCaptureView: View {
         withAnimation(.easeOut(duration: 0.18)) {
             isCaptionModeActive = false
         }
+        onCaptionModeChanged?(false)
         captionModeMomentId = nil
         captionModeFrozenImage = nil
         captionModeWantsKeyboard = false
@@ -2738,13 +2773,15 @@ struct CameraCaptureView: View {
     private var cameraZoomGesture: some Gesture {
         MagnificationGesture()
             .onChanged { value in
-                let newZoom = max(1.0, min(zoomBaseScale * value, 10.0))
+                let minZoom = cameraController.minAvailableZoom
+                let newZoom = max(minZoom, min(zoomBaseScale * value, 10.0))
                 cameraController.setZoomFactor(newZoom)
                 showZoomIndicator = true
                 zoomIndicatorTask?.cancel()
             }
             .onEnded { value in
-                zoomBaseScale = max(1.0, min(zoomBaseScale * value, 10.0))
+                let minZoom = cameraController.minAvailableZoom
+                zoomBaseScale = max(minZoom, min(zoomBaseScale * value, 10.0))
                 zoomIndicatorTask = Task {
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
                     guard !Task.isCancelled else { return }
@@ -2783,10 +2820,8 @@ struct CameraCaptureView: View {
                 ProgressView("Preparing camera…")
                     .tint(.white)
                     .foregroundColor(.white)
-                    .padding(.bottom, 24)
             }
-            shutterBar
-                .padding(.bottom, 8)
+            Spacer()
         }
 
         // Zoom level indicator - appears while pinching, fades out
@@ -2802,7 +2837,7 @@ struct CameraCaptureView: View {
                     .transition(.opacity)
                 Spacer()
             }
-            .padding(.top, 12)
+            .padding(.top, InAppCameraChromeLayout.topInsetBelowSafeArea)
             .animation(.easeInOut(duration: 0.2), value: showZoomIndicator)
         }
 
@@ -2813,7 +2848,7 @@ struct CameraCaptureView: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 Spacer()
             }
-            .padding(.top, 8)
+            .padding(.top, InAppCameraChromeLayout.topInsetBelowSafeArea)
             .frame(maxWidth: .infinity)
             .animation(.easeInOut(duration: 0.2), value: isReelCaptureMode)
             .animation(.easeInOut(duration: 0.2), value: cameraController.isRecordingMomentVideo)
@@ -2854,67 +2889,83 @@ struct CameraCaptureView: View {
                 .accessibilityHint("Shows what vibe capture does")
                 Spacer()
             }
-            .padding(.top, 8)
+            .padding(.top, InAppCameraChromeLayout.topInsetBelowSafeArea)
             .transition(.opacity.combined(with: .move(edge: .top)))
             .animation(.easeInOut(duration: 0.3), value: isVibeCaptureEnabled)
         }
 
-        // Top controls: Reverse / Flash / Save to Photos (top-right)
-        VStack(spacing: 16) {
+        // Top bar: Settings (leading) + flip / flash / save-to-photos (trailing)
+        HStack(alignment: .top, spacing: 12) {
             Button {
-                cameraController.flipCamera()
+                showSettings = true
             } label: {
-                Image(systemName: "camera.rotate")
+                Image(systemName: "gearshape.fill")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
                     .background(.ultraThinMaterial)
                     .clipShape(Circle())
             }
-            .accessibilityLabel("Flip camera")
+            .accessibilityLabel("Settings")
 
-            Button {
-                cameraController.cycleFlashMode()
-            } label: {
-                let flashOn = cameraController.flashMode != .off
-                Image(systemName: flashIconName)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial)
-                    .background(flashOn ? Color.cyan.opacity(0.22) : Color.clear)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(flashOn ? Color.cyan.opacity(0.5) : Color.clear, lineWidth: 1))
-            }
-            .accessibilityLabel(flashAccessibilityLabel)
-            .disabled(cameraController.position == .front)
+            Spacer(minLength: 0)
 
-            Button {
-                if presentSaveToPhotosTooltipIfNeeded() {
-                    return
+            VStack(spacing: 16) {
+                Button {
+                    cameraController.flipCamera()
+                } label: {
+                    Image(systemName: "camera.rotate")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
                 }
-                toggleSaveToPhotos()
-            } label: {
-                Image(systemName: "arrow.down.to.line.compact")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial)
-                    .background(saveToPhotosEnabled ? Color.cyan.opacity(0.22) : Color.clear)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(saveToPhotosEnabled ? Color.cyan.opacity(0.5) : Color.clear, lineWidth: 1))
-            }
-            .accessibilityLabel(saveToPhotosEnabled ? "Save to Photos on, tap to disable" : "Save to Photos off, tap to enable")
+                .accessibilityLabel("Flip camera")
 
-            if isReelCaptureMode {
-                reelMaxDurationButton
-                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                Button {
+                    cameraController.cycleFlashMode()
+                } label: {
+                    let flashOn = cameraController.flashMode != .off
+                    Image(systemName: flashIconName)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial)
+                        .background(flashOn ? Color.cyan.opacity(0.22) : Color.clear)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(flashOn ? Color.cyan.opacity(0.5) : Color.clear, lineWidth: 1))
+                }
+                .accessibilityLabel(flashAccessibilityLabel)
+                .disabled(cameraController.position == .front)
+
+                Button {
+                    if presentSaveToPhotosTooltipIfNeeded() {
+                        return
+                    }
+                    toggleSaveToPhotos()
+                } label: {
+                    Image(systemName: "arrow.down.to.line.compact")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial)
+                        .background(saveToPhotosEnabled ? Color.cyan.opacity(0.22) : Color.clear)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(saveToPhotosEnabled ? Color.cyan.opacity(0.5) : Color.clear, lineWidth: 1))
+                }
+                .accessibilityLabel(saveToPhotosEnabled ? "Save to Photos on, tap to disable" : "Save to Photos off, tap to enable")
+
+                if isReelCaptureMode {
+                    reelMaxDurationButton
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                }
             }
+            .animation(.easeInOut(duration: 0.2), value: isReelCaptureMode)
         }
-        .animation(.easeInOut(duration: 0.2), value: isReelCaptureMode)
-        .padding(.top, 8)
-        .padding(.trailing, 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        .padding(.horizontal, InAppCameraChromeLayout.horizontalInset)
+        .padding(.top, InAppCameraChromeLayout.topInsetBelowSafeArea)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
     }
 
@@ -2966,7 +3017,7 @@ struct CameraCaptureView: View {
 
     private var previewTopBar: some View {
         VStack {
-            HStack(alignment: .top) {
+            HStack(alignment: .top, spacing: 12) {
                 Button {
                     requestPreviewClose()
                 } label: {
@@ -3006,37 +3057,34 @@ struct CameraCaptureView: View {
 
                 if previewChromeHasVibe, let moment = captionModeResolvedMoment {
                     let isPlaying = previewVibePlayer.isPlaying
-                    VStack(spacing: 10) {
-                        Button {
-                            if isPlaying {
-                                previewVibePlayer.stop()
-                            } else if let url = resolvedVibeURL(for: moment) {
-                                previewVibePlayer.play(url: url)
-                            }
-                        } label: {
-                            AtmosphericWaveformView(isActive: isPlaying)
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial)
-                                .background(isPlaying ? Color.cyan.opacity(0.32) : Color.white.opacity(0.06))
-                                .clipShape(Circle())
-                                .overlay(
-                                    Circle().stroke(
-                                        isPlaying
-                                            ? LinearGradient(colors: [.cyan, .green], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                            : LinearGradient(colors: [Color.white.opacity(0.2)], startPoint: .top, endPoint: .bottom),
-                                        lineWidth: isPlaying ? 2 : 1
-                                    )
-                                )
-                                .shadow(color: isPlaying ? .cyan.opacity(0.55) : .clear, radius: isPlaying ? 10 : 0)
+                    Button {
+                        if isPlaying {
+                            previewVibePlayer.stop()
+                        } else if let url = resolvedVibeURL(for: moment) {
+                            previewVibePlayer.play(url: url)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(isPlaying ? "Stop vibe playback" : "Play vibe")
-
+                    } label: {
+                        AtmosphericWaveformView(isActive: isPlaying)
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial)
+                            .background(isPlaying ? Color.cyan.opacity(0.32) : Color.white.opacity(0.06))
+                            .clipShape(Circle())
+                            .overlay(
+                                Circle().stroke(
+                                    isPlaying
+                                        ? LinearGradient(colors: [.cyan, .green], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                        : LinearGradient(colors: [Color.white.opacity(0.2)], startPoint: .top, endPoint: .bottom),
+                                    lineWidth: isPlaying ? 2 : 1
+                                )
+                            )
+                            .shadow(color: isPlaying ? .cyan.opacity(0.55) : .clear, radius: isPlaying ? 10 : 0)
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isPlaying ? "Stop vibe playback" : "Play vibe")
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
+            .padding(.horizontal, InAppCameraChromeLayout.horizontalInset)
+            .padding(.top, InAppCameraChromeLayout.topInsetBelowSafeArea)
             Spacer()
         }
     }
@@ -3342,7 +3390,7 @@ struct CameraCaptureView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(previewCaptionFocused ? "Done editing caption" : "Save moment to Bloggo Gallery")
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, InAppCameraChromeLayout.horizontalInset)
         .padding(.top, 10)
         .padding(.bottom, 14)
         .background(
@@ -3660,14 +3708,11 @@ struct CameraCaptureView: View {
             .overlay(alignment: .top) { toastOverlay }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if !isCaptionModeActive {
-                    BottomNavBar(
-                        activeTab: .camera,
-                        onMyBlogs: onShowMyBlogs,
-                        onCamera: {},
-                        onMyPlaces: onShowMyPlaces
-                    )
-                    .transition(.opacity)
-                    .animation(.easeInOut(duration: 0.2), value: isCaptionModeActive)
+                    shutterBar
+                        .padding(.top, 8)
+                        .padding(.bottom, BottomNavBar.cameraShutterGapAboveBar)
+                        .transition(.opacity)
+                        .animation(.easeInOut(duration: 0.2), value: isCaptionModeActive)
                 }
             }
     }
@@ -3717,6 +3762,10 @@ struct CameraCaptureView: View {
                 if isVibeCaptureEnabled { vibeRecorder.start() }
                 presentCameraTooltipIfNeeded()
             }
+            }
+            .onChange(of: cameraController.position) { _, _ in
+                selectedReelZoom = 1.0
+                zoomBaseScale = 1.0
             }
             .onChange(of: cameraController.isRecordingMomentVideo) { _, isRecording in
                 if isRecording {
@@ -3874,6 +3923,12 @@ struct CameraCaptureView: View {
     /// Gallery presentation and removal handlers.
     private var inAppCameraWithSessionSheets: some View {
         inAppCameraWithLifecycleHooks
+            .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environmentObject(authService)
+                .environmentObject(photoAuth)
+                .environmentObject(createdRecapStore)
+        }
             .sheet(isPresented: $isShowingCapturesGallery, onDismiss: { loadLatestGalleryThumbnail() }) {
             AppCaptureGalleryView()
         }
@@ -4414,10 +4469,59 @@ struct CameraCaptureView: View {
         .opacity(cameraController.isRecordingMomentVideo ? 0.4 : 1)
     }
 
+    /// 0.5 / 1 / 3 zoom preset pill — shown above the shutter when not recording.
+    private var reelZoomPicker: some View {
+        HStack(spacing: 4) {
+            ForEach(reelZoomLevels, id: \.self) { level in
+                Button {
+                    selectedReelZoom = level
+                    zoomBaseScale = level
+                    cameraController.setZoomFactor(level)
+                } label: {
+                    let isActive = selectedReelZoom == level
+                    Text(reelZoomLabel(for: level))
+                        .font(.system(size: 14, weight: isActive ? .bold : .semibold))
+                        .foregroundColor(isActive ? .yellow : .white.opacity(0.75))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(isActive ? Color.white.opacity(0.18) : Color.clear)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(reelZoomLabel(for: level)) zoom")
+                .accessibilityAddTraits(selectedReelZoom == level ? .isSelected : [])
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+    }
+
+    private var reelZoomLevels: [CGFloat] {
+        // Show 0.5× only on devices that actually have an ultra-wide camera.
+        var levels: [CGFloat] = [1.0, 3.0]
+        if cameraController.minAvailableZoom < 0.9 {
+            levels.insert(0.5, at: 0)
+        }
+        return levels
+    }
+
+    private func reelZoomLabel(for level: CGFloat) -> String {
+        if level < 1.0 { return ".5×" }
+        if level == 1.0 { return "1×" }
+        return "\(Int(level))×"
+    }
+
     private var shutterBar: some View {
         VStack(spacing: 10) {
             if cameraController.isRecordingMomentVideo {
                 reelRecordingIndicator
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            if !cameraController.isRecordingMomentVideo {
+                reelZoomPicker
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
@@ -4427,8 +4531,9 @@ struct CameraCaptureView: View {
                 } label: {
                     shutterBarGalleryIcon
                 }
-                .frame(maxWidth: .infinity)
                 .disabled(cameraController.isRecordingMomentVideo)
+
+                Spacer(minLength: 0)
 
                 Group {
                     if isReelCaptureMode {
@@ -4439,14 +4544,16 @@ struct CameraCaptureView: View {
                 }
                 .frame(width: 88)
 
+                Spacer(minLength: 0)
+
                 Button {
                     isShowingSessionGallery = true
                 } label: {
                     shutterBarCurrentPhotosButton
                 }
-                .frame(maxWidth: .infinity)
                 .disabled(cameraController.isRecordingMomentVideo)
             }
+            .padding(.horizontal, 4)
 
             captureModePicker
         }

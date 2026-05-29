@@ -20,6 +20,12 @@ struct ContentView: View {
     /// MTLDebugDevice notifyExternalReferencesNonZeroOnDealloc.
     @State private var tripsViewKeepMounted = false
     @State private var showSeeAll = false
+    /// After Tap to Blog from My Blogs, restore that overlay when the trips/scan flow ends (not after onboarding).
+    @State private var returnToMyBlogsAfterTripsFlow = false
+    /// True while My Blogs has pushed `MyMapView` or a country map (hides root bottom nav).
+    @State private var myBlogsMapHidesRootBottomNav = false
+    /// True while My Places has pushed `PlacesVisitedMapView` (hides root bottom nav).
+    @State private var myPlacesMapHidesRootBottomNav = false
     @State private var showPlacesVisited = false
     @State private var postCameraToastMessage: String?
     @State private var selectedCreatedRecap: CreatedRecapBlog?
@@ -38,6 +44,7 @@ struct ContentView: View {
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     /// Day index to open when navigating to a blog via the new-moments popup.
     @AppStorage("blogify.justFinishedOnboarding") private var justFinishedOnboarding = false
+    @State private var isCameraInCaptionMode = false
 
     init() {
         _tripsViewModel = StateObject(wrappedValue: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared))
@@ -118,6 +125,9 @@ struct ContentView: View {
                     }
                 }
             }
+            .onChange(of: showSeeAll) { _, showing in
+                if !showing { myBlogsMapHidesRootBottomNav = false }
+            }
             .onChange(of: postCameraToastMessage) { _, msg in
                 if msg != nil {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
@@ -146,11 +156,8 @@ struct ContentView: View {
             CameraCaptureView(
                 tripsViewModel: tripsViewModel,
                 postDismissToast: { msg in postCameraToastMessage = msg },
-                onShowMyBlogs: {
-                    withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = true }
-                },
-                onShowMyPlaces: {
-                    withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = true }
+                onCaptionModeChanged: { active in
+                    withAnimation(.easeInOut(duration: 0.2)) { isCameraInCaptionMode = active }
                 }
             )
             .environmentObject(createdRecapStore)
@@ -217,19 +224,14 @@ struct ContentView: View {
                         openRecapInEditMode: $openRecapInEditMode,
                         openRecapPresentShareYourBlogSheet: $openRecapPresentShareYourBlogSheet,
                         tripsViewModel: tripsViewModel,
+                        hidesRootBottomNav: $myBlogsMapHidesRootBottomNav,
                         onDismissCover: {
+                            returnToMyBlogsAfterTripsFlow = false
                             withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = false }
                         },
                         onTapToBlog: {
-                            withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = false }
+                            returnToMyBlogsAfterTripsFlow = true
                             handleTapToBlog()
-                        },
-                        onShowCamera: {
-                            withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = false }
-                        },
-                        onShowMyPlaces: {
-                            withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = false }
-                            withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = true }
                         }
                     )
                     .environmentObject(createdRecapStore)
@@ -247,15 +249,9 @@ struct ContentView: View {
                     PlacesVisitedStandaloneView(
                         selectedCreatedRecap: $selectedCreatedRecap,
                         initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
+                        hidesRootBottomNav: $myPlacesMapHidesRootBottomNav,
                         onDismiss: {
                             withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = false }
-                        },
-                        onShowCamera: {
-                            withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = false }
-                        },
-                        onShowMyBlogs: {
-                            withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = false }
-                            withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = true }
                         }
                     )
                     .environmentObject(createdRecapStore)
@@ -328,6 +324,49 @@ struct ContentView: View {
                 .zIndex(20)
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if showBottomNavBar {
+                BottomNavBar(
+                    activeTab: navBarActiveTab,
+                    onMyBlogs: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showPlacesVisited = false
+                            showSeeAll = true
+                        }
+                    },
+                    onCamera: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showSeeAll = false
+                            showPlacesVisited = false
+                        }
+                    },
+                    onMyPlaces: {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            showSeeAll = false
+                            showPlacesVisited = true
+                        }
+                    }
+                )
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: showBottomNavBar)
+            }
+        }
+    }
+
+    private var showBottomNavBar: Bool {
+        let showingTrips = showTrips || pendingShowTripsWhenIdle || tripsViewKeepMounted
+        return !showingTrips
+            && selectedCreatedRecap == nil
+            && tripsViewModel.scanState == .idle
+            && !isCameraInCaptionMode
+            && !myBlogsMapHidesRootBottomNav
+            && !myPlacesMapHidesRootBottomNav
+    }
+
+    private var navBarActiveTab: BottomNavTab {
+        if showSeeAll { return .myBlogs }
+        if showPlacesVisited { return .myPlaces }
+        return .camera
     }
 
     // MARK: - Trips overlay lifecycle
@@ -336,8 +375,15 @@ struct ContentView: View {
     /// in-flight GPU command buffers before the CAMetalLayer drawable is deallocated.
     private func dismissTripsOverlay() {
         tripsViewKeepMounted = true
+        let restoreMyBlogs = returnToMyBlogsAfterTripsFlow
+        if restoreMyBlogs {
+            returnToMyBlogsAfterTripsFlow = false
+        }
         withAnimation(.easeInOut(duration: 0.3)) {
             showTrips = false
+            if restoreMyBlogs {
+                showSeeAll = true
+            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             guard !showTrips, !pendingShowTripsWhenIdle else { return }

@@ -89,6 +89,7 @@ struct CountryCardView: View {
                         .stroke(Color.white.opacity(0.15), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.25), radius: 8, x: 0, y: 4)
+                .contentShape(RoundedRectangle(appChromeBaseRadius: 14))
         }
         .buttonStyle(.plain)
     }

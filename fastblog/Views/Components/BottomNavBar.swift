@@ -11,18 +11,26 @@ enum BottomNavTab {
     case myPlaces
 }
 
+extension BottomNavBar {
+    /// Tab row height (divider + icons/labels). Home indicator is added via `safeAreaPadding(.bottom)`.
+    static let contentStackHeight: CGFloat = 62
+    /// Gap between floating bottom chrome (search bar, map button) and the nav bar.
+    static let gapAboveBarWhenStacked: CGFloat = 8
+    /// Gap between the camera shutter / Photo·Vibe·Reel picker and the nav bar.
+    static let cameraShutterGapAboveBar: CGFloat = 24
+    static var floatingChromeBottomPadding: CGFloat { contentStackHeight + gapAboveBarWhenStacked }
+}
+
 struct BottomNavBar: View {
     let activeTab: BottomNavTab
     var onMyBlogs:  () -> Void = {}
     var onCamera:   () -> Void = {}
     var onMyPlaces: () -> Void = {}
 
-    private let appBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
-
     var body: some View {
         VStack(spacing: 0) {
-            Color.white.opacity(0.12)
-                .frame(height: 1 / UIScreen.main.scale)
+            Divider()
+                .overlay(Color.white.opacity(0.15))
 
             HStack(spacing: 0) {
                 tabItem(
@@ -48,7 +56,7 @@ struct BottomNavBar: View {
             .padding(.horizontal, 8)
             .safeAreaPadding(.bottom)
         }
-        .background(appBackground)
+        .background(.ultraThinMaterial)
     }
 
     @ViewBuilder
