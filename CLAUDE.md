@@ -22,6 +22,14 @@ xcodebuild -project fastblog.xcodeproj -scheme Bloggo -sdk iphonesimulator build
 @.ai/skills/code/naming.md
 @.ai/skills/code/data-models.md
 
+## Doubtful (implementation alignment)
+
+Before marking feature work **complete**, **fixed**, or **ready**, read and follow:
+
+@.ai/skills/doubtful/SKILL.md
+
+Audit implementation against user intent, `docs/superpowers/specs/`, and `docs/superpowers/plans/`. Run build verification; issue **Aligned / Partially aligned / Misaligned**. Do not rubber-stamp — no "looks good" without evidence. User can invoke `@doubtful` for a full audit at any time.
+
 ## Adding new Swift files
 When creating a new `.swift` file, it must be registered in `fastblog.xcodeproj/project.pbxproj`:
 1. **PBXBuildFile** — `BB0001XX /* File.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001YY; };`

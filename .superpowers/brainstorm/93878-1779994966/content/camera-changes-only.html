@@ -1,0 +1,234 @@
+<style>
+  body { text-align: center; }
+
+  .split-wrap {
+    display: flex;
+    gap: 40px;
+    justify-content: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin: 28px 0;
+  }
+
+  .col { display: flex; flex-direction: column; align-items: center; }
+
+  .phone {
+    width: 210px;
+    height: 440px;
+    background: #000;
+    border-radius: 38px;
+    border: 3px solid #2a2a2a;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  }
+
+  .camera-bg {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(180deg, rgba(0,0,0,0.55) 0%, transparent 22%, transparent 70%, rgba(0,0,0,0.4) 100%),
+      linear-gradient(135deg, #1c3a2a 0%, #2d5a3a 30%, #1a4030 55%, #0e2a20 80%, #0a1e30 100%);
+  }
+
+  .top-bar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 14px 16px 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    z-index: 3;
+  }
+
+  .circle-btn {
+    width: 36px; height: 36px;
+    background: rgba(30,30,30,0.72);
+    backdrop-filter: blur(8px);
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.18);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .right-col { display: flex; flex-direction: column; gap: 8px; }
+
+  /* OLD: controls at native bottom (before nav bar) */
+  .controls-old {
+    position: absolute;
+    left: 0; right: 0;
+    bottom: 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 0 18px;
+    z-index: 3;
+  }
+
+  /* NEW: controls shifted up above nav bar */
+  .controls-new {
+    position: absolute;
+    left: 0; right: 0;
+    bottom: 72px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 0 18px;
+    z-index: 3;
+  }
+
+  .shutter-row {
+    display: flex; align-items: center; justify-content: space-between; width: 100%;
+  }
+  .gallery-box {
+    width: 48px; height: 48px;
+    background: rgba(255,255,255,0.18);
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.25);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .shutter {
+    width: 66px; height: 66px; border-radius: 50%;
+    background: rgba(255,255,255,0.18);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .shutter-inner { width: 56px; height: 56px; border-radius: 50%; background: white; }
+  .counter-circle {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.25);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: white; font-weight: 700;
+  }
+  .mode-row { display: flex; gap: 14px; }
+  .mode-label { font-size: 9px; color: rgba(255,255,255,0.45); letter-spacing: 0.5px; text-transform: uppercase; }
+  .mode-label.active { color: #fff; font-weight: 700; }
+
+  .bottom-nav {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 62px;
+    background: rgba(5,10,48,0.97);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    display: flex;
+  }
+  .nav-item {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  }
+  .nav-item span { font-size: 7px; color: rgba(255,255,255,0.4); letter-spacing: 0.3px; }
+  .nav-item.active span { color: #fff; }
+  .nav-dot { width: 4px; height: 4px; border-radius: 50%; background: white; margin-top: 1px; opacity: 0; }
+  .nav-item.active .nav-dot { opacity: 1; }
+
+  .phone-label { margin-top: 14px; font-size: 13px; font-weight: 700; color: #ddd; }
+
+  /* Annotation callouts */
+  .callout {
+    font-size: 11px; color: #93c5fd; margin: 4px 0;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .callout .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .green { background: #4ade80; }
+  .blue { background: #60a5fa; }
+  .gray { background: #6b7280; }
+  .unchanged { font-size: 11px; color: #6b7280; margin: 2px 0; }
+
+  .arrow-col {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; color: #555; padding-top: 160px;
+  }
+
+  .legend {
+    display: flex; flex-direction: column; gap: 8px; text-align: left;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 14px 18px; margin: 0 auto;
+    max-width: 480px;
+  }
+  .legend-row { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #ccc; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+</style>
+
+<h2>Camera — What Changes vs. What Stays</h2>
+<p class="subtitle">Only two things move. Everything else is untouched.</p>
+
+<div class="split-wrap">
+
+  <!-- BEFORE -->
+  <div class="col">
+    <div class="phone">
+      <div class="camera-bg"></div>
+      <div class="top-bar">
+        <!-- OLD: X button -->
+        <div class="circle-btn" style="border-color:rgba(255,80,80,0.5); background:rgba(100,20,20,0.5);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff6b6b" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+        <div class="right-col">
+          <div class="circle-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"><path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18H7a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h10l3 3v7a2 2 0 0 1-2 2h-1"/><polyline points="12 12 12 18"/><polyline points="9 15 12 18 15 15"/></svg></div>
+          <div class="circle-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <div class="circle-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="15"/><path d="M5 12l7 7 7-7"/><path d="M5 20h14"/></svg></div>
+        </div>
+      </div>
+      <!-- OLD controls — sitting at raw bottom, potentially behind home indicator -->
+      <div class="controls-old">
+        <div class="shutter-row">
+          <div class="gallery-box"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+          <div class="shutter"><div class="shutter-inner"></div></div>
+          <div class="counter-circle">0</div>
+        </div>
+        <div class="mode-row">
+          <div class="mode-label">Vibe</div>
+          <div class="mode-label active">Photo</div>
+          <div class="mode-label">Reel</div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-label">Before</div>
+  </div>
+
+  <!-- Arrow -->
+  <div class="arrow-col">→</div>
+
+  <!-- AFTER -->
+  <div class="col">
+    <div class="phone">
+      <div class="camera-bg"></div>
+      <div class="top-bar">
+        <!-- NEW: Settings gear -->
+        <div class="circle-btn" style="border-color:rgba(80,200,80,0.5); background:rgba(20,60,20,0.5);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </div>
+        <!-- Same three right-side buttons — unchanged -->
+        <div class="right-col">
+          <div class="circle-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"><path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18H7a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h10l3 3v7a2 2 0 0 1-2 2h-1"/><polyline points="12 12 12 18"/><polyline points="9 15 12 18 15 15"/></svg></div>
+          <div class="circle-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <div class="circle-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="15"/><path d="M5 12l7 7 7-7"/><path d="M5 20h14"/></svg></div>
+        </div>
+      </div>
+      <!-- NEW controls — shifted up above the nav bar -->
+      <div class="controls-new">
+        <div class="shutter-row">
+          <div class="gallery-box"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+          <div class="shutter"><div class="shutter-inner"></div></div>
+          <div class="counter-circle">0</div>
+        </div>
+        <div class="mode-row">
+          <div class="mode-label">Vibe</div>
+          <div class="mode-label active">Photo</div>
+          <div class="mode-label">Reel</div>
+        </div>
+      </div>
+      <!-- NEW bottom nav -->
+      <div class="bottom-nav">
+        <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.8"><path d="M4 19V9l8-6 8 6v10H4z"/><rect x="9" y="19" width="6" height="6" rx="1"/></svg><span>My Blogs</span><div class="nav-dot"></div></div>
+        <div class="nav-item active"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><span>Camera</span><div class="nav-dot"></div></div>
+        <div class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.8"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>My Places</span><div class="nav-dot"></div></div>
+      </div>
+    </div>
+    <div class="phone-label">After</div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <div class="legend-row"><div class="legend-dot" style="background:#4ade80"></div>X button → Settings gear (top-left)</div>
+  <div class="legend-row"><div class="legend-dot" style="background:#60a5fa"></div>Shutter controls shifted up to clear nav bar</div>
+  <div class="legend-row"><div class="legend-dot" style="background:#6b7280"></div>Flip / Flash / Save-to-Photos — untouched, same position</div>
+</div>

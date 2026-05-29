@@ -1,0 +1,9 @@
+{"type":"server-started","port":64378,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:64378","screen_dir":"/Users/justinseo/Desktop/Bloggo/fastblog/fastblog/.superpowers/brainstorm/93878-1779994966/content","state_dir":"/Users/justinseo/Desktop/Bloggo/fastblog/fastblog/.superpowers/brainstorm/93878-1779994966/state"}
+{"type":"screen-added","file":"/Users/justinseo/Desktop/Bloggo/fastblog/fastblog/.superpowers/brainstorm/93878-1779994966/content/camera-topleft.html"}
+{"type":"screen-added","file":"/Users/justinseo/Desktop/Bloggo/fastblog/fastblog/.superpowers/brainstorm/93878-1779994966/content/camera-topleft-v2.html"}
+{"type":"screen-added","file":"/Users/justinseo/Desktop/Bloggo/fastblog/fastblog/.superpowers/brainstorm/93878-1779994966/content/camera-changes-only.html"}
+{"type":"screen-added","file":"/Users/justinseo/Desktop/Bloggo/fastblog/fastblog/.superpowers/brainstorm/93878-1779994966/content/waiting.html"}
+{"type":"screen-added","file":"/Users/justinseo/Desktop/Bloggo/fastblog/fastblog/.superpowers/brainstorm/93878-1779994966/content/myblogs-layout.html"}
+{"type":"screen-added","file":"/Users/justinseo/Desktop/Bloggo/fastblog/fastblog/.superpowers/brainstorm/93878-1779994966/content/myblogs-layout-v2.html"}
+{"type":"screen-added","file":"/Users/justinseo/Desktop/Bloggo/fastblog/fastblog/.superpowers/brainstorm/93878-1779994966/content/myblogs-layout-v3.html"}
+{"type":"server-stopped","reason":"idle timeout"}

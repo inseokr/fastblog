@@ -1,0 +1,232 @@
+<style>
+  .phone {
+    display: inline-block;
+    width: 200px;
+    height: 420px;
+    background: #000;
+    border-radius: 36px;
+    border: 2px solid #333;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    vertical-align: top;
+  }
+  .phone-screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .camera-bg {
+    flex: 1;
+    background: linear-gradient(160deg, #1a2a1a 0%, #0d1a0d 50%, #0a1520 100%);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .cam-trees {
+    position: absolute;
+    bottom: 0; left: 0; right: 0; height: 40%;
+    background: linear-gradient(180deg, transparent, #0d1a0d 60%);
+    display: flex; align-items: flex-end; justify-content: center;
+    font-size: 28px; padding-bottom: 4px; letter-spacing: -2px;
+  }
+  .top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 14px 8px;
+    position: relative;
+    z-index: 2;
+  }
+  .icon-btn {
+    width: 34px; height: 34px;
+    background: rgba(255,255,255,0.18);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: white;
+  }
+  .right-icons {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .right-icons .icon-btn { font-size: 10px; }
+  .shutter-area {
+    position: absolute;
+    bottom: 64px; left: 0; right: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 0 16px;
+    z-index: 2;
+  }
+  .shutter-row {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%;
+  }
+  .gallery-btn {
+    width: 40px; height: 40px;
+    background: rgba(255,255,255,0.22);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .shutter-btn {
+    width: 54px; height: 54px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 3px solid white;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .shutter-inner {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: white;
+  }
+  .counter-btn {
+    width: 40px; height: 40px;
+    background: rgba(255,255,255,0.22);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: white; font-weight: bold;
+  }
+  .mode-row {
+    display: flex; gap: 10px;
+  }
+  .mode-pill {
+    font-size: 8px; color: rgba(255,255,255,0.55);
+    padding: 2px 6px;
+    border-radius: 10px;
+  }
+  .mode-pill.active {
+    color: white;
+    background: rgba(255,255,255,0.15);
+  }
+  .bottom-nav {
+    height: 60px;
+    background: rgba(5,10,48,0.95);
+    border-top: 1px solid rgba(255,255,255,0.12);
+    display: flex;
+    align-items: center;
+  }
+  .nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 7px;
+    color: rgba(255,255,255,0.5);
+  }
+  .nav-item.active {
+    color: white;
+  }
+  .nav-icon { font-size: 14px; }
+  .phone-label {
+    text-align: center;
+    margin-top: 12px;
+    font-size: 13px;
+    color: #ccc;
+    font-weight: 600;
+  }
+  .phone-sub {
+    text-align: center;
+    font-size: 11px;
+    color: #777;
+    margin-top: 2px;
+  }
+  .phones-row {
+    display: flex;
+    gap: 40px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin: 24px 0;
+  }
+  .phone-wrapper { display: flex; flex-direction: column; }
+  .empty-topleft {
+    width: 34px; height: 34px;
+  }
+</style>
+
+<h2>Camera as Landing — Top-Left Button</h2>
+<p class="subtitle">The camera is now the home screen. What should live in the top-left corner?</p>
+
+<div class="phones-row">
+
+  <!-- Option A: Settings gear -->
+  <div class="phone-wrapper">
+    <div class="phone option" data-choice="a" onclick="toggleSelect(this)">
+      <div class="phone-screen">
+        <div class="camera-bg">
+          <div class="top-bar">
+            <div class="icon-btn">⚙️</div>
+            <div class="right-icons">
+              <div class="icon-btn">🔄</div>
+              <div class="icon-btn">⚡</div>
+              <div class="icon-btn">⬇️</div>
+            </div>
+          </div>
+          <div class="cam-trees">🌲🌲🌲🌲🌲</div>
+          <div class="shutter-area">
+            <div class="shutter-row">
+              <div class="gallery-btn">🖼️</div>
+              <div class="shutter-btn"><div class="shutter-inner"></div></div>
+              <div class="counter-btn">0</div>
+            </div>
+            <div class="mode-row">
+              <div class="mode-pill">Vibe</div>
+              <div class="mode-pill active">Photo</div>
+              <div class="mode-pill">Reel</div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom-nav">
+          <div class="nav-item"><div class="nav-icon">📚</div>My Blogs</div>
+          <div class="nav-item active"><div class="nav-icon">📷</div>Camera</div>
+          <div class="nav-item"><div class="nav-icon">📍</div>My Places</div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-label">A — Settings Gear</div>
+    <div class="phone-sub">⚙️ top-left opens Settings</div>
+  </div>
+
+  <!-- Option B: No button (clean) -->
+  <div class="phone-wrapper">
+    <div class="phone option" data-choice="b" onclick="toggleSelect(this)">
+      <div class="phone-screen">
+        <div class="camera-bg">
+          <div class="top-bar">
+            <div class="empty-topleft"></div>
+            <div class="right-icons">
+              <div class="icon-btn">🔄</div>
+              <div class="icon-btn">⚡</div>
+              <div class="icon-btn">⬇️</div>
+            </div>
+          </div>
+          <div class="cam-trees">🌲🌲🌲🌲🌲</div>
+          <div class="shutter-area">
+            <div class="shutter-row">
+              <div class="gallery-btn">🖼️</div>
+              <div class="shutter-btn"><div class="shutter-inner"></div></div>
+              <div class="counter-btn">0</div>
+            </div>
+            <div class="mode-row">
+              <div class="mode-pill">Vibe</div>
+              <div class="mode-pill active">Photo</div>
+              <div class="mode-pill">Reel</div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom-nav">
+          <div class="nav-item"><div class="nav-icon">📚</div>My Blogs</div>
+          <div class="nav-item active"><div class="nav-icon">📷</div>Camera</div>
+          <div class="nav-item"><div class="nav-icon">📍</div>My Places</div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-label">B — Clean (no button)</div>
+    <div class="phone-sub">Settings accessible via My Blogs</div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:8px;">Both show the shutter controls shifted up to clear the new bottom nav bar.</p>

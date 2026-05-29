@@ -1,0 +1,171 @@
+{
+  "color": {
+    "background": {
+      "app": {
+        "type": "color",
+        "value": "#050A30",
+        "description": "Full-screen, bottom nav. Swift: OnboardingConstants.Colors.background"
+      },
+      "app-gradient-end": {
+        "type": "color",
+        "value": "#080E38",
+        "description": "Splash gradient bottom"
+      }
+    },
+    "surface": {
+      "card": {
+        "type": "color",
+        "value": "#242424"
+      },
+      "card-narrative": {
+        "type": "color",
+        "value": "#191919"
+      }
+    },
+    "action": {
+      "primary": {
+        "type": "color",
+        "value": "#007AFF",
+        "description": "Buttons, Tap to Blog, links"
+      },
+      "filter-active": {
+        "type": "color",
+        "value": "#0B84FF"
+      },
+      "destructive": {
+        "type": "color",
+        "value": "#FF4539"
+      }
+    },
+    "feedback": {
+      "success": {
+        "type": "color",
+        "value": "#A6F2B7"
+      }
+    },
+    "text": {
+      "brand-accent": {
+        "type": "color",
+        "value": "#C8EBFF"
+      },
+      "primary-on-dark": {
+        "type": "color",
+        "value": "rgba(255, 255, 255, 0.92)"
+      },
+      "secondary-on-dark": {
+        "type": "color",
+        "value": "rgba(255, 255, 255, 0.7)"
+      },
+      "tertiary-on-dark": {
+        "type": "color",
+        "value": "rgba(255, 255, 255, 0.5)"
+      },
+      "nav-inactive": {
+        "type": "color",
+        "value": "rgba(255, 255, 255, 0.4)",
+        "description": "Bottom nav inactive icon + label"
+      }
+    },
+    "border": {
+      "hairline-on-dark": {
+        "type": "color",
+        "value": "rgba(255, 255, 255, 0.12)"
+      }
+    },
+    "scrim": {
+      "subtle": {
+        "type": "color",
+        "value": "rgba(0, 0, 0, 0.15)"
+      },
+      "loading": {
+        "type": "color",
+        "value": "rgba(0, 0, 0, 0.45)"
+      },
+      "dim": {
+        "type": "color",
+        "value": "rgba(0, 0, 0, 0.6)"
+      },
+      "photo-text-start": {
+        "type": "color",
+        "value": "rgba(0, 0, 0, 0.65)",
+        "description": "Photo caption gradient — bottom stop"
+      }
+    },
+    "export": {
+      "pdf-header": {
+        "type": "color",
+        "value": "#2E62E0"
+      }
+    }
+  },
+  "layout": {
+    "space": {
+      "grid-unit": {
+        "type": "number",
+        "value": 4
+      },
+      "screen-horizontal": {
+        "type": "number",
+        "value": 20
+      }
+    },
+    "radius": {
+      "search-field": {
+        "type": "number",
+        "value": 12
+      },
+      "primary-button": {
+        "type": "number",
+        "value": 25
+      },
+      "sheet-top": {
+        "type": "number",
+        "value": 16
+      },
+      "banner": {
+        "type": "number",
+        "value": 12
+      }
+    },
+    "nav": {
+      "bar-content-height": {
+        "type": "number",
+        "value": 62
+      },
+      "bar-breathing": {
+        "type": "number",
+        "value": 8
+      }
+    },
+    "touch": {
+      "min-target": {
+        "type": "number",
+        "value": 44
+      }
+    },
+    "splash": {
+      "logo-size": {
+        "type": "number",
+        "value": 200
+      }
+    },
+    "type": {
+      "splash-title": {
+        "type": "number",
+        "value": 34
+      },
+      "nav-label": {
+        "type": "number",
+        "value": 10
+      },
+      "banner-title": {
+        "type": "number",
+        "value": 17
+      },
+      "banner-subtitle": {
+        "type": "number",
+        "value": 13
+      }
+    }
+  }
+}

@@ -1,0 +1,225 @@
+<style>
+  body { text-align: center; }
+
+  .phones-row {
+    display: flex; gap: 48px; justify-content: center;
+    flex-wrap: wrap; margin: 28px 0 16px;
+  }
+  .phone-wrapper { display: flex; flex-direction: column; align-items: center; }
+
+  .phone {
+    width: 210px; height: 440px;
+    background: #050A30;
+    border-radius: 38px;
+    border: 3px solid #2a2a2a;
+    position: relative; overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    cursor: pointer;
+  }
+
+  /* Nav bar — three explicit columns so title is always truly centered */
+  .nav-bar {
+    height: 46px;
+    background: rgba(5,10,48,0.98);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: 0 14px;
+    position: relative;
+    z-index: 2;
+  }
+  .nav-left  { display: flex; align-items: center; justify-content: flex-start; }
+  .nav-center { display: flex; align-items: center; justify-content: center; }
+  .nav-right  { display: flex; align-items: center; justify-content: flex-end; }
+
+  .nav-title {
+    font-size: 12px; font-weight: 700; color: white; letter-spacing: 0.2px;
+    white-space: nowrap;
+  }
+
+  .circle-btn {
+    width: 32px; height: 32px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.15);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .manage-btn {
+    font-size: 9px; color: rgba(255,255,255,0.7); font-weight: 600;
+    padding: 3px 9px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.12);
+    white-space: nowrap;
+  }
+
+  /* Scrollable content */
+  .content {
+    position: absolute;
+    top: 46px; left: 0; right: 0; bottom: 62px;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  /* Search bar */
+  .search-bar {
+    margin: 8px 12px 0;
+    height: 28px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 8px;
+    display: flex; align-items: center;
+    padding: 0 10px; gap: 6px;
+  }
+  .search-bar span { font-size: 8px; color: rgba(255,255,255,0.35); }
+
+  /* Tap to Blog banner */
+  .tap-to-blog-banner {
+    margin: 8px 12px;
+    padding: 10px 12px;
+    background: linear-gradient(135deg, rgba(0,122,255,0.25), rgba(0,122,255,0.1));
+    border: 1px solid rgba(0,122,255,0.4);
+    border-radius: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tap-icon {
+    width: 28px; height: 28px;
+    background: rgba(0,122,255,0.3);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .tap-text { text-align: left; }
+  .tap-text .t1 { font-size: 9px; font-weight: 700; color: white; }
+  .tap-text .t2 { font-size: 7px; color: rgba(255,255,255,0.55); margin-top: 1px; }
+
+  /* Latest Edits strip */
+  .section-label {
+    font-size: 8px; font-weight: 700; color: white;
+    padding: 6px 14px 4px; text-align: left;
+  }
+  .recaps-strip {
+    display: flex; gap: 6px; padding: 0 12px 6px; overflow: hidden;
+  }
+  .recap-card {
+    width: 70px; height: 52px; border-radius: 8px; flex-shrink: 0;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.12);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .recap-card-inner {
+    width: 28px; height: 28px; border-radius: 4px;
+    background: linear-gradient(135deg, #2d5a3a, #1a4030);
+  }
+
+  /* Country sections */
+  .country-section {
+    margin: 0 12px 4px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  .country-row { display: flex; align-items: center; gap: 5px; margin-bottom: 2px; }
+  .country-flag { font-size: 10px; }
+  .country-name { font-size: 8px; color: rgba(255,255,255,0.8); font-weight: 600; }
+  .country-sub { font-size: 7px; color: rgba(255,255,255,0.35); margin-left: 15px; }
+
+  /* Bottom nav */
+  .bottom-nav {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 62px;
+    background: rgba(5,10,48,0.97);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    display: flex;
+  }
+  .nav-item {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px;
+  }
+  .nav-item span { font-size: 6px; color: rgba(255,255,255,0.4); }
+  .nav-item.active span { color: #fff; }
+  .nav-dot { width: 4px; height: 4px; border-radius: 50%; background: white; opacity: 0; }
+  .nav-item.active .nav-dot { opacity: 1; }
+
+  .phone-label { margin-top: 14px; font-size: 13px; font-weight: 700; color: #ddd; }
+  .phone-sub { font-size: 11px; color: #666; margin-top: 3px; max-width: 210px; text-align: center; }
+</style>
+
+<h2>My Blogs — Layout Check</h2>
+<p class="subtitle">⚙️ top-left · "My Blogs" centered · Manage top-right</p>
+
+<div class="phones-row">
+  <div class="phone-wrapper">
+    <div class="phone">
+
+      <!-- NAV BAR: gear | My Blogs (centered) | Manage -->
+      <div class="nav-bar">
+        <div class="nav-left">
+          <div class="circle-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </div>
+        </div>
+        <div class="nav-center">
+          <span class="nav-title">My Blogs</span>
+        </div>
+        <div class="nav-right">
+          <div class="manage-btn">Manage</div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="search-bar">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span>Search blogs...</span>
+        </div>
+
+        <div class="tap-to-blog-banner">
+          <div class="tap-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          </div>
+          <div class="tap-text">
+            <div class="t1">Tap to Blog</div>
+            <div class="t2">Scan your photos into a blog</div>
+          </div>
+        </div>
+
+        <div class="section-label">Latest Edits</div>
+        <div class="recaps-strip">
+          <div class="recap-card"><div class="recap-card-inner"></div></div>
+          <div class="recap-card"><div class="recap-card-inner" style="background:linear-gradient(135deg,#3a2a1c,#2a1a0c)"></div></div>
+          <div class="recap-card"><div class="recap-card-inner" style="background:linear-gradient(135deg,#1c2a3a,#0c1a2a)"></div></div>
+        </div>
+
+        <div class="section-label">By Country</div>
+        <div class="country-section">
+          <div class="country-row"><span class="country-flag">🇯🇵</span><span class="country-name">Japan</span></div>
+          <div class="country-sub">3 blogs · 12 places</div>
+        </div>
+        <div class="country-section" style="margin-top:4px;">
+          <div class="country-row"><span class="country-flag">🇫🇷</span><span class="country-name">France</span></div>
+          <div class="country-sub">1 blog · 5 places</div>
+        </div>
+      </div>
+
+      <div class="bottom-nav">
+        <div class="nav-item active">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"><path d="M4 19V9l8-6 8 6v10H4z"/><rect x="9" y="19" width="6" height="6" rx="1"/></svg>
+          <span>My Blogs</span><div class="nav-dot"></div>
+        </div>
+        <div class="nav-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span>Camera</span><div class="nav-dot"></div>
+        </div>
+        <div class="nav-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.8"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          <span>My Places</span><div class="nav-dot"></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="phone-label">My Blogs</div>
+    <div class="phone-sub">⚙️ left · title centered · Manage right</div>
+  </div>
+</div>

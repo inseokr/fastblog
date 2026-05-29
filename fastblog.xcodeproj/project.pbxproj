@@ -67,7 +67,6 @@
 		BB000130 /* DayChipsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00012F /* DayChipsView.swift */; };
 		BB000132 /* EditPlaceStopNameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000131 /* EditPlaceStopNameSheet.swift */; };
 		BB000134 /* FindMoreTripsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000133 /* FindMoreTripsSheet.swift */; };
-		BB000136 /* LandingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000135 /* LandingView.swift */; };
 		BB000138 /* LoadingScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000137 /* LoadingScanView.swift */; };
 		BB00013A /* ManagePhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000139 /* ManagePhotosView.swift */; };
 		BB00013C /* MapDayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00013B /* MapDayView.swift */; };
@@ -339,7 +338,6 @@
 		BB00012F /* DayChipsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayChipsView.swift; sourceTree = "<group>"; };
 		BB000131 /* EditPlaceStopNameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditPlaceStopNameSheet.swift; sourceTree = "<group>"; };
 		BB000133 /* FindMoreTripsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindMoreTripsSheet.swift; sourceTree = "<group>"; };
-		BB000135 /* LandingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandingView.swift; sourceTree = "<group>"; };
 		BB000137 /* LoadingScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingScanView.swift; sourceTree = "<group>"; };
 		BB000139 /* ManagePhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagePhotosView.swift; sourceTree = "<group>"; };
 		BB00013B /* MapDayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapDayView.swift; sourceTree = "<group>"; };
@@ -715,7 +713,6 @@
 				BB000133 /* FindMoreTripsSheet.swift */,
 				BB0003B2 /* VisitedCitiesSheet.swift */,
 				BB000205 /* ImportDraftsModalView.swift */,
-				BB000135 /* LandingView.swift */,
 				BB0003B6 /* SettingsView.swift */,
 				BB000137 /* LoadingScanView.swift */,
 				BB000139 /* ManagePhotosView.swift */,
@@ -1073,7 +1070,6 @@
 				BB000284 /* KakaoTappableMapView.swift in Sources */,
 				BB000285 /* KakaoMapTestView.swift in Sources */,
 				BB000134 /* FindMoreTripsSheet.swift in Sources */,
-				BB000136 /* LandingView.swift in Sources */,
 				BB0003B7 /* SettingsView.swift in Sources */,
 				BB000138 /* LoadingScanView.swift in Sources */,
 				BB00013A /* ManagePhotosView.swift in Sources */,
