@@ -28,6 +28,8 @@ private struct MyBlogsScrollOffsetKey: PreferenceKey {
 struct MyBlogsProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @EnvironmentObject private var authService: AuthService
+    @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialDayIndexForRecap: Int?
     /// Passed to `CountryBlogsView` for kebab "Edit Blog"; consumed by root `RecapBlogPageView` as `forceEditMode`.
@@ -37,6 +39,9 @@ struct MyBlogsProfileView: View {
     @ObservedObject var tripsViewModel: TripsViewModel
     /// Called when user taps "View" on new-moments alert so the parent can dismiss the fullScreenCover.
     var onDismissCover: (() -> Void)? = nil
+    var onTapToBlog: (() -> Void)? = nil
+    var onShowCamera: (() -> Void)? = nil
+    var onShowMyPlaces: (() -> Void)? = nil
     /// Reports whether the visible scroll is at top (for swipe-to-dismiss gating).
     var onTopScrollStateChange: ((Bool) -> Void)? = nil
     @StateObject private var viewModel = MyBlogsProfileViewModel()
@@ -59,6 +64,11 @@ struct MyBlogsProfileView: View {
     @State private var countryScrollOffset: CGFloat = 0
     /// Mirrors search field focus while on a country page (Manage → Done in `CountryBlogsView`).
     @State private var countrySearchBarFocused = false
+    @State private var showSettings = false
+
+    private let latestEditsPageSize = 5
+    @State private var latestEditsVisibleCount = 5
+    @State private var isLoadingLatestEditsBatch = false
 
     // On-the-go new-moments popup
     @State private var showNewMomentsAlert = false
@@ -74,6 +84,9 @@ struct MyBlogsProfileView: View {
         openRecapPresentShareYourBlogSheet: Binding<Bool> = .constant(false),
         tripsViewModel: TripsViewModel,
         onDismissCover: (() -> Void)? = nil,
+        onTapToBlog: (() -> Void)? = nil,
+        onShowCamera: (() -> Void)? = nil,
+        onShowMyPlaces: (() -> Void)? = nil,
         onTopScrollStateChange: ((Bool) -> Void)? = nil
     ) {
         _selectedCreatedRecap = selectedCreatedRecap
@@ -82,6 +95,9 @@ struct MyBlogsProfileView: View {
         _openRecapPresentShareYourBlogSheet = openRecapPresentShareYourBlogSheet
         _tripsViewModel = ObservedObject(wrappedValue: tripsViewModel)
         self.onDismissCover = onDismissCover
+        self.onTapToBlog = onTapToBlog
+        self.onShowCamera = onShowCamera
+        self.onShowMyPlaces = onShowMyPlaces
         self.onTopScrollStateChange = onTopScrollStateChange
     }
 
@@ -193,13 +209,16 @@ struct MyBlogsProfileView: View {
                     Button {
                         isSearchFocused = false
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            onDismissCover?()
-                        }
+                        showSettings = true
                     } label: {
-                        Image(systemName: "xmark")
+                        Image(systemName: "gearshape.fill")
                             .font(.body.weight(.semibold))
                     }
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 1.5).onEnded { _ in
+                            OnboardingStore.hasCompletedOnboarding = false
+                        }
+                    )
                 case .country:
                     Button {
                         isSearchFocused = false
@@ -263,6 +282,20 @@ struct MyBlogsProfileView: View {
             .environmentObject(createdRecapStore)
             .presentationDetents([.fraction(1)])
             .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environmentObject(authService)
+                .environmentObject(photoAuth)
+                .environmentObject(createdRecapStore)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            BottomNavBar(
+                activeTab: .myBlogs,
+                onMyBlogs: {},
+                onCamera: { onShowCamera?() },
+                onMyPlaces: { onShowMyPlaces?() }
+            )
         }
         .onChange(of: selectedCreatedRecap?.id) { oldValue, newValue in
             guard reopenManageSheetAfterRecapDismiss, oldValue != nil, newValue == nil else { return }
@@ -345,6 +378,105 @@ struct MyBlogsProfileView: View {
         onTopScrollStateChange?(isCurrentPageAtTop)
     }
 
+    @ViewBuilder
+    private var tapToBlogBanner: some View {
+        Button {
+            onTapToBlog?()
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.18))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Tap to Blog")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    Text("Scan your photos into a blog")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.65))
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.12))
+            .overlay(
+                RoundedRectangle(appChromeBaseRadius: 12)
+                    .stroke(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.25), lineWidth: 1)
+            )
+            .appChromeCornerRadius(12)
+            .padding(.horizontal, horizontalPadding)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var allLatestEdits: [CreatedRecapBlog] { createdRecapStore.displayRecents }
+    private var visibleLatestEdits: [CreatedRecapBlog] { Array(allLatestEdits.prefix(latestEditsVisibleCount)) }
+    private var hasMoreLatestEdits: Bool { allLatestEdits.count > latestEditsVisibleCount }
+
+    private let landingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
+
+    @ViewBuilder
+    private var recentRecapsSection: some View {
+        if !allLatestEdits.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Latest Edits")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, horizontalPadding)
+                    .frame(height: 22, alignment: .leading)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(visibleLatestEdits) { recap in
+                            CreatedRecapCard(recap: recap)
+                                .onTapGesture { selectedCreatedRecap = recap }
+                        }
+                        if hasMoreLatestEdits {
+                            LatestEditsMoreHintCard { loadMoreLatestEdits() }
+                        }
+                    }
+                    .padding(.bottom, 8)
+                }
+                .contentMargins(.horizontal, horizontalPadding, for: .scrollContent)
+                .frame(height: 128)
+                .clipped()
+                .overlay(alignment: .trailing) {
+                    if hasMoreLatestEdits {
+                        LinearGradient(
+                            colors: [landingBackground.opacity(0), landingBackground.opacity(0.75), landingBackground],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: 36)
+                        .allowsHitTesting(false)
+                    }
+                }
+            }
+            .padding(.top, 16)
+            .animation(nil, value: latestEditsVisibleCount)
+            .onChange(of: allLatestEdits.count) { _, newCount in
+                latestEditsVisibleCount = min(latestEditsVisibleCount, newCount)
+            }
+        }
+    }
+
+    private func loadMoreLatestEdits() {
+        guard hasMoreLatestEdits, !isLoadingLatestEditsBatch else { return }
+        isLoadingLatestEditsBatch = true
+        latestEditsVisibleCount = min(latestEditsVisibleCount + latestEditsPageSize, allLatestEdits.count)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { isLoadingLatestEditsBatch = false }
+    }
+
     private func attemptCreateBlog(trip: TripDraft) {
         selectedUnsavedTripPhotos = trip
     }
@@ -386,6 +518,9 @@ struct MyBlogsProfileView: View {
                 if false && !isSearchActive && !createdRecapStore.visibleRecents.isEmpty {
                     recentBlogsSection
                 }
+                tapToBlogBanner
+                    .padding(.top, 8)
+                recentRecapsSection
                 if sections.isEmpty {
                     emptyState
                 } else {
@@ -875,5 +1010,101 @@ private struct MyBlogsManageSheet: View {
             tripsViewModel: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared)
         )
         .environmentObject(CreatedRecapBlogStore.shared)
+    }
+}
+
+// MARK: - Latest Edits card components
+
+struct LatestEditsMoreHintCard: View {
+    var onLoadMore: () -> Void
+
+    var body: some View {
+        Button(action: onLoadMore) {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.10))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white.opacity(0.75))
+                }
+
+                Text("More")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            .frame(width: 72, height: 100)
+            .padding(.vertical, 10)
+            .background(Color.white.opacity(0.08))
+            .overlay {
+                RoundedRectangle(appChromeBaseRadius: 12)
+                    .strokeBorder(
+                        Color.white.opacity(0.18),
+                        style: StrokeStyle(lineWidth: 1, dash: [5, 4])
+                    )
+            }
+            .appChromeCornerRadius(12)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct CreatedRecapCard: View {
+    let recap: CreatedRecapBlog
+
+    private static let lastEditedFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.doesRelativeDateFormatting = true
+        return f
+    }()
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack(alignment: .topLeading) {
+                TripCoverImage(theme: recap.coverImageName, coverAssetIdentifier: recap.coverAssetIdentifier)
+                    .frame(width: 80, height: 80)
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
+                if recap.lastEditedAt == nil {
+                    Text("Draft")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.black.opacity(0.6))
+                        .appChromeCornerRadius(4)
+                        .padding(4)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(recap.title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .lineLimit(2)
+                if let range = recap.tripDateRangeText, !range.isEmpty {
+                    Text(range)
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.85))
+                }
+                Text(lastEditedText)
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.65))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(width: 260)
+        .padding(10)
+        .background(Color.white.opacity(0.1))
+        .appChromeCornerRadius(12)
+    }
+
+    private var lastEditedText: String {
+        let date = recap.lastEditedAt ?? recap.createdAt
+        return "Edited \(Self.lastEditedFormatter.string(from: date))"
     }
 }
