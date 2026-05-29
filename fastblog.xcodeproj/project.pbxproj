@@ -228,6 +228,7 @@
 		BB0003B1 /* VisitedCitiesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B0 /* VisitedCitiesService.swift */; };
 		BB0003B3 /* VisitedCitiesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B2 /* VisitedCitiesSheet.swift */; };
 		BB0003B5 /* WeatherEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B4 /* WeatherEditSheet.swift */; };
+		BB0003B7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B6 /* SettingsView.swift */; };
 		BB0003C1 /* SplitPlaceStopView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003C0 /* SplitPlaceStopView.swift */; };
 		BB0003C5 /* AppChromeMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003C4 /* AppChromeMetrics.swift */; };
 		BB0003D1 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = AA000063 /* ZIPFoundation */; };
@@ -499,6 +500,7 @@
 		BB0003B0 /* VisitedCitiesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesService.swift; sourceTree = "<group>"; };
 		BB0003B2 /* VisitedCitiesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesSheet.swift; sourceTree = "<group>"; };
 		BB0003B4 /* WeatherEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherEditSheet.swift; sourceTree = "<group>"; };
+		BB0003B6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		BB0003C0 /* SplitPlaceStopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPlaceStopView.swift; sourceTree = "<group>"; };
 		BB0003C4 /* AppChromeMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppChromeMetrics.swift; sourceTree = "<group>"; };
 		BB0003D2 /* BlogBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogBackupService.swift; sourceTree = "<group>"; };
@@ -712,6 +714,7 @@
 				BB0003B2 /* VisitedCitiesSheet.swift */,
 				BB000205 /* ImportDraftsModalView.swift */,
 				BB000135 /* LandingView.swift */,
+				BB0003B6 /* SettingsView.swift */,
 				BB000137 /* LoadingScanView.swift */,
 				BB000139 /* ManagePhotosView.swift */,
 				BB0001D6 /* MemoryRecallModal.swift */,
@@ -1068,6 +1071,7 @@
 				BB000285 /* KakaoMapTestView.swift in Sources */,
 				BB000134 /* FindMoreTripsSheet.swift in Sources */,
 				BB000136 /* LandingView.swift in Sources */,
+				BB0003B7 /* SettingsView.swift in Sources */,
 				BB000138 /* LoadingScanView.swift in Sources */,
 				BB00013A /* ManagePhotosView.swift in Sources */,
 				BB00013C /* MapDayView.swift in Sources */,
