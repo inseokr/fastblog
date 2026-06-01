@@ -1896,8 +1896,49 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
     /// Attaches the mic to the capture session (call when entering Reel mode or before the first reel).
     func prepareMomentVideoAudioCapture() {
-        sessionQueue.async {
-            self.ensureMovieOutputConfiguredLocked()
+        ensureMicrophoneAuthorized { [weak self] granted in
+            guard let self else { return }
+            self.sessionQueue.async {
+                guard granted else {
+                    self.syncHasAudioInputFromSessionLocked()
+                    return
+                }
+                self.ensureMovieOutputConfiguredLocked()
+            }
+        }
+    }
+
+    /// Requests mic access when needed so `AVCaptureDeviceInput` for audio can be added.
+    private func ensureMicrophoneAuthorized(completion: @escaping (Bool) -> Void) {
+        if #available(iOS 17.0, *) {
+            switch AVAudioApplication.shared.recordPermission {
+            case .granted:
+                completion(true)
+            case .denied:
+                completion(false)
+            case .undetermined:
+                AVAudioApplication.requestRecordPermission { completion($0) }
+            @unknown default:
+                completion(false)
+            }
+        } else {
+            switch AVAudioSession.sharedInstance().recordPermission {
+            case .granted:
+                completion(true)
+            case .denied:
+                completion(false)
+            case .undetermined:
+                AVAudioSession.sharedInstance().requestRecordPermission { completion($0) }
+            @unknown default:
+                completion(false)
+            }
+        }
+    }
+
+    private func syncHasAudioInputFromSessionLocked() {
+        hasAudioInput = session.inputs.contains { input in
+            guard let deviceInput = input as? AVCaptureDeviceInput else { return false }
+            return deviceInput.device.hasMediaType(.audio)
         }
     }
 
@@ -1925,8 +1966,19 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
     /// Records up to five seconds of video+audio to a temp file. Completion is called on the main queue.
     func recordMomentVideo(completion: @escaping (URL?) -> Void) {
-        sessionQueue.async {
-            self.recordMomentVideoLocked(completion: completion)
+        ensureMicrophoneAuthorized { [weak self] granted in
+            guard let self else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            self.sessionQueue.async {
+                guard granted else {
+                    print("[Reel Audio] recordMomentVideo: mic permission denied ✗")
+                    DispatchQueue.main.async { completion(nil) }
+                    return
+                }
+                self.recordMomentVideoLocked(completion: completion)
+            }
         }
     }
 
@@ -1943,7 +1995,13 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
         activateAudioSessionForVideoRecording()
         ensureMovieOutputConfiguredLocked()
+        syncHasAudioInputFromSessionLocked()
         guard hasMovieOutput else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
+        guard hasAudioInput else {
+            print("[Reel Audio] startRecording: mic input missing — aborting ✗")
             DispatchQueue.main.async { completion(nil) }
             return
         }
@@ -1974,9 +2032,12 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
            connection.isVideoRotationAngleSupported(90) {
             connection.videoRotationAngle = 90
         }
-        if let audioConnection = movieOutput.connection(with: .audio) {
-            audioConnection.isEnabled = hasAudioInput
+        let audioConn = movieOutput.connection(with: .audio)
+        if let audioConn {
+            audioConn.isEnabled = hasAudioInput
         }
+        let audioSession = AVAudioSession.sharedInstance()
+        print("[Reel Audio] startRecording: hasAudioInput=\(hasAudioInput) audioConnection=\(audioConn != nil) audioSessionCategory=\(audioSession.category.rawValue) audioSessionMode=\(audioSession.mode.rawValue)")
 
         DispatchQueue.main.async {
             self.isRecordingMomentVideo = true
@@ -1991,12 +2052,11 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     }
 
     private func ensureMovieOutputConfiguredLocked() {
+        // Apple requires AVAudioSession changes on the main thread before capture-session edits.
         activateAudioSessionForVideoRecording()
 
         session.beginConfiguration()
-        if session.canSetSessionPreset(.high) {
-            session.sessionPreset = .high
-        }
+        removeAudioCaptureInputsLocked()
         attachAudioCaptureInputIfNeededLocked()
         if !hasMovieOutput, !session.outputs.contains(movieOutput), session.canAddOutput(movieOutput) {
             session.addOutput(movieOutput)
@@ -2004,42 +2064,73 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         }
         if hasMovieOutput {
             movieOutput.maxRecordedDuration = CMTime(seconds: Self.momentVideoClipDuration, preferredTimescale: 600)
-            if let audioConnection = movieOutput.connection(with: .audio) {
-                audioConnection.isEnabled = hasAudioInput
-            }
+        }
+        // Add mic + movie output before bumping preset — preset-first can leave a stale silent audio route.
+        if hasMovieOutput, session.canSetSessionPreset(.high) {
+            session.sessionPreset = .high
+        }
+        syncHasAudioInputFromSessionLocked()
+        if hasMovieOutput, let audioConnection = movieOutput.connection(with: .audio) {
+            audioConnection.isEnabled = hasAudioInput
         }
         session.commitConfiguration()
     }
 
+    private func removeAudioCaptureInputsLocked() {
+        for input in session.inputs {
+            guard let deviceInput = input as? AVCaptureDeviceInput,
+                  deviceInput.device.hasMediaType(.audio) else { continue }
+            session.removeInput(input)
+        }
+        hasAudioInput = false
+    }
+
     /// Adds the built-in mic to the capture session when missing. Requires `videoRecording` audio session (see `activateAudioSessionForVideoRecording`).
     private func attachAudioCaptureInputIfNeededLocked() {
-        let audioAlreadyInSession = session.inputs.contains { input in
-            guard let deviceInput = input as? AVCaptureDeviceInput else { return false }
-            return deviceInput.device.hasMediaType(.audio)
-        }
-        if audioAlreadyInSession {
-            hasAudioInput = true
+        guard !hasAudioInput else { return }
+        guard let audioDevice = AVCaptureDevice.default(for: .audio) else {
+            hasAudioInput = false
+            print("[Reel Audio] attachAudio: AVCaptureDevice.default(for: .audio) returned nil ✗")
             return
         }
-        guard let audioDevice = AVCaptureDevice.default(for: .audio),
-              let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
-              session.canAddInput(audioInput) else {
+        guard let audioInput = try? AVCaptureDeviceInput(device: audioDevice) else {
             hasAudioInput = false
+            print("[Reel Audio] attachAudio: AVCaptureDeviceInput init failed ✗")
+            return
+        }
+        guard session.canAddInput(audioInput) else {
+            hasAudioInput = false
+            print("[Reel Audio] attachAudio: session.canAddInput returned false ✗ (preset=\(session.sessionPreset.rawValue))")
             return
         }
         session.addInput(audioInput)
         hasAudioInput = true
+        print("[Reel Audio] attachAudio: mic input added successfully ✓")
     }
 
     /// Routes the mic into reel clips (`.playAndRecord` / `.videoRecording`).
     private func activateAudioSessionForVideoRecording() {
+        if Thread.isMainThread {
+            applyVideoRecordingAudioSession()
+        } else {
+            DispatchQueue.main.sync {
+                applyVideoRecordingAudioSession()
+            }
+        }
+    }
+
+    private func applyVideoRecordingAudioSession() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(
-            .playAndRecord,
-            mode: .videoRecording,
-            options: [.defaultToSpeaker, .allowBluetooth]
-        )
-        try? session.setActive(true)
+        do {
+            try session.setCategory(
+                .playAndRecord,
+                mode: .videoRecording,
+                options: [.defaultToSpeaker, .allowBluetooth]
+            )
+            try session.setActive(true)
+        } catch {
+            print("[Reel Audio] applyVideoRecordingAudioSession FAILED: \(error)")
+        }
     }
 
     /// Stops an in-progress reel clip early (e.g. when the user releases the shutter).
@@ -2099,6 +2190,15 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             DispatchQueue.main.async { completion?(nil) }
             return
         }
+        Task {
+            let asset = AVURLAsset(url: outputFileURL)
+            let tracks = try? await asset.loadTracks(withMediaType: .audio)
+            let peak = await Self.peakAudioLevel(in: outputFileURL)
+            print("[Reel Audio] finished file: size=\(recorded)B audioTracks=\(tracks?.count ?? -1) peak=\(peak.map { String(format: "%.4f", $0) } ?? "nil")")
+            if peak == nil || peak == 0 {
+                print("[Reel Audio] WARNING: recorded clip appears silent — check mic route / audio session")
+            }
+        }
 
         if wasManual {
             Task {
@@ -2108,6 +2208,56 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         } else {
             DispatchQueue.main.async { completion?(outputFileURL) }
         }
+    }
+
+    /// Rough peak sample level in 0…1; nil when no readable audio samples exist.
+    private static func peakAudioLevel(in url: URL) async -> Float? {
+        let asset = AVURLAsset(url: url)
+        guard let track = try? await asset.loadTracks(withMediaType: .audio).first else { return nil }
+        let reader: AVAssetReader
+        do {
+            reader = try AVAssetReader(asset: asset)
+        } catch {
+            return nil
+        }
+        let output = AVAssetReaderTrackOutput(
+            track: track,
+            outputSettings: [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsNonInterleaved: false
+            ]
+        )
+        guard reader.canAdd(output) else { return nil }
+        reader.add(output)
+        guard reader.startReading() else { return nil }
+
+        var peak: Float = 0
+        var samplesRead = 0
+        while let sampleBuffer = output.copyNextSampleBuffer() {
+            guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { continue }
+            var length = 0
+            var dataPointer: UnsafeMutablePointer<Int8>?
+            guard CMBlockBufferGetDataPointer(
+                blockBuffer,
+                atOffset: 0,
+                lengthAtOffsetOut: nil,
+                totalLengthOut: &length,
+                dataPointerOut: &dataPointer
+            ) == kCMBlockBufferNoErr, let dataPointer else { continue }
+
+            let sampleCount = length / MemoryLayout<Int16>.size
+            samplesRead += sampleCount
+            dataPointer.withMemoryRebound(to: Int16.self, capacity: sampleCount) { samples in
+                for index in 0..<sampleCount {
+                    let normalized = Float(abs(samples[index])) / Float(Int16.max)
+                    if normalized > peak { peak = normalized }
+                }
+            }
+        }
+        return samplesRead > 0 ? peak : nil
     }
 
     /// Trims `url` to the last `seconds` of footage. Returns the original URL unchanged if the
@@ -2479,6 +2629,8 @@ struct CameraCaptureView: View {
         cameraController.stopRunning()
         previewVibePlayer.stop()
         previewVoiceMemoPlayer.stop()
+        // Release the camera's recording audio session so reel preview playback can use the speaker.
+        InAppCameraAudioSession.deactivateForReelPlayback()
 
         // One-shot disk lookups for chrome (avoid `vibeFileURL` / `voiceMemoFileURL` inside View bodies —
         // SwiftUI evaluates those relentlessly during layout/animations).
@@ -3043,6 +3195,8 @@ struct CameraCaptureView: View {
                     Button {
                         guard resolvedMomentVideoURL(for: moment) != nil else { return }
                         previewVibePlayer.stop()
+                        previewVoiceMemoPlayer.stop()
+                        InAppCameraAudioSession.deactivateForReelPlayback()
                         showMomentVideoPreview = true
                     } label: {
                         Image(systemName: cameraController.isRecordingMomentVideo ? "video.fill" : "play.fill")

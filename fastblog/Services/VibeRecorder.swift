@@ -177,4 +177,9 @@ enum InAppCameraAudioSession {
     static func deactivateAfterCamera() {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
+
+    /// Releases the camera's `.playAndRecord` session so reel playback can route audio to the speaker.
+    static func deactivateForReelPlayback() {
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
 }
