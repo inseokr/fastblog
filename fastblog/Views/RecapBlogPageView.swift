@@ -3643,6 +3643,7 @@ struct RecapBlogPageView: View {
                         iconColor: .white,
                         titleColor: .white
                     ) {
+                        AppAnalytics.track(.blogShareSocialMedia(blogId: blogId.uuidString))
                         showShareYourBlogSheet = false
                         showSocialPostStudio = true
                     }
@@ -3652,6 +3653,7 @@ struct RecapBlogPageView: View {
                         subtitle: "Video from your moments",
                         icon: "video.badge.plus"
                     ) {
+                        AppAnalytics.track(.blogShareStitchReels(blogId: blogId.uuidString))
                         showShareYourBlogSheet = false
                         showVideoExportOptions = true
                     }

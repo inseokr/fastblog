@@ -578,6 +578,13 @@ struct EditPlaceStopNameSheet: View {
         )
     }
 
+    private func mapTapPOICandidateHasDetailLink(_ candidate: MapTapPOICandidate) -> Bool {
+        if isUsingKakaoMap {
+            return candidate.kakaoDetailWebURL != nil
+        }
+        return candidate.googleDetailWebURL != nil
+    }
+
     private func applyMapTapPOIChoice(_ candidate: MapTapPOICandidate) {
         editedTitle = candidate.name
         selectedCoordinate = candidate.coordinate
@@ -600,7 +607,7 @@ struct EditPlaceStopNameSheet: View {
                     }
                     .buttonStyle(.plain)
 
-                    if candidate.detailWebURL != nil {
+                    if mapTapPOICandidateHasDetailLink(candidate) {
                         Button {
                             mapTapPOIDetailCandidate = candidate
                         } label: {
@@ -612,13 +619,21 @@ struct EditPlaceStopNameSheet: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("View place details on Kakao Map")
+                        .accessibilityLabel(
+                            isUsingKakaoMap
+                                ? "View place details on Kakao Map"
+                                : "View place details on the web"
+                        )
                     }
                 }
                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 12))
             }
             .navigationDestination(item: $mapTapPOIDetailCandidate) { candidate in
-                KakaoPlaceDetailSheet(candidate: candidate)
+                if isUsingKakaoMap {
+                    KakaoPlaceDetailSheet(candidate: candidate)
+                } else {
+                    MapTapPOIGoogleDetailView(candidate: candidate)
+                }
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

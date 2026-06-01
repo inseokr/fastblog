@@ -69,8 +69,8 @@ struct MapTapPOICandidate: Identifiable, Hashable {
         )
     }
 
-    /// In-app Kakao Map place page (prefers API `place_url`, then place id, then name search).
-    var detailWebURL: URL? {
+    /// In-app Kakao Map place page when this row came from Kakao Local (not used for MapKit-only candidates).
+    var kakaoDetailWebURL: URL? {
         if let raw = kakaoPlaceURLString?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
             let normalized = raw.hasPrefix("http://")
                 ? "https://" + raw.dropFirst("http://".count)
@@ -81,8 +81,12 @@ struct MapTapPOICandidate: Identifiable, Hashable {
            let url = URL(string: "https://place.map.kakao.com/\(placeId)") {
             return url
         }
-        let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
-        return URL(string: "https://map.kakao.com/?q=\(encoded)")
+        return nil
+    }
+
+    /// Google search for MapKit nearby-picker rows (matches ``POIInfoSheet`` / ``StoryPlaceGoogleSearch``).
+    var googleDetailWebURL: URL? {
+        StoryPlaceGoogleSearch.url(placeName: name, placeSubtitle: addressSubtitle)
     }
 
     var kakaoMapAppURL: URL? {

@@ -141,3 +141,78 @@ struct PlaceGoogleSearchSheet: View {
         .presentationDragIndicator(.hidden)
     }
 }
+
+// MARK: - Map tap disambiguation (Apple Maps → Google)
+
+/// Pushed from the nearby / ambiguous place picker when the embedded map is MapKit.
+struct MapTapPOIGoogleDetailView: View {
+    let candidate: MapTapPOICandidate
+    @State private var currentPageURL: URL?
+
+    private var searchURL: URL? { candidate.googleDetailWebURL }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            placeSummaryHeader
+            Divider()
+            webContent
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(candidate.name)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if let url = searchURL {
+                    Button("Safari") {
+                        UIApplication.shared.open(url)
+                    }
+                }
+            }
+        }
+    }
+
+    private var placeSummaryHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(candidate.name)
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            if let categoryLabel = candidate.categoryLabel {
+                Text(categoryLabel)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let address = candidate.addressSubtitle {
+                Label(address, systemImage: "mappin.and.ellipse")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .labelStyle(.titleAndIcon)
+            }
+
+            Text(
+                candidate.distanceMeters < 8
+                    ? "Very near your tap"
+                    : String(format: "About %.0f m from your tap", candidate.distanceMeters)
+            )
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+    }
+
+    @ViewBuilder
+    private var webContent: some View {
+        if let url = searchURL {
+            GoogleSearchEmbeddedWebView(url: url, currentPageURL: $currentPageURL)
+        } else {
+            ContentUnavailableView(
+                "No web results",
+                systemImage: "magnifyingglass",
+                description: Text("Couldn’t open web results for this place.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}

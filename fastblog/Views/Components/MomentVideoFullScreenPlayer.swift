@@ -46,12 +46,11 @@ struct MomentVideoFullScreenPlayer: View {
     }
 
     private func startPlayback() {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .moviePlayback)
-        try? session.setActive(true)
+        configureAudioSessionForMomentVideoPlayback()
 
         let p = AVPlayer(url: url)
         p.isMuted = false
+        p.volume = 1
         if let item = p.currentItem {
             item.audioMix = nil
         }
@@ -62,6 +61,13 @@ struct MomentVideoFullScreenPlayer: View {
     private func stopPlayback() {
         player?.pause()
         player = nil
+    }
+
+    /// Routes reel audio to the speaker and takes over from the in-app camera's `.playAndRecord` session.
+    private func configureAudioSessionForMomentVideoPlayback() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback, options: [.defaultToSpeaker])
+        try? session.setActive(true)
     }
 }
 

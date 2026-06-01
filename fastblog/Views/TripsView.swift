@@ -1769,7 +1769,6 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                 if !self.session.outputs.contains(self.photoOutput), self.session.canAddOutput(self.photoOutput) {
                     self.session.addOutput(self.photoOutput)
                 }
-                self.ensureMovieOutputConfiguredLocked()
                 DispatchQueue.main.async {
                     self.position = position
                 }
@@ -1793,9 +1792,10 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         sessionQueue.async {
             self.session.beginConfiguration()
             for input in self.session.inputs {
+                guard let deviceInput = input as? AVCaptureDeviceInput,
+                      deviceInput.device.hasMediaType(.video) else { continue }
                 self.session.removeInput(input)
             }
-            self.hasAudioInput = false
             guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: nextPosition) else {
                 self.session.commitConfiguration()
                 return
@@ -1810,8 +1810,10 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                 self.session.commitConfiguration()
                 return
             }
-            self.ensureMovieOutputConfiguredLocked()
             self.session.commitConfiguration()
+            if self.hasMovieOutput {
+                self.ensureMovieOutputConfiguredLocked()
+            }
             DispatchQueue.main.async {
                 self.position = nextPosition
                 self.zoomFactor = 1.0
@@ -1892,65 +1894,94 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
     // MARK: - Moment video (5s clip after still)
 
-    /// Records up to five seconds of video+audio to a temp file. Completion is called on the main queue.
-    func recordMomentVideo(completion: @escaping (URL?) -> Void) {
-        AVAudioApplication.requestRecordPermission { _ in
-            self.recordMomentVideoAfterMicPermission(completion: completion)
+    /// Attaches the mic to the capture session (call when entering Reel mode or before the first reel).
+    func prepareMomentVideoAudioCapture() {
+        sessionQueue.async {
+            self.ensureMovieOutputConfiguredLocked()
         }
     }
 
-    private func recordMomentVideoAfterMicPermission(completion: @escaping (URL?) -> Void) {
+    /// Drops movie output + mic input so Vibe (`AVAudioRecorder`) can own the microphone again.
+    func releaseMomentVideoCaptureConfiguration() {
         sessionQueue.async {
-            guard self.isConfigured, !self.movieOutput.isRecording else {
-                DispatchQueue.main.async { completion(nil) }
-                return
+            guard self.hasMovieOutput else { return }
+            self.session.beginConfiguration()
+            if self.session.outputs.contains(self.movieOutput) {
+                self.session.removeOutput(self.movieOutput)
             }
-            guard self.session.isRunning else {
-                DispatchQueue.main.async { completion(nil) }
-                return
+            for input in self.session.inputs {
+                guard let deviceInput = input as? AVCaptureDeviceInput,
+                      deviceInput.device.hasMediaType(.audio) else { continue }
+                self.session.removeInput(input)
             }
-            self.ensureMovieOutputConfiguredLocked()
-            guard self.hasMovieOutput else {
-                DispatchQueue.main.async { completion(nil) }
-                return
+            if self.session.canSetSessionPreset(.photo) {
+                self.session.sessionPreset = .photo
             }
-
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("moment_video_\(UUID().uuidString).mov")
-            try? FileManager.default.removeItem(at: url)
-
-            self.momentVideoCompletion = completion
-            self.momentVideoStopWorkItem?.cancel()
-            let clipDuration = Self.momentVideoClipDuration
-            let stopMode = ReelStopMode.current
-            self.isManualStopMode = (stopMode == .manual)
-
-            if stopMode == .auto {
-                let stopWork = DispatchWorkItem { [weak self] in
-                    self?.stopMomentVideoRecordingLocked()
-                }
-                self.momentVideoStopWorkItem = stopWork
-                self.movieOutput.maxRecordedDuration = CMTime(seconds: clipDuration, preferredTimescale: 600)
-                self.sessionQueue.asyncAfter(deadline: .now() + clipDuration, execute: stopWork)
-            } else {
-                // Manual: cap at 120s as a safety ceiling; user taps stop manually
-                self.movieOutput.maxRecordedDuration = CMTime(seconds: 120, preferredTimescale: 600)
-            }
-
-            if let connection = self.movieOutput.connection(with: .video),
-               connection.isVideoRotationAngleSupported(90) {
-                connection.videoRotationAngle = 90
-            }
-            if let audioConnection = self.movieOutput.connection(with: .audio) {
-                audioConnection.isEnabled = true
-            }
-
-            DispatchQueue.main.async {
-                self.activateAudioSessionForVideoRecording()
-                self.isRecordingMomentVideo = true
-            }
-            self.movieOutput.startRecording(to: url, recordingDelegate: self)
+            self.session.commitConfiguration()
+            self.hasMovieOutput = false
+            self.hasAudioInput = false
         }
+    }
+
+    /// Records up to five seconds of video+audio to a temp file. Completion is called on the main queue.
+    func recordMomentVideo(completion: @escaping (URL?) -> Void) {
+        sessionQueue.async {
+            self.recordMomentVideoLocked(completion: completion)
+        }
+    }
+
+    /// Must run on `sessionQueue`.
+    private func recordMomentVideoLocked(completion: @escaping (URL?) -> Void) {
+        guard isConfigured, !movieOutput.isRecording else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
+        guard session.isRunning else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
+
+        activateAudioSessionForVideoRecording()
+        ensureMovieOutputConfiguredLocked()
+        guard hasMovieOutput else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("moment_video_\(UUID().uuidString).mov")
+        try? FileManager.default.removeItem(at: url)
+
+        momentVideoCompletion = completion
+        momentVideoStopWorkItem?.cancel()
+        let clipDuration = Self.momentVideoClipDuration
+        let stopMode = ReelStopMode.current
+        isManualStopMode = (stopMode == .manual)
+
+        if stopMode == .auto {
+            let stopWork = DispatchWorkItem { [weak self] in
+                self?.stopMomentVideoRecordingLocked()
+            }
+            momentVideoStopWorkItem = stopWork
+            movieOutput.maxRecordedDuration = CMTime(seconds: clipDuration, preferredTimescale: 600)
+            sessionQueue.asyncAfter(deadline: .now() + clipDuration, execute: stopWork)
+        } else {
+            // Manual: cap at 120s as a safety ceiling; user taps stop manually
+            movieOutput.maxRecordedDuration = CMTime(seconds: 120, preferredTimescale: 600)
+        }
+
+        if let connection = movieOutput.connection(with: .video),
+           connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
+        if let audioConnection = movieOutput.connection(with: .audio) {
+            audioConnection.isEnabled = hasAudioInput
+        }
+
+        DispatchQueue.main.async {
+            self.isRecordingMomentVideo = true
+        }
+        movieOutput.startRecording(to: url, recordingDelegate: self)
     }
 
     func cancelMomentVideoRecording() {
@@ -1960,21 +1991,13 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     }
 
     private func ensureMovieOutputConfiguredLocked() {
-        let audioAlreadyInSession = session.inputs.contains { input in
-            guard let deviceInput = input as? AVCaptureDeviceInput else { return false }
-            return deviceInput.device.hasMediaType(.audio)
-        }
+        activateAudioSessionForVideoRecording()
 
         session.beginConfiguration()
-        if !audioAlreadyInSession,
-           let audioDevice = AVCaptureDevice.default(for: .audio),
-           let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
-           session.canAddInput(audioInput) {
-            session.addInput(audioInput)
-            hasAudioInput = true
-        } else if audioAlreadyInSession {
-            hasAudioInput = true
+        if session.canSetSessionPreset(.high) {
+            session.sessionPreset = .high
         }
+        attachAudioCaptureInputIfNeededLocked()
         if !hasMovieOutput, !session.outputs.contains(movieOutput), session.canAddOutput(movieOutput) {
             session.addOutput(movieOutput)
             hasMovieOutput = true
@@ -1982,13 +2005,30 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         if hasMovieOutput {
             movieOutput.maxRecordedDuration = CMTime(seconds: Self.momentVideoClipDuration, preferredTimescale: 600)
             if let audioConnection = movieOutput.connection(with: .audio) {
-                audioConnection.isEnabled = true
+                audioConnection.isEnabled = hasAudioInput
             }
         }
-        if hasMovieOutput, session.canSetSessionPreset(.high) {
-            session.sessionPreset = .high
-        }
         session.commitConfiguration()
+    }
+
+    /// Adds the built-in mic to the capture session when missing. Requires `videoRecording` audio session (see `activateAudioSessionForVideoRecording`).
+    private func attachAudioCaptureInputIfNeededLocked() {
+        let audioAlreadyInSession = session.inputs.contains { input in
+            guard let deviceInput = input as? AVCaptureDeviceInput else { return false }
+            return deviceInput.device.hasMediaType(.audio)
+        }
+        if audioAlreadyInSession {
+            hasAudioInput = true
+            return
+        }
+        guard let audioDevice = AVCaptureDevice.default(for: .audio),
+              let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
+              session.canAddInput(audioInput) else {
+            hasAudioInput = false
+            return
+        }
+        session.addInput(audioInput)
+        hasAudioInput = true
     }
 
     /// Routes the mic into reel clips (`.playAndRecord` / `.videoRecording`).
@@ -2359,6 +2399,7 @@ struct CameraCaptureView: View {
         guard mode != captureMode else { return }
         if mode != .reel {
             cameraController.cancelMomentVideoRecording()
+            cameraController.releaseMomentVideoCaptureConfiguration()
         }
         if mode == .vibe {
             if hasSeenVibeTooltip {
@@ -2367,6 +2408,10 @@ struct CameraCaptureView: View {
             AppAnalytics.track(.appInAppCameraVibeON)
         } else {
             vibeRecorder.cancelAndDelete()
+        }
+        InAppCameraAudioSession.activateForCamera(forVideoRecording: mode == .reel)
+        if mode == .reel {
+            cameraController.prepareMomentVideoAudioCapture()
         }
         captureModeRaw = mode.rawValue
     }
@@ -3140,6 +3185,10 @@ struct CameraCaptureView: View {
                 preattachedMomentVideoURL: url,
                 isContinuousReel: reelStopMode == .manual
             ) != nil else { return }
+            AppAnalytics.track(.appInAppCameraReelSaved(
+                duration: Int(reelMaxDurationSeconds),
+                stopMode: reelStopMode.rawValue
+            ))
             enterInPlaceCaptionMode()
         }
     }
@@ -3684,7 +3733,7 @@ struct CameraCaptureView: View {
         inAppCameraChromeRoot
             .onAppear {
             // Pause music/podcasts from other apps so they don't clash with Vibe capture.
-            InAppCameraAudioSession.activateForCamera()
+            InAppCameraAudioSession.activateForCamera(forVideoRecording: isReelCaptureMode)
             // Fresh session each time camera is opened.
             cameraSessionId = UUID()
             sessionMoments = []
@@ -3698,6 +3747,9 @@ struct CameraCaptureView: View {
             pendingBlogStartedAlert = false
             lastCaptureWasVibe = false
             migrateLegacyCaptureModeIfNeeded()
+            if isReelCaptureMode {
+                cameraController.prepareMomentVideoAudioCapture()
+            }
             if isVibeCaptureEnabled { vibeRecorder.start() }
             isCaptionModeActive = false
             captionModeMomentId = nil
@@ -3932,6 +3984,10 @@ struct CameraCaptureView: View {
             if show { nearHomeDoNotShowAgain = false }
             }
             .onChange(of: captureModeRaw) { _, _ in
+            InAppCameraAudioSession.activateForCamera(forVideoRecording: isReelCaptureMode)
+            if isReelCaptureMode {
+                cameraController.prepareMomentVideoAudioCapture()
+            }
             if isVibeCaptureEnabled && !hasSeenVibeTooltip {
                 showVibeTooltip = true
             }
@@ -3994,6 +4050,7 @@ struct CameraCaptureView: View {
            let url = resolvedMomentVideoURL(for: moment) {
             MomentVideoFullScreenPlayer(url: url) {
                 showMomentVideoPreview = false
+                InAppCameraAudioSession.activateForCamera(forVideoRecording: isReelCaptureMode)
             }
         }
     }
@@ -4536,7 +4593,7 @@ struct CameraCaptureView: View {
         cameraController.capturePhoto { image, _ in
             let timestamp = Date()
             Task { @MainActor in
-                AppAnalytics.track(.appInAppCameraPhotoTaken)
+                AppAnalytics.track(capturedVibeEnabled ? .appInAppCameraVibePhotoTaken : .appInAppCameraPhotoTaken)
                 let vibeURL = await vibeTask.value
                 if capturedVibeEnabled { vibeRecorder.start() }
                 lastCaptureWasVibe = capturedVibeEnabled && vibeURL != nil

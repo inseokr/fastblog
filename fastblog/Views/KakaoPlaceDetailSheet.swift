@@ -13,7 +13,7 @@ struct KakaoPlaceDetailSheet: View {
     let candidate: MapTapPOICandidate
     @State private var currentPageURL: URL?
 
-    private var detailURL: URL? { candidate.detailWebURL }
+    private var detailURL: URL? { candidate.kakaoDetailWebURL }
 
     var body: some View {
         VStack(spacing: 0) {

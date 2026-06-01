@@ -150,10 +150,23 @@ extension VibeRecorder: AVAudioRecorderDelegate {
 /// Owns `AVAudioSession` while the in-app camera is visible so background audio does not clash with Vibe.
 enum InAppCameraAudioSession {
     /// Call when the in-app camera UI appears. Interrupts other apps’ playback (Spotify, Podcasts, etc.).
-    static func activateForCamera() {
+    /// - Parameter forVideoRecording: Use `.videoRecording` mode so `AVCaptureMovieFileOutput` can mux mic audio into reels.
+    static func activateForCamera(forVideoRecording: Bool = false) {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
+            if forVideoRecording {
+                try session.setCategory(
+                    .playAndRecord,
+                    mode: .videoRecording,
+                    options: [.defaultToSpeaker, .allowBluetooth]
+                )
+            } else {
+                try session.setCategory(
+                    .playAndRecord,
+                    mode: .default,
+                    options: [.defaultToSpeaker, .allowBluetoothHFP]
+                )
+            }
             try session.setActive(true)
         } catch {
             // Camera still works without audio session; Vibe may be limited.

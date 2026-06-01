@@ -13,6 +13,8 @@ enum AnalyticsEventType {
     case blogSave(blogId: String)
     case blogDelete(blogId: String)
     case blogSharePDF(blogId: String)
+    case blogShareSocialMedia(blogId: String)
+    case blogShareStitchReels(blogId: String)
     case blogShareNearby(blogId: String)
     case blogPlaySlideshow(blogId: String)
     case blogPickCoverPhoto(blogId: String)
@@ -43,6 +45,8 @@ enum AnalyticsEventType {
     case appOpen
     case appInAppCameraOpen
     case appInAppCameraPhotoTaken
+    case appInAppCameraVibePhotoTaken
+    case appInAppCameraReelSaved(duration: Int, stopMode: String)
     case appInAppCameraVibeON
     case appInAppCameraCaption
     case appInAppCameraPreviewSave
@@ -60,6 +64,8 @@ enum AnalyticsEventType {
         case .blogSave:                         return "Blog-Save"
         case .blogDelete:                       return "Blog-Delete"
         case .blogSharePDF:                     return "Blog-Share-PDF"
+        case .blogShareSocialMedia:             return "Blog-Share-SocialMedia"
+        case .blogShareStitchReels:             return "Blog-Share-StitchReels"
         case .blogShareNearby:                  return "Blog-Share-Nearby"
         case .blogPlaySlideshow:                return "Blog-Play-Slideshow"
         case .blogPickCoverPhoto:               return "Blog-Pick-CoverPhoto"
@@ -82,6 +88,8 @@ enum AnalyticsEventType {
         case .appOpen:                          return "App-Open"
         case .appInAppCameraOpen:               return "App-InAppCamera-Open"
         case .appInAppCameraPhotoTaken:         return "App-InAppCamera-PhotoTaken"
+        case .appInAppCameraVibePhotoTaken:     return "App-InAppCamera-VibePhoto-Taken"
+        case .appInAppCameraReelSaved:          return "App-InAppCamera-Reel-Saved"
         case .appInAppCameraVibeON:             return "App-InAppCamera-VibeON"
         case .appInAppCameraCaption:            return "App-InAppCamera-Caption"
         case .appInAppCameraPreviewSave:        return "App-InAppCamera-Preview-Save"
@@ -94,7 +102,8 @@ enum AnalyticsEventType {
     var context: AnalyticsContext {
         switch self {
         case .blogScan, .appOpen, .appInAppCameraOpen,
-             .appInAppCameraPhotoTaken, .appInAppCameraVibeON, .appInAppCameraCaption,
+             .appInAppCameraPhotoTaken, .appInAppCameraVibePhotoTaken, .appInAppCameraReelSaved,
+             .appInAppCameraVibeON, .appInAppCameraCaption,
              .appInAppCameraPreviewSave, .appInAppCameraPreviewDiscard,
              .appInAppCameraVoiceMemoSave, .appInAppCameraVoiceMemoPlay:
             return .empty
@@ -102,6 +111,8 @@ enum AnalyticsEventType {
         case .blogSave(let id),
              .blogDelete(let id),
              .blogSharePDF(let id),
+             .blogShareSocialMedia(let id),
+             .blogShareStitchReels(let id),
              .blogShareNearby(let id),
              .blogPlaySlideshow(let id),
              .blogPickCoverPhoto(let id),
@@ -132,5 +143,12 @@ enum AnalyticsEventType {
     }
 
     /// Extra properties beyond context (most events need none).
-    var properties: [String: String] { [:] }
+    var properties: [String: String] {
+        switch self {
+        case .appInAppCameraReelSaved(let duration, let stopMode):
+            return ["duration": "\(duration)", "stopMode": stopMode]
+        default:
+            return [:]
+        }
+    }
 }
