@@ -2541,6 +2541,8 @@ private struct CameraZoomControl: View {
     private let presetTapRadius: CGFloat = 34
     private let centerFontSize: CGFloat = 20
     private let sideFontSize: CGFloat = 17
+    private let dialDividerWidth: CGFloat = 1
+    private let dialDividerHeight: CGFloat = 12
 
     private var availablePresets: [CGFloat] {
         Self.standardPresets.filter { $0 >= minZoom - 0.05 && $0 <= maxZoom + 0.05 }
@@ -2551,6 +2553,8 @@ private struct CameraZoomControl: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
+                scrollingPresetDividers
+                    .offset(x: scrollOffset(barWidth: geo.size.width))
                 scrollingPresetLabels
                     .offset(x: scrollOffset(barWidth: geo.size.width))
 
@@ -2572,6 +2576,24 @@ private struct CameraZoomControl: View {
             liveZoom = displayZoom
             selectionGenerator.prepare()
         }
+    }
+
+    /// Tick marks between preset stops — scrolls with labels to suggest a zoom dial.
+    private var scrollingPresetDividers: some View {
+        let presets = availablePresets
+        return ZStack {
+            if presets.count >= 2 {
+                ForEach(0..<presets.count - 1, id: \.self) { index in
+                    let midX = (xForPresetIndex(index) + xForPresetIndex(index + 1)) / 2
+                    Rectangle()
+                        .fill(Color.white.opacity(dialDividerOpacity(atStripX: midX)))
+                        .frame(width: dialDividerWidth, height: dialDividerHeight)
+                        .position(x: midX, y: barHeight / 2)
+                }
+            }
+        }
+        .frame(width: scrollTrackWidth + trackPadding * 2, height: barHeight)
+        .allowsHitTesting(false)
     }
 
     private var scrollingPresetLabels: some View {
@@ -2619,6 +2641,12 @@ private struct CameraZoomControl: View {
         let distX = abs(xOnTrack(for: preset) - xOnTrack(for: currentZoom))
         if distX < 30 { return 0 }
         return CGFloat(max(0.32, min(0.72, 0.78 - distX / scrollTrackWidth * 0.55)))
+    }
+
+    private func dialDividerOpacity(atStripX x: CGFloat) -> CGFloat {
+        let distX = abs(x - xOnTrack(for: currentZoom))
+        if distX < 26 { return 0 }
+        return CGFloat(max(0.16, min(0.38, 0.42 - distX / scrollTrackWidth * 0.3)))
     }
 
     /// Equal spacing between preset stops; continuous zoom interpolates within each segment.
@@ -4316,13 +4344,6 @@ struct CameraCaptureView: View {
                             guard !hasCapturedPhotos else { return }
                             closeCamera()
                         }
-                    }
-            )
-            .simultaneousGesture(
-                TapGesture(count: 2)
-                    .onEnded {
-                        guard !isCaptionModeActive else { return }
-                        cameraController.flipCamera()
                     }
             )
             .navigationBarBackButtonHidden(true)
