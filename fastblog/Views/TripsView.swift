@@ -3791,7 +3791,7 @@ struct CameraCaptureView: View {
 
                 Spacer()
 
-                Button("Save") {
+                Button("Done") {
                     savePreviewCaptionEditing()
                 }
                 .font(.body)
