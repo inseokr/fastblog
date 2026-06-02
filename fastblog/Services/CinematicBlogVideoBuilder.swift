@@ -147,9 +147,21 @@ enum CinematicBlogVideoBuilder {
         for stop: PlaceStop,
         includedReelPhotoIDs: Set<UUID>? = nil
     ) -> [RecapPhoto] {
-        let reels = stop.includedPhotos.filter { momentVideoDurationSeconds(for: $0) > 0 }
+        let reels = stop.includedPhotos.filter { photoHasExportableMomentVideo($0) }
         guard let ids = includedReelPhotoIDs else { return reels }
         return reels.filter { ids.contains($0.id) }
+    }
+
+    /// Preloads reel durations off the main thread so Video Settings opens quickly with many reels.
+    static func warmMomentVideoDurationCache(for draft: RecapBlogDetail) async {
+        let photos = draft.days.flatMap(\.placeStops).flatMap(\.includedPhotos)
+        await withTaskGroup(of: Void.self) { group in
+            for photo in photos {
+                group.addTask {
+                    _ = momentVideoDurationSeconds(for: photo)
+                }
+            }
+        }
     }
 
     static func allExportableReelPhotoIDs(
@@ -2470,11 +2482,39 @@ enum CinematicBlogVideoBuilder {
         return AppCapturePhotoService.shared.momentVideoFileURL(for: uuid)
     }
 
+    /// File existence only — avoids synchronous `AVURLAsset` reads when building picker lists.
+    private static func photoHasExportableMomentVideo(_ photo: RecapPhoto) -> Bool {
+        momentVideoURL(for: photo) != nil
+    }
+
+    private static let momentVideoDurationCacheLock = NSLock()
+    private static var momentVideoDurationCache: [String: Double] = [:]
+
     private static func momentVideoDurationSeconds(for photo: RecapPhoto) -> Double {
         guard let url = momentVideoURL(for: photo) else { return 0 }
+        let modDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
+            .timeIntervalSince1970 ?? 0
+        let cacheKey = "\(url.path)|\(modDate)"
+
+        momentVideoDurationCacheLock.lock()
+        if let cached = momentVideoDurationCache[cacheKey] {
+            momentVideoDurationCacheLock.unlock()
+            return cached
+        }
+        momentVideoDurationCacheLock.unlock()
+
         let sec = CMTimeGetSeconds(AVURLAsset(url: url).duration)
-        guard sec.isFinite, sec > 0.02 else { return 0 }
-        return sec
+        let resolved: Double
+        if sec.isFinite, sec > 0.02 {
+            resolved = sec
+        } else {
+            resolved = 0
+        }
+
+        momentVideoDurationCacheLock.lock()
+        momentVideoDurationCache[cacheKey] = resolved
+        momentVideoDurationCacheLock.unlock()
+        return resolved
     }
 
     /// Decodes `moment_video.mov` at export FPS, overlays caption (when provided), place name + timestamp on every frame,

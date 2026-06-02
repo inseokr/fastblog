@@ -23,11 +23,12 @@ struct BlogVideoExportOptionsSheet: View {
     @State private var showMusicPicker = false
     @State private var showNoReelsAlert = false
     @State private var exportTask: Task<Void, Never>?
+    /// Cached reel rows + stats — rebuilt when filters change, not on every selection toggle.
+    @State private var reelPickerCache = ReelPickerCache.empty
+    /// Header stats derived from selection; updated without rebuilding the full reel list.
+    @State private var playbackStats = PlaybackStats.empty
 
-    private var selectedReelCount: Int {
-        BlogVideoExportService.exportableReelCount(draft: draft, options: effectiveExportOptions())
-    }
-
+    private var selectedReelCount: Int { playbackStats.includedReelCount }
     private var canExport: Bool { selectedReelCount > 0 }
 
     private var selectedTrack: SlideshowBundledTrack? {
@@ -167,10 +168,30 @@ struct BlogVideoExportOptionsSheet: View {
                     options.includedDayIDs = nil
                 }
             }
+            rebuildReelPickerCache()
+            refreshPlaybackStats()
             if !canExport {
                 showNoReelsAlert = true
             }
         }
+        .task(id: draft.id) {
+            await CinematicBlogVideoBuilder.warmMomentVideoDurationCache(for: draft)
+            refreshPlaybackStats()
+        }
+        .onChange(of: options.includedDayIDs) { _, _ in
+            rebuildReelPickerCache()
+            refreshPlaybackStats()
+        }
+        .onChange(of: options.includedPlaceCategoryRaws) { _, _ in
+            rebuildReelPickerCache()
+            refreshPlaybackStats()
+        }
+        .onChange(of: options.includedReelPhotoIDs) { _, _ in
+            refreshPlaybackStats()
+        }
+        .onChange(of: options.videoStyle) { _, _ in refreshPlaybackStats() }
+        .onChange(of: options.showMapFrames) { _, _ in refreshPlaybackStats() }
+        .onChange(of: options.showDayItineraryCards) { _, _ in refreshPlaybackStats() }
     }
 
     private var noReelsHintBanner: some View {
@@ -309,15 +330,85 @@ struct BlogVideoExportOptionsSheet: View {
         let photo: RecapPhoto
         let stop: PlaceStop
         let dayLabel: String
+        let timeLabel: String
+    }
+
+    private struct ReelDayGroup: Identifiable {
+        let id: String
+        let dayLabel: String
+        let items: [ReelPickerItem]
+    }
+
+    private struct ReelPickerCache {
+        let groups: [ReelDayGroup]
+        let highlightStopIDs: Set<UUID>
+        let visibleReelPhotoIDs: Set<UUID>
+        let availableCategoryRaws: [String]
+
+        static let empty = ReelPickerCache(
+            groups: [],
+            highlightStopIDs: [],
+            visibleReelPhotoIDs: [],
+            availableCategoryRaws: []
+        )
+    }
+
+    private struct PlaybackStats {
+        let includedPlaceCount: Int
+        let includedReelCount: Int
+        let estimatedSeconds: Double
+
+        static let empty = PlaybackStats(includedPlaceCount: 0, includedReelCount: 0, estimatedSeconds: 0)
+
+        var estimatedDurationText: String {
+            let clamped = max(0, estimatedSeconds)
+            let total = Int(clamped.rounded())
+            let mins = total / 60
+            let secs = total % 60
+            if mins > 0 {
+                return "\(mins)m \(String(format: "%02d", secs))s"
+            }
+            return "\(secs)s"
+        }
+    }
+
+    private func rebuildReelPickerCache() {
+        let items = visibleReelPickerItems()
+        reelPickerCache = ReelPickerCache(
+            groups: groupedReelPickerItems(items),
+            highlightStopIDs: highlightStopIDs(from: items),
+            visibleReelPhotoIDs: Set(items.map(\.id)),
+            availableCategoryRaws: availableCategoryRawsForDraft()
+        )
+    }
+
+    private func refreshPlaybackStats() {
+        let resolved = effectiveExportOptions()
+        let placeCount = filteredDaysForPlacePicker().flatMap(\.placeStops).filter { stop in
+            if let placeIDs = resolved.includedPlaceIDs, !placeIDs.contains(stop.id) { return false }
+            return !CinematicBlogVideoBuilder.exportableReelPhotos(
+                for: stop,
+                includedReelPhotoIDs: resolved.includedReelPhotoIDs
+            ).isEmpty
+        }.count
+        playbackStats = PlaybackStats(
+            includedPlaceCount: placeCount,
+            includedReelCount: BlogVideoExportService.exportableReelCount(draft: draft, options: resolved),
+            estimatedSeconds: BlogVideoExportService.estimatedExportedVideoDurationSeconds(
+                draft: draft,
+                options: resolved
+            )
+        )
     }
 
     // MARK: - Reels Section
 
     private var reelsSection: some View {
-        let available = availableCategoryRawsForDraft()
-        let items = visibleReelPickerItems()
-        let highlightIDs = highlightStopIDsForVisibleReels()
-        let highlightSelected = isHighlightsOnlyReelSelection(highlightStopIDs: highlightIDs)
+        let cache = reelPickerCache
+        let highlightSelected = isHighlightsOnlyReelSelection(
+            highlightStopIDs: cache.highlightStopIDs,
+            visibleReelPhotoIDs: cache.visibleReelPhotoIDs
+        )
         let isAllCategoriesSelected = options.includedPlaceCategoryRaws == nil
         let allReelsSelected = options.includedReelPhotoIDs == nil
         return VStack(alignment: .leading, spacing: 12) {
@@ -326,9 +417,10 @@ struct BlogVideoExportOptionsSheet: View {
                 Spacer()
                 HStack(spacing: 12) {
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectHighlightReelsOnly(highlightStopIDs: highlightIDs)
-                        }
+                        selectHighlightReelsOnly(
+                            highlightStopIDs: cache.highlightStopIDs,
+                            visibleReelPhotoIDs: cache.visibleReelPhotoIDs
+                        )
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: highlightSelected ? "checkmark.circle.fill" : "star.fill")
@@ -347,12 +439,10 @@ struct BlogVideoExportOptionsSheet: View {
                         .foregroundColor(highlightSelected ? .black : Color(red: 1.0, green: 0.84, blue: 0.0))
                     }
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            if allReelsSelected {
-                                options.includedReelPhotoIDs = []
-                            } else {
-                                options.includedReelPhotoIDs = nil
-                            }
+                        if allReelsSelected {
+                            options.includedReelPhotoIDs = []
+                        } else {
+                            options.includedReelPhotoIDs = nil
                         }
                     } label: {
                         Text(allReelsSelected ? "Deselect All" : "Select All")
@@ -362,14 +452,12 @@ struct BlogVideoExportOptionsSheet: View {
                 }
             }
 
-            if !available.isEmpty {
+            if !cache.availableCategoryRaws.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         // "All" pill
                         Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                options.includedPlaceCategoryRaws = nil
-                            }
+                            options.includedPlaceCategoryRaws = nil
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "square.grid.2x2")
@@ -394,7 +482,7 @@ struct BlogVideoExportOptionsSheet: View {
                         }
                         .buttonStyle(.plain)
 
-                        ForEach(available, id: \.self) { raw in
+                        ForEach(cache.availableCategoryRaws, id: \.self) { raw in
                             categoryPill(raw: raw)
                         }
                     }
@@ -405,16 +493,20 @@ struct BlogVideoExportOptionsSheet: View {
                 .appChromeCornerRadius(12)
             }
 
-            if !items.isEmpty {
-                VStack(alignment: .leading, spacing: 16) {
-                    ForEach(groupedReelPickerItems(items), id: \.dayLabel) { group in
+            if !cache.groups.isEmpty {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    ForEach(cache.groups) { group in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(group.dayLabel)
                                 .font(.caption.weight(.semibold))
                                 .foregroundColor(.secondary)
-                            VStack(spacing: 8) {
+                            LazyVStack(spacing: 8) {
                                 ForEach(group.items) { item in
-                                    reelCheckRow(item: item)
+                                    ReelExportCheckRow(
+                                        item: item,
+                                        isIncluded: isReelIncluded(item.id),
+                                        onToggle: { toggleReel(item.id, visibleIDs: cache.visibleReelPhotoIDs) }
+                                    )
                                 }
                             }
                         }
@@ -424,18 +516,19 @@ struct BlogVideoExportOptionsSheet: View {
         }
     }
 
-    private struct ReelDayGroup {
-        let dayLabel: String
-        let items: [ReelPickerItem]
-    }
-
     private func visibleReelPickerItems() -> [ReelPickerItem] {
         filteredDaysForPlacePicker().flatMap { day in
             let dayNumber = (draft.days.firstIndex(where: { $0.id == day.id }) ?? 0) + 1
             let dayLabel = "Day \(dayNumber) · \(day.dateText)"
             return day.placeStops.flatMap { stop in
                 CinematicBlogVideoBuilder.exportableReelPhotos(for: stop).map { photo in
-                    ReelPickerItem(id: photo.id, photo: photo, stop: stop, dayLabel: dayLabel)
+                    ReelPickerItem(
+                        id: photo.id,
+                        photo: photo,
+                        stop: stop,
+                        dayLabel: dayLabel,
+                        timeLabel: CinematicBlogVideoBuilder.photoSlideTimeDisplayText(for: photo, stop: stop)
+                    )
                 }
             }
         }
@@ -451,30 +544,40 @@ struct BlogVideoExportOptionsSheet: View {
             }
             buckets[item.dayLabel, default: []].append(item)
         }
-        return order.map { ReelDayGroup(dayLabel: $0, items: buckets[$0] ?? []) }
+        return order.map { ReelDayGroup(id: $0, dayLabel: $0, items: buckets[$0] ?? []) }
     }
 
-    private func allVisibleReelPhotoIDs() -> Set<UUID> {
-        Set(visibleReelPickerItems().map(\.id))
-    }
-
-    private func highlightStopIDsForVisibleReels() -> Set<UUID> {
-        let stops = filteredDaysForPlacePicker().flatMap(\.placeStops)
-        let avg = stops.map(\.highlightMomentScore).reduce(0, +) / Double(max(stops.count, 1))
+    private func highlightStopIDs(from items: [ReelPickerItem]) -> Set<UUID> {
+        let stopIDs = Set(items.map(\.stop.id))
+        let stops = filteredDaysForPlacePicker().flatMap(\.placeStops).filter { stopIDs.contains($0.id) }
+        guard !stops.isEmpty else { return [] }
+        let avg = stops.map(\.highlightMomentScore).reduce(0, +) / Double(stops.count)
         return Set(stops.filter { $0.highlightMomentScore > avg }.map(\.id))
     }
 
-    private func isHighlightsOnlyReelSelection(highlightStopIDs: Set<UUID>) -> Bool {
+    private func isHighlightsOnlyReelSelection(
+        highlightStopIDs: Set<UUID>,
+        visibleReelPhotoIDs: Set<UUID>
+    ) -> Bool {
         guard let ids = options.includedReelPhotoIDs else { return false }
         let highlightReelIDs = Set(
-            visibleReelPickerItems().filter { highlightStopIDs.contains($0.stop.id) }.map(\.id)
+            reelPickerCache.groups
+                .flatMap(\.items)
+                .filter { highlightStopIDs.contains($0.stop.id) && visibleReelPhotoIDs.contains($0.id) }
+                .map(\.id)
         )
         return ids == highlightReelIDs && !highlightReelIDs.isEmpty
     }
 
-    private func selectHighlightReelsOnly(highlightStopIDs: Set<UUID>) {
+    private func selectHighlightReelsOnly(
+        highlightStopIDs: Set<UUID>,
+        visibleReelPhotoIDs: Set<UUID>
+    ) {
         let highlightReelIDs = Set(
-            visibleReelPickerItems().filter { highlightStopIDs.contains($0.stop.id) }.map(\.id)
+            reelPickerCache.groups
+                .flatMap(\.items)
+                .filter { highlightStopIDs.contains($0.stop.id) && visibleReelPhotoIDs.contains($0.id) }
+                .map(\.id)
         )
         options.includedReelPhotoIDs = highlightReelIDs.isEmpty ? [] : highlightReelIDs
     }
@@ -484,88 +587,19 @@ struct BlogVideoExportOptionsSheet: View {
         return ids.contains(photoID)
     }
 
-    private func toggleReel(_ photoID: UUID) {
-        withAnimation(.easeInOut(duration: 0.15)) {
-            let visible = allVisibleReelPhotoIDs()
-            if options.includedReelPhotoIDs == nil {
-                var all = visible
-                all.remove(photoID)
-                options.includedReelPhotoIDs = all
-            } else if options.includedReelPhotoIDs!.contains(photoID) {
-                options.includedReelPhotoIDs!.remove(photoID)
-            } else {
-                options.includedReelPhotoIDs!.insert(photoID)
-                if options.includedReelPhotoIDs == visible {
-                    options.includedReelPhotoIDs = nil
-                }
+    private func toggleReel(_ photoID: UUID, visibleIDs: Set<UUID>) {
+        if options.includedReelPhotoIDs == nil {
+            var all = visibleIDs
+            all.remove(photoID)
+            options.includedReelPhotoIDs = all
+        } else if options.includedReelPhotoIDs!.contains(photoID) {
+            options.includedReelPhotoIDs!.remove(photoID)
+        } else {
+            options.includedReelPhotoIDs!.insert(photoID)
+            if options.includedReelPhotoIDs == visibleIDs {
+                options.includedReelPhotoIDs = nil
             }
         }
-    }
-
-    private func reelCheckRow(item: ReelPickerItem) -> some View {
-        let isIncluded = isReelIncluded(item.id)
-        let thumbSide: CGFloat = 72
-        let timeLabel = CinematicBlogVideoBuilder.photoSlideTimeDisplayText(for: item.photo, stop: item.stop)
-        return Button { toggleReel(item.id) } label: {
-            HStack(spacing: 12) {
-                ZStack(alignment: .bottomLeading) {
-                    RecapPhotoThumbnail(
-                        photo: item.photo,
-                        cornerRadius: 10,
-                        showIcon: false,
-                        targetSize: CGSize(width: thumbSide * 2, height: thumbSide * 2)
-                    )
-                    .frame(width: thumbSide, height: thumbSide)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                    Image(systemName: "film.fill")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(5)
-                        .background(Circle().fill(Color.black.opacity(0.55)))
-                        .padding(6)
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.stop.placeTitle)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    Text(timeLabel)
-                        .font(.caption.monospacedDigit())
-                        .foregroundColor(.secondary)
-                    if let caption = item.photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines),
-                       !caption.isEmpty {
-                        Text(caption)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-                Spacer(minLength: 0)
-                ZStack {
-                    Circle()
-                        .fill(isIncluded ? Color.accentColor : Color(uiColor: .tertiarySystemGroupedBackground))
-                        .frame(width: 26, height: 26)
-                    if isIncluded {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.white)
-                    }
-                }
-            }
-            .padding(12)
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .opacity(isIncluded ? 1 : 0.55)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isIncluded ? Color.accentColor : Color.clear, lineWidth: 2)
-            )
-            .appChromeCornerRadius(12)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Days Section
@@ -580,9 +614,7 @@ struct BlogVideoExportOptionsSheet: View {
                         sectionHeader("Days", icon: "calendar")
                         Spacer()
                         Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                options.includedDayIDs = allSelected ? Set<UUID>() : nil
-                            }
+                            options.includedDayIDs = allSelected ? Set<UUID>() : nil
                         } label: {
                             Text(allSelected ? "Deselect All" : "Select All")
                                 .font(.caption.weight(.medium))
@@ -611,19 +643,17 @@ struct BlogVideoExportOptionsSheet: View {
     }
 
     private func toggleDay(_ dayID: UUID) {
-        withAnimation(.easeInOut(duration: 0.15)) {
-            let allIDs = Set(draft.days.filter { !$0.placeStops.isEmpty }.map(\.id))
-            if options.includedDayIDs == nil {
-                var remaining = allIDs
-                remaining.remove(dayID)
-                options.includedDayIDs = remaining.isEmpty ? Set<UUID>() : remaining
-            } else if options.includedDayIDs!.contains(dayID) {
-                options.includedDayIDs!.remove(dayID)
-            } else {
-                options.includedDayIDs!.insert(dayID)
-                if options.includedDayIDs == allIDs {
-                    options.includedDayIDs = nil
-                }
+        let allIDs = Set(draft.days.filter { !$0.placeStops.isEmpty }.map(\.id))
+        if options.includedDayIDs == nil {
+            var remaining = allIDs
+            remaining.remove(dayID)
+            options.includedDayIDs = remaining.isEmpty ? Set<UUID>() : remaining
+        } else if options.includedDayIDs!.contains(dayID) {
+            options.includedDayIDs!.remove(dayID)
+        } else {
+            options.includedDayIDs!.insert(dayID)
+            if options.includedDayIDs == allIDs {
+                options.includedDayIDs = nil
             }
         }
     }
@@ -803,8 +833,7 @@ struct BlogVideoExportOptionsSheet: View {
     // MARK: - Estimated Video Length
 
     private var estimatedPlayTimeSection: some View {
-        let stats = estimatedPlaybackStats()
-        return HStack(spacing: 14) {
+        HStack(spacing: 14) {
             Image(systemName: "film")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(
@@ -819,12 +848,12 @@ struct BlogVideoExportOptionsSheet: View {
                 Text("Estimated Video Length")
                     .font(.caption.weight(.semibold))
                     .foregroundColor(.secondary)
-                Text(stats.estimatedDurationText)
+                Text(playbackStats.estimatedDurationText)
                     .font(.title3.weight(.bold))
                     .foregroundColor(.white)
             }
             Spacer()
-            Text("\(stats.includedPlaceCount) places · \(stats.includedReelCount) reels")
+            Text("\(playbackStats.includedPlaceCount) places · \(playbackStats.includedReelCount) reels")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.trailing)
@@ -839,36 +868,6 @@ struct BlogVideoExportOptionsSheet: View {
                         .strokeBorder(Color(red: 0.0, green: 0.85, blue: 1.0).opacity(0.2), lineWidth: 1)
                 )
         )
-    }
-
-    private func estimatedPlaybackStats() -> (includedPlaceCount: Int, includedReelCount: Int, estimatedSeconds: Double, estimatedDurationText: String) {
-        let resolved = effectiveExportOptions()
-        let placeCount = filteredDaysForPlacePicker().flatMap(\.placeStops).filter { stop in
-            if let placeIDs = resolved.includedPlaceIDs, !placeIDs.contains(stop.id) { return false }
-            return !CinematicBlogVideoBuilder.exportableReelPhotos(
-                for: stop,
-                includedReelPhotoIDs: resolved.includedReelPhotoIDs
-            ).isEmpty
-        }.count
-        let reelCount = BlogVideoExportService.exportableReelCount(draft: draft, options: resolved)
-        let seconds = BlogVideoExportService.estimatedExportedVideoDurationSeconds(draft: draft, options: resolved)
-        return (
-            includedPlaceCount: placeCount,
-            includedReelCount: reelCount,
-            estimatedSeconds: seconds,
-            estimatedDurationText: formatDuration(seconds: seconds)
-        )
-    }
-
-    private func formatDuration(seconds: Double) -> String {
-        let clamped = max(0, seconds)
-        let total = Int(clamped.rounded())
-        let mins = total / 60
-        let secs = total % 60
-        if mins > 0 {
-            return "\(mins)m \(String(format: "%02d", secs))s"
-        }
-        return "\(secs)s"
     }
 
     private func categoryPill(raw: String) -> some View {
@@ -926,20 +925,15 @@ struct BlogVideoExportOptionsSheet: View {
     }
 
     private func toggleCategory(_ raw: String) {
-        withAnimation(.easeInOut(duration: 0.15)) {
-            if options.includedPlaceCategoryRaws == nil {
-                // "All" active → select just this category
-                options.includedPlaceCategoryRaws = [raw]
-            } else if options.includedPlaceCategoryRaws!.contains(raw) {
-                // Already selected → deselect; revert to All if nothing left
-                options.includedPlaceCategoryRaws!.remove(raw)
-                if options.includedPlaceCategoryRaws!.isEmpty {
-                    options.includedPlaceCategoryRaws = nil
-                }
-            } else {
-                // Not selected → add to selection
-                options.includedPlaceCategoryRaws!.insert(raw)
+        if options.includedPlaceCategoryRaws == nil {
+            options.includedPlaceCategoryRaws = [raw]
+        } else if options.includedPlaceCategoryRaws!.contains(raw) {
+            options.includedPlaceCategoryRaws!.remove(raw)
+            if options.includedPlaceCategoryRaws!.isEmpty {
+                options.includedPlaceCategoryRaws = nil
             }
+        } else {
+            options.includedPlaceCategoryRaws!.insert(raw)
         }
     }
 
@@ -1012,5 +1006,78 @@ struct BlogVideoExportOptionsSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Reel picker row (isolated to limit diff scope on selection toggles)
+
+    private struct ReelExportCheckRow: View {
+        let item: ReelPickerItem
+        let isIncluded: Bool
+        let onToggle: () -> Void
+
+        private let thumbSide: CGFloat = 72
+
+        var body: some View {
+            Button(action: onToggle) {
+                HStack(spacing: 12) {
+                    ZStack(alignment: .bottomLeading) {
+                        RecapPhotoThumbnail(
+                            photo: item.photo,
+                            cornerRadius: 10,
+                            showIcon: false,
+                            targetSize: CGSize(width: thumbSide * 1.5, height: thumbSide * 1.5)
+                        )
+                        .frame(width: thumbSide, height: thumbSide)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                        Image(systemName: "film.fill")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(5)
+                            .background(Circle().fill(Color.black.opacity(0.55)))
+                            .padding(6)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.stop.placeTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        Text(item.timeLabel)
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(.secondary)
+                        if let caption = item.photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines),
+                           !caption.isEmpty {
+                            Text(caption)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    ZStack {
+                        Circle()
+                            .fill(isIncluded ? Color.accentColor : Color(uiColor: .tertiarySystemGroupedBackground))
+                            .frame(width: 26, height: 26)
+                        if isIncluded {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .opacity(isIncluded ? 1 : 0.55)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(isIncluded ? Color.accentColor : Color.clear, lineWidth: 2)
+                )
+                .appChromeCornerRadius(12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
     }
 }

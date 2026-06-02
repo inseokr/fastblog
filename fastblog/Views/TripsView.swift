@@ -3153,22 +3153,22 @@ struct CameraCaptureView: View {
             }
 
             Color.black
-                .opacity(previewCaptionFocused ? 0.32 : 0)
+                .opacity(previewIsEditingCaption ? 0.32 : 0)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
-                .animation(.easeOut(duration: 0.18), value: previewCaptionFocused)
-
-            if previewIsEditingCaption {
-                Color.black.opacity(0.001)
-                    .ignoresSafeArea()
-                    .onTapGesture { dismissPreviewCaptionEditor() }
-            }
+                .animation(.easeOut(duration: 0.18), value: previewIsEditingCaption)
 
             previewTopBar
-            previewBottomChrome
+            if !previewIsEditingCaption {
+                previewBottomChrome
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            previewActionDock
+            if previewIsEditingCaption {
+                previewCaptionEditingPanel
+            } else {
+                previewActionDock
+            }
         }
         .transition(.opacity)
     }
@@ -3463,20 +3463,24 @@ struct CameraCaptureView: View {
                         }
                     }
 
-                    TextField(
-                        "",
-                        text: captionModeCaptionBinding,
-                        prompt: Text(captionModeCaptionPrompt)
-                            .foregroundColor(.white.opacity(0.72)),
-                        axis: .vertical
-                    )
-                    .focused($previewCaptionFocused)
-                    .textFieldStyle(.plain)
-                    .font(.body)
-                    .foregroundColor(.white)
-                    .lineLimit(1...4)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Group {
+                        let captionText = captionModeCaptionBinding.wrappedValue
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        if captionText.isEmpty {
+                            Text(captionModeCaptionPrompt)
+                                .font(.body)
+                                .foregroundColor(.white.opacity(0.72))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            Text(captionText)
+                                .font(.body)
+                                .foregroundColor(.white)
+                                .lineLimit(4)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .contentShape(Rectangle())
                     .onTapGesture { beginPreviewCaptionEditing() }
                 }
                 .padding(.horizontal, 14)
@@ -3501,7 +3505,7 @@ struct CameraCaptureView: View {
 
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 64)
+        .padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         .background(
             LinearGradient(
@@ -3516,36 +3520,29 @@ struct CameraCaptureView: View {
 
     private var previewActionDock: some View {
         HStack(spacing: 14) {
-            if !previewCaptionFocused {
-                previewActionCircleButton(
-                    systemImage: "pencil",
-                    tint: .white
-                ) {
-                    beginPreviewCaptionEditing()
-                }
-                .accessibilityLabel("Edit caption")
-
-                previewActionCircleButton(
-                    systemImage: previewVoiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill",
-                    tint: previewChromeHasVoiceMemo ? .cyan : .white
-                ) {
-                    showVoiceMemoSheet = true
-                }
-                .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
+            previewActionCircleButton(
+                systemImage: "pencil",
+                tint: .white
+            ) {
+                beginPreviewCaptionEditing()
             }
+            .accessibilityLabel("Edit caption")
+
+            previewActionCircleButton(
+                systemImage: previewVoiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill",
+                tint: previewChromeHasVoiceMemo ? .cyan : .white
+            ) {
+                showVoiceMemoSheet = true
+            }
+            .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
 
             Spacer(minLength: 0)
 
             Button {
-                if previewCaptionFocused {
-                    dismissPreviewCaptionEditor()
-                } else {
-                    dismissPreviewCaptionEditor()
-                    commitCaptionModeDone()
-                    AppAnalytics.track(.appInAppCameraPreviewSave)
-                }
+                commitCaptionModeDone()
+                AppAnalytics.track(.appInAppCameraPreviewSave)
             } label: {
-                Text(previewCaptionFocused ? "Done" : "Save")
+                Text("Save")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.white)
                     .padding(.horizontal, 28)
@@ -3555,7 +3552,7 @@ struct CameraCaptureView: View {
                     .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(previewCaptionFocused ? "Done editing caption" : "Save moment to Bloggo Gallery")
+            .accessibilityLabel("Save moment to Bloggo Gallery")
         }
         .padding(.horizontal, 20)
         .padding(.top, 10)
@@ -3635,7 +3632,9 @@ struct CameraCaptureView: View {
     }
 
     private func beginPreviewCaptionEditing() {
-        previewIsEditingCaption = true
+        withAnimation(.easeOut(duration: 0.2)) {
+            previewIsEditingCaption = true
+        }
         DispatchQueue.main.async { previewCaptionFocused = true }
     }
 
@@ -3646,7 +3645,6 @@ struct CameraCaptureView: View {
 
     private func dismissPreviewCaptionEditor() {
         previewCaptionFocused = false
-        // Caption binding already mutates session arrays as the user types.
         syncSessionCaptionsToBlog()
         withAnimation(.easeOut(duration: 0.2)) {
             previewIsEditingCaption = false
@@ -3722,6 +3720,78 @@ struct CameraCaptureView: View {
             showPreviewDiscardConfirm = true
         } else {
             discardCaptionModeCapture()
+        }
+    }
+
+    /// Caption editor anchored above the keyboard via bottom `safeAreaInset`.
+    /// Cancel/Save sit directly above the keyboard; the text field grows upward as lines are added.
+    private var previewCaptionEditingPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let moment = captionModeResolvedMoment {
+                let placeTitle = captionModePlaceTitle.isEmpty ? "Captured Moment" : captionModePlaceTitle
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(placeTitle)
+                        .font(.title3.weight(.bold))
+                        .foregroundColor(.white)
+                    Text(moment.timestamp.formatted(date: .omitted, time: .shortened))
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+
+                TextField(
+                    "",
+                    text: captionModeCaptionBinding,
+                    prompt: Text(captionModeCaptionPrompt)
+                        .foregroundColor(.white.opacity(0.45)),
+                    axis: .vertical
+                )
+                .focused($previewCaptionFocused)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .foregroundColor(.white)
+                .lineLimit(1...8)
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+
+            HStack(alignment: .center) {
+                Button("Cancel") {
+                    previewCaptionFocused = false
+                    dismissPreviewCaptionEditor()
+                }
+                .font(.body)
+                .fontWeight(.semibold)
+                .foregroundStyle(Color.white)
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button("Save") {
+                    previewCaptionFocused = false
+                    dismissPreviewCaptionEditor()
+                    commitCaptionModeDone()
+                    AppAnalytics.track(.appInAppCameraPreviewSave)
+                }
+                .font(.body)
+                .fontWeight(.bold)
+                .foregroundStyle(Color(uiColor: .systemBlue))
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color.black.opacity(0.88)
+                .background(.ultraThinMaterial)
+                .ignoresSafeArea(edges: .bottom)
+        )
+        .onAppear {
+            DispatchQueue.main.async { previewCaptionFocused = true }
         }
     }
 
