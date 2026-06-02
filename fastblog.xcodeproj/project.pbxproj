@@ -207,6 +207,8 @@
 		BB0002E3 /* InAppCameraPhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E2 /* InAppCameraPhotoStore.swift */; };
 		BB0002E5 /* PlaceLibraryPhotoImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E4 /* PlaceLibraryPhotoImport.swift */; };
 		BB0002F1 /* ScanSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F0 /* ScanSessionStore.swift */; };
+		BB0003F1 /* BlogMenuIndicatorStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003F0 /* BlogMenuIndicatorStore.swift */; };
+		BB0003F3 /* BlogMenuIndicatorBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003F2 /* BlogMenuIndicatorBadge.swift */; };
 		BB0002F3 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F2 /* WeatherService.swift */; };
 		BB0002F5 /* NewMomentsPullUpPresentationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F4 /* NewMomentsPullUpPresentationStore.swift */; };
 		BB0002F7 /* NewMomentsPullUpViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F6 /* NewMomentsPullUpViews.swift */; };
@@ -483,6 +485,8 @@
 		BB0002E2 /* InAppCameraPhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppCameraPhotoStore.swift; sourceTree = "<group>"; };
 		BB0002E4 /* PlaceLibraryPhotoImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceLibraryPhotoImport.swift; sourceTree = "<group>"; };
 		BB0002F0 /* ScanSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanSessionStore.swift; sourceTree = "<group>"; };
+		BB0003F0 /* BlogMenuIndicatorStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogMenuIndicatorStore.swift; sourceTree = "<group>"; };
+		BB0003F2 /* BlogMenuIndicatorBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogMenuIndicatorBadge.swift; sourceTree = "<group>"; };
 		BB0002F2 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		BB0002F4 /* NewMomentsPullUpPresentationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMomentsPullUpPresentationStore.swift; sourceTree = "<group>"; };
 		BB0002F6 /* NewMomentsPullUpViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMomentsPullUpViews.swift; sourceTree = "<group>"; };
@@ -858,6 +862,7 @@
 				BB0002E2 /* InAppCameraPhotoStore.swift */,
 				BB0002E4 /* PlaceLibraryPhotoImport.swift */,
 				BB0002F0 /* ScanSessionStore.swift */,
+				BB0003F0 /* BlogMenuIndicatorStore.swift */,
 				BB0002F4 /* NewMomentsPullUpPresentationStore.swift */,
 				BB0002F8 /* BlogMissingPhotosTooltipSupport.swift */,
 				BB0002F2 /* WeatherService.swift */,
@@ -915,6 +920,7 @@
 				BB000346 /* InlineMomentReelMedia.swift */,
 				BB0001C1 /* KeyboardCaptionToolbar.swift */,
 				BBA0B004 /* BottomNavBar.swift */,
+				BB0003F2 /* BlogMenuIndicatorBadge.swift */,
 				BB0001E8 /* PlaceCardView.swift */,
 				BB0001E0 /* RecallCard.swift */,
 			);
@@ -1080,6 +1086,7 @@
 				BB000138 /* LoadingScanView.swift in Sources */,
 				BBA0B001 /* SettingsView.swift in Sources */,
 				BBA0B003 /* BottomNavBar.swift in Sources */,
+				BB0003F3 /* BlogMenuIndicatorBadge.swift in Sources */,
 				BB00013A /* ManagePhotosView.swift in Sources */,
 				BB00013C /* MapDayView.swift in Sources */,
 				BB00013E /* MockPhotoView.swift in Sources */,
@@ -1148,6 +1155,7 @@
 				BB0002E3 /* InAppCameraPhotoStore.swift in Sources */,
 				BB0002E5 /* PlaceLibraryPhotoImport.swift in Sources */,
 				BB0002F1 /* ScanSessionStore.swift in Sources */,
+				BB0003F1 /* BlogMenuIndicatorStore.swift in Sources */,
 				BB0002F5 /* NewMomentsPullUpPresentationStore.swift in Sources */,
 				BB0002F9 /* BlogMissingPhotosTooltipSupport.swift in Sources */,
 				BB0002F3 /* WeatherService.swift in Sources */,

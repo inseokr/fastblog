@@ -584,6 +584,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         persistTripDrafts()
         // Persist details immediately so the blog survives a background kill.
         persistBlogDetails()
+        BlogMenuIndicatorStore.shared.signalNewBlog(sourceTripId: trip.id)
     }
 
     /// Dismiss the "Your blog is ready" banner.
@@ -818,13 +819,27 @@ final class CreatedRecapBlogStore: ObservableObject {
         return TripCalendarDayKey.from(date: photo.timestamp)
     }
 
-    func injectPhotos(_ newPhotos: [MockPhoto], intoSourceTripId sourceTripId: UUID) {
+    func injectPhotos(
+        _ newPhotos: [MockPhoto],
+        intoSourceTripId sourceTripId: UUID,
+        notifyMenuIndicator: Bool = true
+    ) {
         guard !newPhotos.isEmpty else { return }
-        Task { await injectPhotosAsync(newPhotos, intoSourceTripId: sourceTripId) }
+        Task {
+            await injectPhotosAsync(
+                newPhotos,
+                intoSourceTripId: sourceTripId,
+                notifyMenuIndicator: notifyMenuIndicator
+            )
+        }
     }
 
     /// Injects photos grouped by capture-timezone calendar day (same rule as library scan / digitizedTime).
-    private func injectPhotosAsync(_ newPhotos: [MockPhoto], intoSourceTripId sourceTripId: UUID) async {
+    private func injectPhotosAsync(
+        _ newPhotos: [MockPhoto],
+        intoSourceTripId sourceTripId: UUID,
+        notifyMenuIndicator: Bool
+    ) async {
         guard !newPhotos.isEmpty else { return }
         guard var detail = blogDetailsBySourceId[sourceTripId]
                 ?? tripDraftsBySourceId[sourceTripId].map({ buildBlogDetail(from: $0) }) else { return }
@@ -1022,6 +1037,10 @@ final class CreatedRecapBlogStore: ObservableObject {
             recents[idx].lastEditedAt = Date()
             recents[idx].syncStatus = .needsUpload
             persistRecents()
+        }
+
+        if notifyMenuIndicator {
+            BlogMenuIndicatorStore.shared.noteMomentsAdded(to: sourceTripId)
         }
     }
 
@@ -1815,6 +1834,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         if OnTheGoTripStore.activeBlogId == sourceTripId {
             OnTheGoTripStore.markTripAsEnded()
         }
+        BlogMenuIndicatorStore.shared.clear(sourceTripId: sourceTripId)
     }
 
     // MARK: - Merge & Split
@@ -3127,13 +3147,21 @@ final class CreatedRecapBlogStore: ObservableObject {
 
         guard !newPhotos.isEmpty else { return (0, 0) }
 
-        return await injectPhotosFromRescan(newPhotos, intoSourceTripId: blogId)
+        return await injectPhotosFromRescan(
+            newPhotos,
+            intoSourceTripId: blogId,
+            notifyMenuIndicator: true
+        )
     }
 
     /// Injects photos from a full rescan with differentiated treatment for existing vs. new stops.
     /// Photos matched to existing stops are added unselected; photos forming new groups get
     /// their own PlaceStop with quality-based auto-selection and reverse geocoding.
-    private func injectPhotosFromRescan(_ newPhotos: [MockPhoto], intoSourceTripId sourceTripId: UUID) async -> (newStops: Int, addedToExisting: Int) {
+    private func injectPhotosFromRescan(
+        _ newPhotos: [MockPhoto],
+        intoSourceTripId sourceTripId: UUID,
+        notifyMenuIndicator: Bool
+    ) async -> (newStops: Int, addedToExisting: Int) {
         guard !newPhotos.isEmpty,
               var detail = blogDetailsBySourceId[sourceTripId] else { return (0, 0) }
 
@@ -3311,6 +3339,10 @@ final class CreatedRecapBlogStore: ObservableObject {
             recents[idx].lastEditedAt = Date()
             recents[idx].syncStatus = .needsUpload
             persistRecents()
+        }
+
+        if notifyMenuIndicator {
+            BlogMenuIndicatorStore.shared.noteMomentsAdded(to: sourceTripId)
         }
 
         return (newStops: newStopIds.count, addedToExisting: addedToExisting)

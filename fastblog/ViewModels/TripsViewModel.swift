@@ -1180,6 +1180,7 @@ final class TripsViewModel: ObservableObject {
 
                 detectNewMomentsForOnTheGoTrip(scannedDrafts: windowTrips)
                 newlyScannedPhotos = dedupePhotosByLocalId(newlyScannedPhotos)
+                syncBlogMenuIndicatorsFromScan()
                 presentNewMomentsSheetIfNeeded()
             }
         }
@@ -1410,6 +1411,13 @@ final class TripsViewModel: ObservableObject {
 
         AppAnalytics.shared.incrementCounter("trips_detected", by: remainingNew.count)
         detectNewMomentsForOnTheGoTrip(scannedDrafts: tripDrafts)
+        syncBlogMenuIndicatorsFromScan()
+    }
+
+    /// Surfaces new-moment activity on the My Blogs tab until the user opens that blog.
+    private func syncBlogMenuIndicatorsFromScan() {
+        guard let blog = newMomentsMatchedBlog, !newlyScannedPhotos.isEmpty else { return }
+        BlogMenuIndicatorStore.shared.noteMomentsAdded(to: blog.sourceTripId)
     }
 
     /// Picks the single "latest" blog (most likely current trip) by tripEndDate.

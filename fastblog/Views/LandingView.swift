@@ -230,7 +230,8 @@ struct LandingView: View {
                 if let blogId = newMomentsAlertBlogId {
                     createdRecapStore.injectPhotos(
                         tripsViewModel.newlyScannedPhotos,
-                        intoSourceTripId: blogId
+                        intoSourceTripId: blogId,
+                        notifyMenuIndicator: false
                     )
                 }
                 tripsViewModel.clearNewMomentsSignal()
@@ -593,6 +594,7 @@ private struct LatestEditsMoreHintCard: View {
 
 struct CreatedRecapCard: View {
     let recap: CreatedRecapBlog
+    var menuIndicatorKind: BlogMenuIndicatorStore.Kind? = nil
 
     private static let lastEditedFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -619,8 +621,17 @@ struct CreatedRecapCard: View {
                         .padding(4)
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                if let menuIndicatorKind {
+                    BlogMenuNavDotBadge()
+                        .padding(2)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 4) {
+                if let menuIndicatorKind {
+                    BlogMenuIndicatorBadge(kind: menuIndicatorKind)
+                }
                 Text(recap.title)
                     .font(.subheadline)
                     .fontWeight(.semibold)

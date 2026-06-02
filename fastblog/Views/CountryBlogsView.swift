@@ -28,6 +28,8 @@ private struct CountryListScrollOffsetKey: PreferenceKey {
 }
 
 struct CountryBlogsView: View {
+    private var menuIndicators: BlogMenuIndicatorStore { BlogMenuIndicatorStore.shared }
+
     let section: CountrySection
     @Binding var selectedBlog: CreatedRecapBlog?
     /// When true, the next presentation of this blog should open in edit mode (kebab "Edit Blog").
@@ -164,6 +166,7 @@ struct CountryBlogsView: View {
                         } label: {
                             CountryBlogRowView(
                                 blog: blog,
+                                menuIndicatorKind: menuIndicators.kind(forSourceTripId: blog.sourceTripId),
                                 isBlogInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
                                 isDraft: !blog.hasCommittedRecapSave,
                                 onRemoveFromCloud: {
@@ -465,6 +468,7 @@ private struct InteractivePopGestureDisabler: UIViewControllerRepresentable {
 
 struct CountryBlogRowView: View {
     let blog: CreatedRecapBlog
+    var menuIndicatorKind: BlogMenuIndicatorStore.Kind? = nil
     let isBlogInCloud: Bool
     /// Matches `!blog.hasCommittedRecapSave`: still a recap draft (incl. after “Save as draft”); hides Share Blog.
     let isDraft: Bool
@@ -496,6 +500,12 @@ struct CountryBlogRowView: View {
                             .background(.thinMaterial, in: Capsule())
                             .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
                             .padding(8)
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if let menuIndicatorKind {
+                        BlogMenuIndicatorBadge(kind: menuIndicatorKind)
+                            .padding(10)
                     }
                 }
 

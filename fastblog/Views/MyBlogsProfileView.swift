@@ -46,6 +46,7 @@ struct MyBlogsProfileView: View {
     var onNavMyPlaces: (() -> Void)? = nil
     var onTapToBlog: (() -> Void)? = nil
     @StateObject private var viewModel = MyBlogsProfileViewModel()
+    private var menuIndicators: BlogMenuIndicatorStore { BlogMenuIndicatorStore.shared }
     // Page navigation (ZStack-based, bottom bar persists across all pages)
     @State private var currentPage: MyBlogsPage = .blogs
     @State private var sharedSearchText: String = ""
@@ -157,6 +158,7 @@ struct MyBlogsProfileView: View {
                                     } label: {
                                         CountryBlogRowView(
                                             blog: blog,
+                                            menuIndicatorKind: menuIndicators.kind(forSourceTripId: blog.sourceTripId),
                                             isBlogInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
                                             isDraft: !blog.hasCommittedRecapSave,
                                             onRemoveFromCloud: {},
@@ -281,6 +283,13 @@ struct MyBlogsProfileView: View {
             viewModel.loadUnsavedTrips()
             checkForNewMoments()
             reportTopScrollState()
+            let validIds = Set(createdRecapStore.visibleRecents.map(\.sourceTripId))
+            menuIndicators.pruneInvalidBlogs(validSourceTripIds: validIds)
+        }
+        .onChange(of: selectedCreatedRecap?.sourceTripId) { _, sourceTripId in
+            if let sourceTripId {
+                menuIndicators.clear(sourceTripId: sourceTripId)
+            }
         }
         .alert(
             "New moments added to \"\(newMomentsAlertBlogTitle)\"",
@@ -290,7 +299,8 @@ struct MyBlogsProfileView: View {
                 if let blogId = newMomentsAlertBlogId {
                     createdRecapStore.injectPhotos(
                         tripsViewModel.newlyScannedPhotos,
-                        intoSourceTripId: blogId
+                        intoSourceTripId: blogId,
+                        notifyMenuIndicator: false
                     )
                 }
                 tripsViewModel.clearNewMomentsSignal()
@@ -413,7 +423,10 @@ struct MyBlogsProfileView: View {
                 } else {
                     LazyVStack(spacing: cardSpacing) {
                         ForEach(sections) { section in
-                            CountryCardView(section: section) {
+                            CountryCardView(
+                                section: section,
+                                showsMenuIndicator: menuIndicators.sectionHasIndicator(blogs: section.blogs)
+                            ) {
                                 isSearchFocused = false
                                 withAnimation(.easeInOut(duration: 0.26)) {
                                     currentPage = .country(section)
@@ -486,10 +499,13 @@ struct MyBlogsProfileView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(Array(recents.prefix(8))) { recap in
-                            CreatedRecapCard(recap: recap)
-                                .onTapGesture {
-                                    selectedCreatedRecap = recap
-                                }
+                            CreatedRecapCard(
+                                recap: recap,
+                                menuIndicatorKind: menuIndicators.kind(forSourceTripId: recap.sourceTripId)
+                            )
+                            .onTapGesture {
+                                selectedCreatedRecap = recap
+                            }
                         }
                     }
                     .padding(.bottom, 4)

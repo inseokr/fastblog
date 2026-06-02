@@ -3441,6 +3441,9 @@ struct RecapBlogPageView: View {
             let photos = await createdRecapStore.scanForNewMoments(blogId: blogId)
             newMomentPhotos = photos
             isCheckingNewMoments = false
+            if !photos.isEmpty {
+                BlogMenuIndicatorStore.shared.noteMomentsAdded(to: blogId)
+            }
             considerPresentingNewMomentsReviewSheetIfNeeded()
         }
     }
@@ -3478,7 +3481,7 @@ struct RecapBlogPageView: View {
     private func addNewMomentsToBlog(_ selected: [MockPhoto]) {
         guard !selected.isEmpty else { return }
         AppAnalytics.track(.blogMoreMemoriesCreateBlog(sourceBlogId: blogId.uuidString))
-        createdRecapStore.injectPhotos(selected, intoSourceTripId: blogId)
+        createdRecapStore.injectPhotos(selected, intoSourceTripId: blogId, notifyMenuIndicator: false)
         // Save cutoff so these photos don't resurface.
         if let maxDate = newMomentPhotos.map(\.timestamp).max() {
             ScanSessionStore.saveBlogNotifiedDate(maxDate, for: blogId)
@@ -3494,6 +3497,7 @@ struct RecapBlogPageView: View {
             draftSnapshot = updated
         }
         newMomentPhotos = []
+        BlogMenuIndicatorStore.shared.clear(sourceTripId: blogId)
         withAnimation(.easeInOut(duration: 0.3)) {
             showNewMomentsReviewSheet = false
         }
@@ -3542,6 +3546,7 @@ struct RecapBlogPageView: View {
         }
         NewMomentsPullUpPresentationStore.clear(for: blogId)
         newMomentPhotos = []
+        BlogMenuIndicatorStore.shared.clear(sourceTripId: blogId)
         withAnimation(.easeInOut(duration: 0.3)) {
             showNewMomentsReviewSheet = false
         }

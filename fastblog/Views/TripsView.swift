@@ -1652,6 +1652,7 @@ fileprivate extension UIImage {
         }
     }
 
+    /// Center-crops to the active portrait screen aspect so saved stills match live `resizeAspectFill` preview.
     func croppedToWidescreenAspect() -> UIImage {
         let img = normalizedToUpOrientation()
         guard let cg = img.cgImage else { return self }
@@ -1660,7 +1661,13 @@ fileprivate extension UIImage {
         // Prefer display-oriented dimensions: raw cg width/height can disagree with
         // UIImage.size on some captures, which mis-picked 16:9 vs 9:16 on smaller phones.
         let isPortrait = img.size.height >= img.size.width
-        let targetWoverH: CGFloat = isPortrait ? (9.0 / 16.0) : (16.0 / 9.0)
+        let targetWoverH: CGFloat
+        if isPortrait {
+            let bounds = UIScreen.main.bounds
+            targetWoverH = min(bounds.width, bounds.height) / max(bounds.width, bounds.height)
+        } else {
+            targetWoverH = 16.0 / 9.0
+        }
         let current = w / h
         let rect: CGRect
         if current > targetWoverH {
@@ -2476,26 +2483,18 @@ private final class CameraPreviewContainer: UIView {
 }
 
 /// Full-screen preview (`AVCaptureVideoPreviewLayer` uses `resizeAspectFill`).
-/// Saved stills are still center-cropped to 9:16 (portrait) via `croppedToWidescreenAspect()` — largest widescreen frame from the sensor.
+/// Saved stills are center-cropped to the device portrait aspect via `croppedToWidescreenAspect()`.
 private struct FullScreenCameraPreview: View {
     let session: AVCaptureSession
 
     var body: some View {
-        GeometryReader { geo in
-            fullScreenCameraPreviewContent(session: session, size: geo.size)
+        ZStack {
+            Color.black
+            CameraPreviewView(session: session)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
     }
-}
-
-/// Swift 5.0 `ViewBuilder` does not allow multiple `let` statements in the closure (each is `()`).
-private func fullScreenCameraPreviewContent(session: AVCaptureSession, size: CGSize) -> some View {
-    ZStack {
-        Color.black
-        CameraPreviewView(session: session)
-            .frame(width: size.width, height: size.height)
-            .clipped()
-    }
-    .frame(width: size.width, height: size.height)
 }
 
 /// In-app camera capture mode — selected under the shutter.
@@ -2806,8 +2805,6 @@ struct CameraCaptureView: View {
     // Bottom navigation (home redesign). When nil, camera behaves as an overlay.
     var onNavMyBlogs: (() -> Void)? = nil
     var onNavMyPlaces: (() -> Void)? = nil
-    /// Opens app Settings (gear on home Camera tab).
-    var onShowSettings: (() -> Void)? = nil
 
     @StateObject private var cameraController = CameraController()
 
@@ -2910,6 +2907,12 @@ struct CameraCaptureView: View {
     @State private var previewChromeHasMomentVideo = false
     @State private var showMomentVideoPreview = false
     @State private var previewChromeHasVoiceMemo = false
+    /// Home camera: back reveals bottom nav; immersive full-screen when false.
+    @State private var isHomeBottomNavRevealed = false
+    @State private var homeBottomNavAutoHideTask: Task<Void, Never>?
+
+    /// After revealing the bottom bar, return to immersive camera if the user stays on Camera.
+    private static let homeBottomNavAutoHideSeconds: UInt64 = 5
 
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
@@ -3021,6 +3024,7 @@ struct CameraCaptureView: View {
         // One-shot disk lookups for chrome (avoid `vibeFileURL` / `voiceMemoFileURL` inside View bodies —
         // SwiftUI evaluates those relentlessly during layout/animations).
         refreshPreviewChromeAttachmentFlags(for: moment)
+        isHomeBottomNavRevealed = false
         if let vibeURL = resolvedVibeURL(for: moment) {
             // Auto-play attached vibe when the post-capture preview appears.
             previewVibePlayer.play(url: vibeURL)
@@ -3306,7 +3310,6 @@ struct CameraCaptureView: View {
                     .ignoresSafeArea()
             } else {
                 FullScreenCameraPreview(session: cameraController.session)
-                    .ignoresSafeArea()
                     .gesture(cameraZoomGesture)
             }
         } else {
@@ -3337,9 +3340,20 @@ struct CameraCaptureView: View {
             }
     }
 
+    /// Top inset for camera chrome (live + frozen preview).
+    private var cameraChromeSafeTop: CGFloat {
+        previewDeviceSafeAreaInsets.top
+    }
+
+    /// Bottom inset when the home bottom nav is hidden (immersive camera).
+    private var cameraChromeSafeBottom: CGFloat {
+        previewDeviceSafeAreaInsets.bottom
+    }
+
     @ViewBuilder
     private var nonCaptionCameraOverlay: some View {
-        // Overlay UI (shutter + status) on top of preview
+        // Overlay UI (shutter + status) on top of preview — explicit ZStack fills the display.
+        ZStack {
         VStack {
             Spacer()
             if cameraController.authorizationDenied {
@@ -3370,7 +3384,7 @@ struct CameraCaptureView: View {
                     .padding(.bottom, 24)
             }
             shutterBar
-                .padding(.bottom, 8)
+                .padding(.bottom, showsBottomNavBar && isHomeBottomNavRevealed ? 8 : max(cameraChromeSafeBottom, 8))
         }
 
         // Zoom level indicator - appears while pinching, fades out (hidden when dial is open)
@@ -3386,7 +3400,7 @@ struct CameraCaptureView: View {
                     .transition(.opacity)
                 Spacer()
             }
-            .padding(.top, 12)
+            .padding(.top, cameraChromeSafeTop + 12)
             .animation(.easeInOut(duration: 0.2), value: showZoomIndicator)
         }
 
@@ -3397,7 +3411,7 @@ struct CameraCaptureView: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 Spacer()
             }
-            .padding(.top, 8)
+            .padding(.top, cameraChromeSafeTop + 8)
             .frame(maxWidth: .infinity)
             .animation(.easeInOut(duration: 0.2), value: isReelCaptureMode)
             .animation(.easeInOut(duration: 0.2), value: cameraController.isRecordingMomentVideo)
@@ -3438,17 +3452,30 @@ struct CameraCaptureView: View {
                 .accessibilityHint("Shows what vibe capture does")
                 Spacer()
             }
-            .padding(.top, 8)
+            .padding(.top, cameraChromeSafeTop + 8)
             .transition(.opacity.combined(with: .move(edge: .top)))
             .animation(.easeInOut(duration: 0.3), value: isVibeCaptureEnabled)
         }
 
-        // Top row: Settings (home tab) or Close (overlay) on the left; flip / flash / … stack on the right.
-        if showsBottomNavBar, let onShowSettings {
-            HomeSettingsGearButton(style: .cameraTopBar, action: onShowSettings)
-                .padding(.top, 8)
-                .padding(.leading, 16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Top row: Back (immersive home camera) or Close (overlay) on the left; flip / flash / … on the right.
+        if showsBottomNavBar, !isHomeBottomNavRevealed, !isCaptionModeActive {
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isHomeBottomNavRevealed = true
+                }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+            .padding(.top, cameraChromeSafeTop + 4)
+            .padding(.leading, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else if onDismissOverlay != nil {
             Button {
                 closeCamera()
@@ -3461,7 +3488,7 @@ struct CameraCaptureView: View {
                     .clipShape(Circle())
             }
             .accessibilityLabel("Close camera")
-            .padding(.top, 8)
+            .padding(.top, cameraChromeSafeTop + 4)
             .padding(.leading, 16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -3518,14 +3545,34 @@ struct CameraCaptureView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: isReelCaptureMode)
-        .padding(.top, 8)
+        .padding(.top, cameraChromeSafeTop + 4)
         .padding(.trailing, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
     }
 
     private var showsBottomNavBar: Bool {
         onNavMyBlogs != nil || onNavMyPlaces != nil
+    }
+
+    private func scheduleHomeBottomNavAutoHide() {
+        guard showsBottomNavBar else { return }
+        homeBottomNavAutoHideTask?.cancel()
+        homeBottomNavAutoHideTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: Self.homeBottomNavAutoHideSeconds * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            guard isHomeBottomNavRevealed, !isCaptionModeActive else { return }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                isHomeBottomNavRevealed = false
+            }
+        }
+    }
+
+    private func cancelHomeBottomNavAutoHide() {
+        homeBottomNavAutoHideTask?.cancel()
+        homeBottomNavAutoHideTask = nil
     }
 
     // MARK: - Post-capture preview overlay
@@ -3535,19 +3582,38 @@ struct CameraCaptureView: View {
     // Save = explicit commit; Delete / Close = remove the just-taken photo from the
     // Bloggo Gallery and any auto-routed blog/draft (matches the user's spec).
 
+    /// Matches `AppCaptureDetailView` / `PlacePhotoModalView` — chrome pads once under the status bar.
+    private var previewDeviceSafeAreaInsets: UIEdgeInsets {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }?
+            .keyWindow?
+            .safeAreaInsets
+            ?? UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+    }
+
+    /// Edge-to-edge still for post-capture review (matches live preview fill).
+    @ViewBuilder
+    private func fullBleedCameraStill(_ image: UIImage) -> some View {
+        GeometryReader { geo in
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
+                .contentShape(Rectangle())
+        }
+        .ignoresSafeArea()
+    }
+
     @ViewBuilder
     private var postCapturePreviewOverlay: some View {
         ZStack {
-            // Frozen still — same image used in caption mode for stability under async updates.
+            Color.black.ignoresSafeArea()
+
+            // Full-bleed photo — interactive chrome respects safe areas via overlays.
             if let frozen = captionModeFrozenImage {
-                Color.black.ignoresSafeArea()
-                Image(uiImage: frozen)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                    .ignoresSafeArea()
-                    .contentShape(Rectangle())
+                fullBleedCameraStill(frozen)
                     .onTapGesture {
                         beginPreviewCaptionEditing()
                     }
@@ -3558,13 +3624,20 @@ struct CameraCaptureView: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
                 .animation(.easeOut(duration: 0.18), value: previewIsEditingCaption)
-
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
+        .overlay(alignment: .top) {
             previewTopBar
+        }
+        .overlay(alignment: .bottom) {
             if !previewIsEditingCaption {
-                previewBottomChrome
+                VStack(spacing: 0) {
+                    previewBottomChrome
+                    previewActionDock
+                }
             }
         }
-        // Caption panel rides UIKit keyboardLayoutGuide (see PreviewCaptionKeyboardDock).
         .overlay {
             if previewIsEditingCaption {
                 PreviewCaptionKeyboardDock {
@@ -3572,16 +3645,26 @@ struct CameraCaptureView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !previewIsEditingCaption {
-                previewActionDock
-            }
-        }
         .transition(.opacity)
     }
 
     private var previewTopBar: some View {
-        VStack {
+        let safeTop = cameraChromeSafeTop
+        return ZStack(alignment: .top) {
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.52),
+                    Color.black.opacity(0.28),
+                    Color.black.opacity(0.08),
+                    Color.clear
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: safeTop + 100)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .allowsHitTesting(false)
+
             HStack(alignment: .top) {
                 Button {
                     requestPreviewClose()
@@ -3654,9 +3737,10 @@ struct CameraCaptureView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 8)
-            Spacer()
+            .padding(.top, safeTop + 4)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     /// Resolves the on-disk vibe URL for a captured moment (in-memory or persisted).
@@ -3788,8 +3872,7 @@ struct CameraCaptureView: View {
     }
 
     private var previewBottomChrome: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Spacer()
+        Group {
             // Place title + caption preview (read-only). Tap caption to edit inline.
             if let moment = captionModeResolvedMoment {
                 let placeTitle = captionModePlaceTitle.isEmpty ? "Captured Moment" : captionModePlaceTitle
@@ -3903,30 +3986,26 @@ struct CameraCaptureView: View {
                         startPoint: .bottom,
                         endPoint: .top
                     )
-                    // Extend the text scrim to the photo edge so the caption chrome
-                    // feels anchored instead of floating.
-                    .padding(.horizontal, -20)
-                    .padding(.bottom, -84)
                 )
             }
-
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(
-                colors: [.clear, .black.opacity(0.5), .black.opacity(0.85)],
-                startPoint: .center,
+                colors: [.clear, .black.opacity(0.45), .black.opacity(0.72)],
+                startPoint: .top,
                 endPoint: .bottom
             )
-                .ignoresSafeArea(edges: .bottom)
-                .allowsHitTesting(false)
+            .allowsHitTesting(false)
         )
     }
 
     private var previewActionDock: some View {
-        HStack(spacing: 14) {
+        let safeBottom = cameraChromeSafeBottom
+        return HStack(spacing: 12) {
             previewActionCircleButton(
                 systemImage: "pencil",
                 tint: .white
@@ -3943,31 +4022,33 @@ struct CameraCaptureView: View {
             }
             .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
 
             Button {
                 commitCaptionModeDone()
                 AppAnalytics.track(.appInAppCameraPreviewSave)
             } label: {
                 Text("Save")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(.white)
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, 22)
                     .padding(.vertical, 11)
                     .background(Color.blue.opacity(0.9))
                     .clipShape(Capsule())
                     .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
             }
             .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
             .accessibilityLabel("Save moment to Bloggo Gallery")
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
         .padding(.top, 10)
-        .padding(.bottom, 14)
+        .padding(.bottom, max(safeBottom, 8) + 6)
+        .frame(maxWidth: .infinity)
         .background(
             Color.black.opacity(0.78)
                 .background(.ultraThinMaterial)
-                .ignoresSafeArea(edges: .bottom)
         )
     }
 
@@ -4216,8 +4297,11 @@ struct CameraCaptureView: View {
                 nonCaptionCameraOverlay
             } else {
                 postCapturePreviewOverlay
+                    .zIndex(20)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
     }
 
     private var reelStopMode: ReelStopMode {
@@ -4358,12 +4442,25 @@ struct CameraCaptureView: View {
             )
             .overlay(alignment: .top) { toastOverlay }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if showsBottomNavBar {
+                if showsBottomNavBar, isHomeBottomNavRevealed, !isCaptionModeActive {
                     BottomNavBar(
                         activeTab: .camera,
-                        onMyBlogs: { onNavMyBlogs?() },
-                        onCamera: { },
-                        onMyPlaces: { onNavMyPlaces?() }
+                        onMyBlogs: {
+                            cancelHomeBottomNavAutoHide()
+                            isHomeBottomNavRevealed = false
+                            onNavMyBlogs?()
+                        },
+                        onCamera: {
+                            cancelHomeBottomNavAutoHide()
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                isHomeBottomNavRevealed = false
+                            }
+                        },
+                        onMyPlaces: {
+                            cancelHomeBottomNavAutoHide()
+                            isHomeBottomNavRevealed = false
+                            onNavMyPlaces?()
+                        }
                     )
                 }
             }
@@ -4484,7 +4581,20 @@ struct CameraCaptureView: View {
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
             }
+            .onChange(of: isHomeBottomNavRevealed) { _, revealed in
+                if revealed {
+                    scheduleHomeBottomNavAutoHide()
+                } else {
+                    cancelHomeBottomNavAutoHide()
+                }
+            }
+            .onChange(of: isCaptionModeActive) { _, inCaption in
+                if inCaption {
+                    cancelHomeBottomNavAutoHide()
+                }
+            }
             .onDisappear {
+            cancelHomeBottomNavAutoHide()
             if photosCapturedThisSession > 0 {
                 var props: [String: Any] = [
                     "cameraSessionId": cameraSessionId.uuidString,
@@ -4702,6 +4812,7 @@ struct CameraCaptureView: View {
 
     var body: some View {
         inAppCameraBodyWithLifecycle
+            .ignoresSafeArea()
     }
 
     @MainActor

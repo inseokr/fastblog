@@ -106,6 +106,12 @@ struct ContentView: View {
                     didSeeWeakResultOnLimitedScan = photoAuth.status == .limited && tripsViewModel.scanResultIsWeak
                 }
             }
+            .onChange(of: selectedCreatedRecap?.sourceTripId) { _, sourceTripId in
+                BlogMenuIndicatorStore.shared.focusedBlogSourceTripId = sourceTripId
+                if let sourceTripId {
+                    BlogMenuIndicatorStore.shared.clear(sourceTripId: sourceTripId)
+                }
+            }
             .onChange(of: dismissToLandingRequested) { _, requested in
                 if requested {
                     dismissToLandingRequested = false
@@ -158,9 +164,6 @@ struct ContentView: View {
                     },
                     onNavMyPlaces: {
                         withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = true }
-                    },
-                    onShowSettings: {
-                        showSettingsFromNav = true
                     }
                 )
                 .environmentObject(createdRecapStore)

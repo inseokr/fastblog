@@ -19,7 +19,12 @@
       "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog branch -a)",
       "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog log --oneline BLOGGO-443-use-ondevice-ai-to-figure-out-the-transport-betwee -20)",
       "Bash(kill 36070)",
-      "Bash(swiftc -typecheck /Users/inseo/Documents/GitHub/fastblog/fastblog/fastblog/Services/MomentVideoPreferences.swift)"
+      "Bash(swiftc -typecheck /Users/inseo/Documents/GitHub/fastblog/fastblog/fastblog/Services/MomentVideoPreferences.swift)",
+      "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog rev-parse --show-toplevel)",
+      "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog diff -- fastblog/Services/VibeRecorder.swift fastblog/Views/Components/MomentVideoFullScreenPlayer.swift)",
+      "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog status --short)",
+      "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog log --oneline --follow -- fastblog/Services/VibeRecorder.swift fastblog/Views/Components/MomentVideoFullScreenPlayer.swift)",
+      "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog log --oneline -10)"
     ],
     "additionalDirectories": [
       "/Users/inseo/Documents/GitHub/shazam/shazam/Capper/Views",

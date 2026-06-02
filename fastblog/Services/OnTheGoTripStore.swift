@@ -72,6 +72,11 @@ enum OnTheGoTripStore {
     static func signalNewMoments(dayIndex: Int) {
         UserDefaults.standard.set(true, forKey: hasNewMomentsKey)
         UserDefaults.standard.set(dayIndex, forKey: newMomentsDayIndexKey)
+        if let blogId = activeBlogId {
+            Task { @MainActor in
+                BlogMenuIndicatorStore.shared.noteMomentsAdded(to: blogId)
+            }
+        }
     }
 
     /// Clear the new-moments notification after the user sees the popup.

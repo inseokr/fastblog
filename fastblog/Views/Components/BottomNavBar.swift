@@ -17,6 +17,8 @@ struct BottomNavBar: View {
     let onCamera: () -> Void
     let onMyPlaces: () -> Void
 
+    private var menuIndicators: BlogMenuIndicatorStore { BlogMenuIndicatorStore.shared }
+
     private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
     private let hairline = Color.white.opacity(0.12)
 
@@ -32,6 +34,7 @@ struct BottomNavBar: View {
                     tab: .myBlogs,
                     label: "My Blogs",
                     icon: .asset("MyBlogsIcon"),
+                    showsActivityBadge: menuIndicators.hasAnyIndicator,
                     action: onMyBlogs
                 )
                 navItem(
@@ -65,6 +68,7 @@ struct BottomNavBar: View {
         tab: BottomNavTab,
         label: String,
         icon: NavIcon,
+        showsActivityBadge: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         let isActive = activeTab == tab
@@ -73,22 +77,29 @@ struct BottomNavBar: View {
 
         return Button(action: action) {
             VStack(spacing: 4) {
-                Group {
-                    switch icon {
-                    case .asset(let name):
-                        Image(name)
-                            .resizable()
-                            .renderingMode(.template)
-                            .scaledToFit()
-                            .frame(width: 24, height: 24)
-                    case .sfSymbol(let name):
-                        Image(systemName: name)
-                            .font(.system(size: 20))
-                            .frame(width: 24, height: 24)
+                ZStack(alignment: .topTrailing) {
+                    Group {
+                        switch icon {
+                        case .asset(let name):
+                            Image(name)
+                                .resizable()
+                                .renderingMode(.template)
+                                .scaledToFit()
+                                .frame(width: 24, height: 24)
+                        case .sfSymbol(let name):
+                            Image(systemName: name)
+                                .font(.system(size: 20))
+                                .frame(width: 24, height: 24)
+                        }
+                    }
+                    .foregroundColor(.white)
+                    .opacity(iconOpacity)
+
+                    if showsActivityBadge {
+                        BlogMenuNavDotBadge()
+                            .offset(x: 6, y: -5)
                     }
                 }
-                .foregroundColor(.white)
-                .opacity(iconOpacity)
 
                 Text(label)
                     .font(.caption2)

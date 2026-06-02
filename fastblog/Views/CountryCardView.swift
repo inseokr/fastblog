@@ -16,6 +16,7 @@ private let lastBlogFormatter: DateFormatter = {
 /// Full-width country card: latest blog's cover as background, dark gradient overlay, country name and "Last Visited MMM yyyy".
 struct CountryCardView: View {
     let section: CountrySection
+    var showsMenuIndicator: Bool = false
     var onTap: () -> Void
 
     var body: some View {
@@ -65,6 +66,12 @@ struct CountryCardView: View {
                             .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
                     )
                     .padding(12)
+                }
+                .overlay(alignment: .topTrailing) {
+                    if showsMenuIndicator {
+                        BlogMenuNavDotBadge()
+                            .padding(14)
+                    }
                 }
                 .overlay(alignment: .bottom) {
                     VStack(spacing: 6) {
