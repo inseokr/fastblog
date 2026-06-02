@@ -108,3 +108,45 @@ struct BottomNavBar: View {
     }
 }
 
+// MARK: - Home settings gear (My Blogs / Camera / My Places)
+
+/// Shared settings control for home tabs.
+struct HomeSettingsGearButton: View {
+    enum Style {
+        /// My Blogs / My Places navigation bar.
+        case navigationBar
+        /// Camera preview top row — frosted circle aligned with flip / flash controls.
+        case cameraTopBar
+    }
+
+    var style: Style = .navigationBar
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            switch style {
+            case .navigationBar:
+                gearIcon(pointSize: HomeChromeMetrics.settingsIconPointSize)
+                    .foregroundStyle(.white)
+                    .frame(
+                        width: HomeChromeMetrics.settingsTapSide,
+                        height: HomeChromeMetrics.settingsTapSide
+                    )
+            case .cameraTopBar:
+                gearIcon(pointSize: 16)
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Circle())
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Settings")
+    }
+
+    private func gearIcon(pointSize: CGFloat) -> some View {
+        Image(systemName: "gearshape.fill")
+            .font(.system(size: pointSize, weight: .semibold))
+            .symbolRenderingMode(.monochrome)
+    }
+}

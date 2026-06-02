@@ -20,6 +20,31 @@ extension View {
     }
 }
 
+/// Shared layout for home tabs (My Blogs, Camera, My Places).
+enum HomeChromeMetrics {
+    /// Navigation-bar gear size — matches UIKit bar-button symbol scale.
+    static let settingsIconPointSize: CGFloat = 22
+    /// Minimum tappable area in the navigation bar.
+    static let settingsTapSide: CGFloat = 44
+}
+
+extension View {
+    /// Leading settings gear for home tabs — same placement in the navigation bar on every tab.
+    @ViewBuilder
+    func homeSettingsToolbar(onShowSettings: (() -> Void)?) -> some View {
+        if let onShowSettings {
+            toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    HomeSettingsGearButton(action: onShowSettings)
+                }
+            }
+            .toolbarColorScheme(.dark, for: .navigationBar)
+        } else {
+            self
+        }
+    }
+}
+
 /// Named shapes for sheets and chrome (bottom pull-ups, etc.).
 enum AppChromeShapes {
     /// Top corners rounded, bottom square — typical bottom sheet surface.

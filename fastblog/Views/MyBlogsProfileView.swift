@@ -200,15 +200,13 @@ struct MyBlogsProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .preferredColorScheme(.dark)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 switch currentPage {
                 case .blogs:
-                    Button {
+                    HomeSettingsGearButton {
                         onShowSettings?()
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.title3.weight(.semibold))
                     }
                 case .country:
                     Button {

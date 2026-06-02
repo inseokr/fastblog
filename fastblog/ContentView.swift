@@ -158,6 +158,9 @@ struct ContentView: View {
                     },
                     onNavMyPlaces: {
                         withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = true }
+                    },
+                    onShowSettings: {
+                        showSettingsFromNav = true
                     }
                 )
                 .environmentObject(createdRecapStore)

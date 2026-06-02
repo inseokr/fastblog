@@ -46,6 +46,7 @@ struct PlacesVisitedStandaloneView: View {
         .navigationBarBackButtonHidden(true)
         .preferredColorScheme(.dark)
         .dynamicTypeSize(.large)
+        .homeSettingsToolbar(onShowSettings: onShowSettings)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             BottomNavBar(
                 activeTab: .myPlaces,
@@ -401,15 +402,6 @@ struct PlacesVisitedView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarLeading) {
-                if let standaloneOnDismiss {
-                    Button {
-                        onShowSettings?()
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.primary)
-                    }
-                }
                 if selectedYear != nil || selectedCountry != nil || selectedCategory != nil {
                     Button("Reset") {
                         selectedYear = nil

@@ -1698,6 +1698,8 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     @Published var isConfigured = false
     @Published var authorizationDenied = false
     @Published private(set) var zoomFactor: CGFloat = 1.0
+    /// User-facing zoom stops (e.g. 0.5×, 1×, 2×) for the quick-select bar above the shutter.
+    @Published private(set) var displayZoomPresets: [CGFloat] = [1.0, 2.0]
     /// Current location for embedding in captured photos. Updated when camera runs.
     @Published private(set) var currentLocation: CLLocation?
     /// Current camera position (front or back). Updated when user taps flip button.
@@ -1756,7 +1758,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             self.hasAudioInput = false
 
             do {
-                guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
+                guard let device = Self.preferredVideoDevice(for: position) else {
                     DispatchQueue.main.async { self.authorizationDenied = true }
                     self.session.commitConfiguration()
                     return
@@ -1779,11 +1781,96 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             }
 
             self.session.commitConfiguration()
+            guard let configuredDevice = self.videoDevice else { return }
             DispatchQueue.main.async {
-                self.zoomFactor = 1.0
+                self.zoomFactor = configuredDevice.minAvailableVideoZoomFactor
+                self.refreshDisplayZoomPresets(for: configuredDevice)
                 self.isConfigured = true
             }
         }
+    }
+
+    /// Prefers a multi-camera virtual device on the back when available so 0.5× / 2× presets map to real lenses.
+    private static func preferredVideoDevice(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+        if position == .back {
+            let types: [AVCaptureDevice.DeviceType] = [
+                .builtInTripleCamera,
+                .builtInDualWideCamera,
+                .builtInDualCamera,
+                .builtInWideAngleCamera,
+            ]
+            let discovery = AVCaptureDevice.DiscoverySession(
+                deviceTypes: types,
+                mediaType: .video,
+                position: .back
+            )
+            if let device = discovery.devices.first { return device }
+        }
+        return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
+    }
+
+    private static func displayZoomMultiplier(for device: AVCaptureDevice) -> CGFloat {
+        if #available(iOS 18.0, *) {
+            return device.displayVideoZoomFactorMultiplier
+        }
+        return 1.0
+    }
+
+    private func refreshDisplayZoomPresets(for device: AVCaptureDevice) {
+        let multiplier = Self.displayZoomMultiplier(for: device)
+        let minDisplay = device.minAvailableVideoZoomFactor * multiplier
+        let maxDisplay = min(device.maxAvailableVideoZoomFactor * multiplier, 10.0)
+
+        var presets: [CGFloat] = []
+
+        func addPresetIfInRange(_ candidate: CGFloat) {
+            guard candidate >= minDisplay - 0.05, candidate <= maxDisplay + 0.05 else { return }
+            let normalized = Self.normalizedDisplayZoom(candidate)
+            guard !presets.contains(where: { abs($0 - normalized) < 0.15 }) else { return }
+            presets.append(normalized)
+        }
+
+        // Standard Camera-app stops — always offered when the device can reach them.
+        for candidate in [0.5, 1.0, 2.0, 3.0, 5.0] {
+            addPresetIfInRange(candidate)
+        }
+        // Ultrawide minimum when it isn't exactly 0.5×.
+        if minDisplay < 0.95 {
+            addPresetIfInRange(minDisplay)
+        }
+        // Telephoto / virtual switch-over points (e.g. 5× on Pro models).
+        for factor in device.virtualDeviceSwitchOverVideoZoomFactors {
+            let display = CGFloat(truncating: factor) * multiplier
+            addPresetIfInRange(display)
+        }
+
+        if presets.isEmpty {
+            presets = [1.0]
+        }
+        displayZoomPresets = presets.sorted()
+    }
+
+    private static func normalizedDisplayZoom(_ value: CGFloat) -> CGFloat {
+        if value < 1.0 {
+            return (value * 2).rounded() / 2
+        }
+        let rounded = value.rounded()
+        return abs(value - rounded) < 0.08 ? rounded : (value * 10).rounded() / 10
+    }
+
+    var displayZoomFactor: CGFloat {
+        guard let device = videoDevice else { return zoomFactor }
+        return zoomFactor * Self.displayZoomMultiplier(for: device)
+    }
+
+    var minDisplayZoomFactor: CGFloat {
+        guard let device = videoDevice else { return 1.0 }
+        return device.minAvailableVideoZoomFactor * Self.displayZoomMultiplier(for: device)
+    }
+
+    var maxDisplayZoomFactor: CGFloat {
+        guard let device = videoDevice else { return 10.0 }
+        return min(device.maxAvailableVideoZoomFactor * Self.displayZoomMultiplier(for: device), 10.0)
     }
 
     /// Switches between front and back camera. Safe to call from main queue.
@@ -1796,7 +1883,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                       deviceInput.device.hasMediaType(.video) else { continue }
                 self.session.removeInput(input)
             }
-            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: nextPosition) else {
+            guard let device = Self.preferredVideoDevice(for: nextPosition) else {
                 self.session.commitConfiguration()
                 return
             }
@@ -1816,7 +1903,8 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             }
             DispatchQueue.main.async {
                 self.position = nextPosition
-                self.zoomFactor = 1.0
+                self.zoomFactor = device.minAvailableVideoZoomFactor
+                self.refreshDisplayZoomPresets(for: device)
             }
         }
     }
@@ -1851,16 +1939,30 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     /// Clamps and applies a zoom factor to the active camera device.
     func setZoomFactor(_ factor: CGFloat) {
         sessionQueue.async {
+            self.applyVideoZoomFactor(factor)
+        }
+    }
+
+    /// Sets zoom using the same display factor shown in the Camera app (0.5×, 1×, 2×, …).
+    func setDisplayZoomFactor(_ displayFactor: CGFloat) {
+        sessionQueue.async {
             guard let device = self.videoDevice else { return }
-            let clamped = max(1.0, min(factor, device.maxAvailableVideoZoomFactor))
-            do {
-                try device.lockForConfiguration()
-                device.videoZoomFactor = clamped
-                device.unlockForConfiguration()
-            } catch {}
-            DispatchQueue.main.async {
-                self.zoomFactor = clamped
-            }
+            let multiplier = Self.displayZoomMultiplier(for: device)
+            let videoFactor = displayFactor / multiplier
+            self.applyVideoZoomFactor(videoFactor)
+        }
+    }
+
+    private func applyVideoZoomFactor(_ factor: CGFloat) {
+        guard let device = videoDevice else { return }
+        let clamped = max(device.minAvailableVideoZoomFactor, min(factor, device.maxAvailableVideoZoomFactor))
+        do {
+            try device.lockForConfiguration()
+            device.videoZoomFactor = clamped
+            device.unlockForConfiguration()
+        } catch {}
+        DispatchQueue.main.async {
+            self.zoomFactor = clamped
         }
     }
 
@@ -2413,6 +2515,252 @@ private enum CameraCaptureMode: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Camera zoom strip (horizontal scroll, continuous zoom)
+
+private struct CameraZoomControl: View {
+    static let standardPresets: [CGFloat] = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0]
+
+    let displayZoom: CGFloat
+    let minZoom: CGFloat
+    let maxZoom: CGFloat
+    var onZoomChange: (CGFloat) -> Void
+    var onZoomSettled: (CGFloat) -> Void
+
+    @State private var liveZoom: CGFloat = 1.0
+    @State private var isDragging = false
+    @State private var dragStartZoom: CGFloat?
+    @State private var lastHapticPreset: CGFloat?
+    @State private var controlWidth: CGFloat = 0
+    @State private var selectionGenerator = UISelectionFeedbackGenerator()
+
+    private let barHeight: CGFloat = 48
+    private let scrollTrackWidth: CGFloat = 300
+    private let trackPadding: CGFloat = 24
+    private let hapticSnapTolerance: CGFloat = 0.065
+    private let tapThreshold: CGFloat = 8
+    private let presetTapRadius: CGFloat = 34
+    private let centerFontSize: CGFloat = 20
+    private let sideFontSize: CGFloat = 17
+
+    private var availablePresets: [CGFloat] {
+        Self.standardPresets.filter { $0 >= minZoom - 0.05 && $0 <= maxZoom + 0.05 }
+    }
+
+    private var currentZoom: CGFloat { isDragging ? liveZoom : displayZoom }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                scrollingPresetLabels
+                    .offset(x: scrollOffset(barWidth: geo.size.width))
+
+                centerZoomPill
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(zoomStripGesture)
+            .onAppear { controlWidth = geo.size.width }
+            .onChange(of: geo.size.width) { _, width in controlWidth = width }
+        }
+        .frame(height: barHeight)
+        .animation(isDragging ? nil : .spring(response: 0.38, dampingFraction: 0.86), value: currentZoom)
+        .onChange(of: displayZoom) { _, newValue in
+            guard !isDragging else { return }
+            liveZoom = newValue
+        }
+        .onAppear {
+            liveZoom = displayZoom
+            selectionGenerator.prepare()
+        }
+    }
+
+    private var scrollingPresetLabels: some View {
+        ZStack {
+            ForEach(availablePresets, id: \.self) { preset in
+                Text(Self.formatLabel(preset))
+                    .font(.system(size: sideFontSize, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(sideOpacity(for: preset)))
+                    .lineLimit(1)
+                    .frame(minWidth: presetTapRadius, minHeight: barHeight)
+                    .position(x: xOnTrack(for: preset), y: barHeight / 2)
+                    .accessibilityLabel("Zoom \(Self.formatLabel(preset))")
+                    .accessibilityAddTraits(isPresetApproximatelySelected(preset) ? .isSelected : [])
+            }
+        }
+        .frame(width: scrollTrackWidth + trackPadding * 2, height: barHeight)
+        .allowsHitTesting(false)
+    }
+
+    private var centerZoomPill: some View {
+        Text(Self.formatLabel(currentZoom))
+            .font(.system(size: centerFontSize, weight: .semibold, design: .rounded))
+            .foregroundColor(.yellow)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background {
+                Capsule()
+                    .fill(.ultraThinMaterial.opacity(0.72))
+                    .background(Capsule().fill(Color.black.opacity(0.32)))
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+                    }
+            }
+            .allowsHitTesting(false)
+            .accessibilityLabel("Zoom \(Self.formatLabel(currentZoom))")
+            .accessibilityAddTraits(.isSelected)
+    }
+
+    /// Fade side labels; hide when they sit under the center pill.
+    private func sideOpacity(for preset: CGFloat) -> CGFloat {
+        let distX = abs(xOnTrack(for: preset) - xOnTrack(for: currentZoom))
+        if distX < 30 { return 0 }
+        return CGFloat(max(0.32, min(0.72, 0.78 - distX / scrollTrackWidth * 0.55)))
+    }
+
+    /// Equal spacing between preset stops; continuous zoom interpolates within each segment.
+    private func xForPresetIndex(_ index: Int) -> CGFloat {
+        let presets = availablePresets
+        let segments = max(presets.count - 1, 1)
+        let t = CGFloat(index) / CGFloat(segments)
+        return trackPadding + t * scrollTrackWidth
+    }
+
+    private func xOnTrack(for zoom: CGFloat) -> CGFloat {
+        let presets = availablePresets
+        guard presets.count >= 2 else {
+            return trackPadding + scrollTrackWidth / 2
+        }
+
+        let clamped = max(presets[0], min(zoom, presets[presets.count - 1]))
+        if clamped <= presets[0] { return xForPresetIndex(0) }
+        if clamped >= presets[presets.count - 1] { return xForPresetIndex(presets.count - 1) }
+
+        for index in 0..<(presets.count - 1) {
+            let low = presets[index]
+            let high = presets[index + 1]
+            guard clamped >= low, clamped <= high else { continue }
+            let t = (clamped - low) / (high - low)
+            return xForPresetIndex(index) + t * (xForPresetIndex(index + 1) - xForPresetIndex(index))
+        }
+        return xForPresetIndex(0)
+    }
+
+    private func zoomFromTrackX(_ x: CGFloat) -> CGFloat {
+        let presets = availablePresets
+        guard presets.count >= 2 else { return minZoom }
+
+        let minX = xForPresetIndex(0)
+        let maxX = xForPresetIndex(presets.count - 1)
+        let clampedX = max(minX, min(maxX, x))
+
+        for index in 0..<(presets.count - 1) {
+            let x0 = xForPresetIndex(index)
+            let x1 = xForPresetIndex(index + 1)
+            guard clampedX >= x0, clampedX <= x1 else { continue }
+            let t = (clampedX - x0) / (x1 - x0)
+            return presets[index] + t * (presets[index + 1] - presets[index])
+        }
+        return presets[presets.count - 1]
+    }
+
+    private func scrollOffset(barWidth: CGFloat) -> CGFloat {
+        barWidth / 2 - xOnTrack(for: currentZoom)
+    }
+
+    private var zoomStripGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let distance = hypot(value.translation.width, value.translation.height)
+                guard distance >= tapThreshold else { return }
+                if abs(value.translation.height) > abs(value.translation.width) * 1.2 { return }
+
+                if !isDragging {
+                    isDragging = true
+                    dragStartZoom = displayZoom
+                    liveZoom = displayZoom
+                }
+                updateZoomFromDrag(translationX: value.translation.width)
+            }
+            .onEnded { value in
+                let distance = hypot(value.translation.width, value.translation.height)
+                if distance < tapThreshold {
+                    handleTap(at: value.location)
+                } else if isDragging {
+                    onZoomSettled(liveZoom)
+                }
+                isDragging = false
+                dragStartZoom = nil
+            }
+    }
+
+    private func handleTap(at location: CGPoint) {
+        guard controlWidth > 0 else { return }
+        let stripX = location.x - scrollOffset(barWidth: controlWidth)
+        guard let preset = nearestPreset(toStripX: stripX) else { return }
+        applyPreset(preset)
+    }
+
+    private func nearestPreset(toStripX x: CGFloat) -> CGFloat? {
+        guard let preset = availablePresets.min(by: {
+            abs(xOnTrack(for: $0) - x) < abs(xOnTrack(for: $1) - x)
+        }) else { return nil }
+        guard abs(xOnTrack(for: preset) - x) <= presetTapRadius else { return nil }
+        return preset
+    }
+
+    private func isPresetApproximatelySelected(_ preset: CGFloat) -> Bool {
+        abs(displayZoom - preset) < 0.12
+    }
+
+    private func updateZoomFromDrag(translationX: CGFloat) {
+        if dragStartZoom == nil { dragStartZoom = liveZoom }
+        guard let startZoom = dragStartZoom else { return }
+
+        let startX = xOnTrack(for: startZoom)
+        let zoom = max(minZoom, min(maxZoom, zoomFromTrackX(startX - translationX)))
+        liveZoom = zoom
+        onZoomChange(zoom)
+        fireHapticIfNeeded(for: zoom)
+    }
+
+    private func applyPreset(_ preset: CGFloat) {
+        liveZoom = preset
+        onZoomChange(preset)
+        onZoomSettled(preset)
+        selectionGenerator.selectionChanged()
+    }
+
+    private func fireHapticIfNeeded(for zoom: CGFloat) {
+        for preset in availablePresets {
+            guard abs(zoom - preset) < hapticSnapTolerance else { continue }
+            if lastHapticPreset != preset {
+                lastHapticPreset = preset
+                selectionGenerator.selectionChanged()
+            }
+            return
+        }
+        if let last = lastHapticPreset,
+           availablePresets.allSatisfy({ abs(zoom - $0) > hapticSnapTolerance * 1.6 || $0 != last }) {
+            lastHapticPreset = nil
+        }
+    }
+
+    static func formatLabel(_ factor: CGFloat) -> String {
+        if factor < 1.0 {
+            let text = String(format: "%.1f", factor)
+            return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + "×"
+        }
+        if abs(factor.rounded() - factor) < 0.05 {
+            return String(format: "%.0f×", factor.rounded())
+        }
+        return String(format: "%.1f×", factor)
+    }
+}
+
 /// Camera UI that shows a live preview and session counter. Moment plumbing is added separately.
 struct CameraCaptureView: View {
     @ObservedObject var tripsViewModel: TripsViewModel
@@ -2430,6 +2778,8 @@ struct CameraCaptureView: View {
     // Bottom navigation (home redesign). When nil, camera behaves as an overlay.
     var onNavMyBlogs: (() -> Void)? = nil
     var onNavMyPlaces: (() -> Void)? = nil
+    /// Opens app Settings (gear on home Camera tab).
+    var onShowSettings: (() -> Void)? = nil
 
     @StateObject private var cameraController = CameraController()
 
@@ -2940,13 +3290,17 @@ struct CameraCaptureView: View {
     private var cameraZoomGesture: some Gesture {
         MagnificationGesture()
             .onChanged { value in
-                let newZoom = max(1.0, min(zoomBaseScale * value, 10.0))
-                cameraController.setZoomFactor(newZoom)
+                let minZoom = cameraController.minDisplayZoomFactor
+                let maxZoom = cameraController.maxDisplayZoomFactor
+                let newZoom = max(minZoom, min(zoomBaseScale * value, maxZoom))
+                cameraController.setDisplayZoomFactor(newZoom)
                 showZoomIndicator = true
                 zoomIndicatorTask?.cancel()
             }
             .onEnded { value in
-                zoomBaseScale = max(1.0, min(zoomBaseScale * value, 10.0))
+                let minZoom = cameraController.minDisplayZoomFactor
+                let maxZoom = cameraController.maxDisplayZoomFactor
+                zoomBaseScale = max(minZoom, min(zoomBaseScale * value, maxZoom))
                 zoomIndicatorTask = Task {
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
                     guard !Task.isCancelled else { return }
@@ -2991,10 +3345,10 @@ struct CameraCaptureView: View {
                 .padding(.bottom, 8)
         }
 
-        // Zoom level indicator - appears while pinching, fades out
+        // Zoom level indicator - appears while pinching, fades out (hidden when dial is open)
         if showZoomIndicator {
             VStack {
-                Text(String(format: "%.1f×", cameraController.zoomFactor))
+                Text(CameraZoomControl.formatLabel(cameraController.displayZoomFactor))
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .padding(.horizontal, 10)
@@ -3061,8 +3415,13 @@ struct CameraCaptureView: View {
             .animation(.easeInOut(duration: 0.3), value: isVibeCaptureEnabled)
         }
 
-        // Top controls: X (top-left, overlay mode only) + Reverse / Flash / Save to Photos (top-right)
-        if onDismissOverlay != nil {
+        // Top row: Settings (home tab) or Close (overlay) on the left; flip / flash / … stack on the right.
+        if showsBottomNavBar, let onShowSettings {
+            HomeSettingsGearButton(style: .cameraTopBar, action: onShowSettings)
+                .padding(.top, 8)
+                .padding(.leading, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else if onDismissOverlay != nil {
             Button {
                 closeCamera()
             } label: {
@@ -4034,9 +4393,13 @@ struct CameraCaptureView: View {
             .onChange(of: cameraController.isConfigured) { _, configured in
             if configured {
                 cameraController.startRunning()
+                zoomBaseScale = cameraController.displayZoomFactor
                 if isVibeCaptureEnabled { vibeRecorder.start() }
                 presentCameraTooltipIfNeeded()
             }
+            }
+            .onChange(of: cameraController.position) { _, _ in
+                zoomBaseScale = cameraController.displayZoomFactor
             }
             .onChange(of: cameraController.isRecordingMomentVideo) { _, isRecording in
                 if isRecording {
@@ -4746,6 +5109,21 @@ struct CameraCaptureView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
+            if showsCameraZoomPresetBar {
+                CameraZoomControl(
+                    displayZoom: cameraController.displayZoomFactor,
+                    minZoom: cameraController.minDisplayZoomFactor,
+                    maxZoom: min(cameraController.maxDisplayZoomFactor, 5.0),
+                    onZoomChange: { zoom in
+                        cameraController.setDisplayZoomFactor(zoom)
+                    },
+                    onZoomSettled: { zoom in
+                        zoomBaseScale = zoom
+                    }
+                )
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
             HStack(spacing: 0) {
                 Button {
                     isShowingCapturesGallery = true
@@ -4777,6 +5155,14 @@ struct CameraCaptureView: View {
         }
         .padding(.horizontal, 24)
         .animation(.easeInOut(duration: 0.2), value: cameraController.isRecordingMomentVideo)
+        .animation(.easeInOut(duration: 0.2), value: showsCameraZoomPresetBar)
+    }
+
+    private var showsCameraZoomPresetBar: Bool {
+        cameraController.isConfigured
+            && !cameraController.authorizationDenied
+            && cameraController.position == .back
+            && !cameraController.isRecordingMomentVideo
     }
 
     private var photoShutterButton: some View {
