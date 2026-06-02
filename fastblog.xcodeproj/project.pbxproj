@@ -268,6 +268,8 @@
 		PS00PS02 /* PreparingStoryBookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PS00PS01 /* PreparingStoryBookView.swift */; };
 		SB00SB02 /* StatusBarStyleApplier.swift in Sources */ = {isa = PBXBuildFile; fileRef = SB00SB01 /* StatusBarStyleApplier.swift */; };
 		SM00SM02 /* StoryModePDFOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM00SM01 /* StoryModePDFOptionsSheet.swift */; };
+		BBA0B001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA0B002 /* SettingsView.swift */; };
+		BBA0B003 /* BottomNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA0B004 /* BottomNavBar.swift */; };
 		TS00B01 /* TripShareNearbyConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R01 /* TripShareNearbyConfig.swift */; };
 		TS00B02 /* TripSharePackage.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R02 /* TripSharePackage.swift */; };
 		TS00B03 /* TripNearbyShareSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R03 /* TripNearbyShareSessionController.swift */; };
@@ -413,6 +415,8 @@
 		BB0001DA /* AppLaunchSplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunchSplashView.swift; sourceTree = "<group>"; };
 		BB0001DB /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
 		BB0001DC /* SubscriptionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionSettingsView.swift; sourceTree = "<group>"; };
+		BBA0B002 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		BBA0B004 /* BottomNavBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomNavBar.swift; sourceTree = "<group>"; };
 		BB0001E0 /* RecallCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecallCard.swift; sourceTree = "<group>"; };
 		BB0001E2 /* StoreKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitManager.swift; sourceTree = "<group>"; };
 		BB0001E4 /* EntitlementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementManager.swift; sourceTree = "<group>"; };
@@ -753,6 +757,7 @@
 				BB0002D0 /* StorageManagementView.swift */,
 				BB000230 /* PhotoAccessRow.swift */,
 				BB0001DC /* SubscriptionSettingsView.swift */,
+				BBA0B002 /* SettingsView.swift */,
 				BB000163 /* TermsOfServiceView.swift */,
 				BB000165 /* TitleInputView.swift */,
 				BB00020B /* TrackableScrollView.swift */,
@@ -909,6 +914,7 @@
 				BB000313 /* MomentVideoFullScreenPlayer.swift */,
 				BB000346 /* InlineMomentReelMedia.swift */,
 				BB0001C1 /* KeyboardCaptionToolbar.swift */,
+				BBA0B004 /* BottomNavBar.swift */,
 				BB0001E8 /* PlaceCardView.swift */,
 				BB0001E0 /* RecallCard.swift */,
 			);
@@ -1072,6 +1078,8 @@
 				BB000134 /* FindMoreTripsSheet.swift in Sources */,
 				BB000136 /* LandingView.swift in Sources */,
 				BB000138 /* LoadingScanView.swift in Sources */,
+				BBA0B001 /* SettingsView.swift in Sources */,
+				BBA0B003 /* BottomNavBar.swift in Sources */,
 				BB00013A /* ManagePhotosView.swift in Sources */,
 				BB00013C /* MapDayView.swift in Sources */,
 				BB00013E /* MockPhotoView.swift in Sources */,

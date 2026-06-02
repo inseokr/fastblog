@@ -35,10 +35,16 @@ struct MyBlogsProfileView: View {
     /// Passed to `CountryBlogsView` for kebab "Share Blog"; consumed by `RecapBlogPageView` as `forcePresentShareYourBlogSheet`.
     @Binding var openRecapPresentShareYourBlogSheet: Bool
     @ObservedObject var tripsViewModel: TripsViewModel
-    /// Called when user taps "View" on new-moments alert so the parent can dismiss the fullScreenCover.
+    /// Legacy overlay dismiss callback (pre-bottom-nav). No longer used for the top-left control.
     var onDismissCover: (() -> Void)? = nil
     /// Reports whether the visible scroll is at top (for swipe-to-dismiss gating).
     var onTopScrollStateChange: ((Bool) -> Void)? = nil
+    
+    // Home redesign callbacks (bottom nav + settings).
+    var onShowSettings: (() -> Void)? = nil
+    var onNavCamera: (() -> Void)? = nil
+    var onNavMyPlaces: (() -> Void)? = nil
+    var onTapToBlog: (() -> Void)? = nil
     @StateObject private var viewModel = MyBlogsProfileViewModel()
     // Page navigation (ZStack-based, bottom bar persists across all pages)
     @State private var currentPage: MyBlogsPage = .blogs
@@ -74,7 +80,11 @@ struct MyBlogsProfileView: View {
         openRecapPresentShareYourBlogSheet: Binding<Bool> = .constant(false),
         tripsViewModel: TripsViewModel,
         onDismissCover: (() -> Void)? = nil,
-        onTopScrollStateChange: ((Bool) -> Void)? = nil
+        onTopScrollStateChange: ((Bool) -> Void)? = nil,
+        onShowSettings: (() -> Void)? = nil,
+        onNavCamera: (() -> Void)? = nil,
+        onNavMyPlaces: (() -> Void)? = nil,
+        onTapToBlog: (() -> Void)? = nil
     ) {
         _selectedCreatedRecap = selectedCreatedRecap
         _initialDayIndexForRecap = initialDayIndexForRecap
@@ -83,6 +93,10 @@ struct MyBlogsProfileView: View {
         _tripsViewModel = ObservedObject(wrappedValue: tripsViewModel)
         self.onDismissCover = onDismissCover
         self.onTopScrollStateChange = onTopScrollStateChange
+        self.onShowSettings = onShowSettings
+        self.onNavCamera = onNavCamera
+        self.onNavMyPlaces = onNavMyPlaces
+        self.onTapToBlog = onTapToBlog
     }
 
     private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
@@ -176,7 +190,7 @@ struct MyBlogsProfileView: View {
                         }
                     }
                     .padding(.trailing, horizontalPadding)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 8)
                 }
                 adaptiveSearchBar
             }
@@ -191,14 +205,10 @@ struct MyBlogsProfileView: View {
                 switch currentPage {
                 case .blogs:
                     Button {
-                        isSearchFocused = false
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            onDismissCover?()
-                        }
+                        onShowSettings?()
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.body.weight(.semibold))
+                        Image(systemName: "gearshape.fill")
+                            .font(.title3.weight(.semibold))
                     }
                 case .country:
                     Button {
@@ -316,6 +326,14 @@ struct MyBlogsProfileView: View {
         }
         .onChange(of: scrollOffset) { _, _ in reportTopScrollState() }
         .onChange(of: countryScrollOffset) { _, _ in reportTopScrollState() }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            BottomNavBar(
+                activeTab: .myBlogs,
+                onMyBlogs: { },
+                onCamera: { onNavCamera?() },
+                onMyPlaces: { onNavMyPlaces?() }
+            )
+        }
     }
 
     // MARK: - Page routing
@@ -380,6 +398,12 @@ struct MyBlogsProfileView: View {
             let searched = viewModel.filteredSections(from: allSections)
             let sections = searched
             Group {
+                if !isSearchActive {
+                    tapToBlogBanner
+                        .padding(.bottom, 10)
+                    latestEditsSection
+                        .padding(.bottom, 6)
+                }
                 if false && !isSearchActive && !viewModel.unsavedTrips.isEmpty {
                     unsavedTripsSection
                 }
@@ -412,6 +436,68 @@ struct MyBlogsProfileView: View {
         .coordinateSpace(name: "MyBlogsScroll")
         .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in scrollOffset = value }
         .transition(.opacity)
+    }
+
+    private var tapToBlogBanner: some View {
+        Button {
+            onTapToBlog?()
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.blue.opacity(0.22))
+                        .frame(width: 34, height: 34)
+                    Image(systemName: "plus")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Color.blue)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tap to Blog")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                    Text("Scan your photos into a blog")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color.white.opacity(0.08))
+            .overlay {
+                RoundedRectangle(appChromeBaseRadius: 14)
+                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+            }
+            .appChromeCornerRadius(14)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var latestEditsSection: some View {
+        let recents = createdRecapStore.displayRecents
+        if !recents.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Latest Edits")
+                    .font(.headline)
+                    .foregroundColor(.white)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(Array(recents.prefix(8))) { recap in
+                            CreatedRecapCard(recap: recap)
+                                .onTapGesture {
+                                    selectedCreatedRecap = recap
+                                }
+                        }
+                    }
+                    .padding(.bottom, 4)
+                }
+            }
+        }
     }
 
     // MARK: - Persistent bottom bar

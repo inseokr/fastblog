@@ -881,7 +881,7 @@ private struct SettingsHelpSheet: View {
 }
 
 /// Settings sheet from the home page (gear icon). Includes neighborhood selection.
-private struct SettingsView: View {
+private struct LandingSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager

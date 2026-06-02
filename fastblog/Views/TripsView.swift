@@ -2426,6 +2426,10 @@ struct CameraCaptureView: View {
     /// When set, all captured photos are always routed to this blog regardless of date/on-the-go state.
     /// Used when the camera is opened from inside an existing blog.
     var forcedTargetBlogId: UUID? = nil
+    
+    // Bottom navigation (home redesign). When nil, camera behaves as an overlay.
+    var onNavMyBlogs: (() -> Void)? = nil
+    var onNavMyPlaces: (() -> Void)? = nil
 
     @StateObject private var cameraController = CameraController()
 
@@ -3057,21 +3061,23 @@ struct CameraCaptureView: View {
             .animation(.easeInOut(duration: 0.3), value: isVibeCaptureEnabled)
         }
 
-        // Top controls: X (top-left) + Reverse / Flash / Save to Photos (top-right)
-        Button {
-            closeCamera()
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.white)
-                .frame(width: 44, height: 44)
-                .background(.ultraThinMaterial)
-                .clipShape(Circle())
+        // Top controls: X (top-left, overlay mode only) + Reverse / Flash / Save to Photos (top-right)
+        if onDismissOverlay != nil {
+            Button {
+                closeCamera()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Circle())
+            }
+            .accessibilityLabel("Close camera")
+            .padding(.top, 8)
+            .padding(.leading, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .accessibilityLabel("Close camera")
-        .padding(.top, 8)
-        .padding(.leading, 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
         VStack(spacing: 16) {
             Button {
@@ -3129,6 +3135,10 @@ struct CameraCaptureView: View {
         .padding(.trailing, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
 
+    }
+
+    private var showsBottomNavBar: Bool {
+        onNavMyBlogs != nil || onNavMyPlaces != nil
     }
 
     // MARK: - Post-capture preview overlay
@@ -3937,8 +3947,11 @@ struct CameraCaptureView: View {
                         if value.translation.height < -50 {
                             isShowingCapturesGallery = true
                         } else if value.translation.height > 50 {
-                            // Swipe-down dismiss is allowed only before any photo is captured.
-                            let hasCapturedPhotos = photosCapturedThisSession > 0
+                            // Home camera: no swipe-down dismiss.
+                            guard !showsBottomNavBar else { return }
+                            // Overlay camera: swipe-down dismiss is allowed only before any photo is captured.
+                            let hasCapturedPhotos =
+                                photosCapturedThisSession > 0
                                 || !sessionCapturesForDisplay.isEmpty
                                 || !sessionMoments.isEmpty
                             guard !hasCapturedPhotos else { return }
@@ -3964,6 +3977,16 @@ struct CameraCaptureView: View {
                     .ignoresSafeArea()
             )
             .overlay(alignment: .top) { toastOverlay }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if showsBottomNavBar {
+                    BottomNavBar(
+                        activeTab: .camera,
+                        onMyBlogs: { onNavMyBlogs?() },
+                        onCamera: { },
+                        onMyPlaces: { onNavMyPlaces?() }
+                    )
+                }
+            }
     }
 
     /// Lifecycle and core camera-state updates.

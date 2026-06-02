@@ -19,6 +19,11 @@ struct PlacesVisitedStandaloneView: View {
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialScrollToStopIdForRecap: UUID?
     var onDismiss: () -> Void
+    
+    // Home redesign callbacks (bottom nav + settings).
+    var onShowSettings: (() -> Void)? = nil
+    var onNavMyBlogs: (() -> Void)? = nil
+    var onNavCamera: (() -> Void)? = nil
 
     @State private var searchText: String = ""
     @State private var showPlacesMap: Bool = false
@@ -31,15 +36,24 @@ struct PlacesVisitedStandaloneView: View {
             showPlacesMap: $showPlacesMap,
             selectedCreatedRecap: $selectedCreatedRecap,
             initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
-            standaloneOnDismiss: onDismiss
+            standaloneOnDismiss: onDismiss,
+            onShowSettings: onShowSettings
         )
         .background(backgroundBlue.ignoresSafeArea())
         .scrollContentBackground(.hidden)
-        .navigationTitle("Places Visited")
+        .navigationTitle("My Places")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .preferredColorScheme(.dark)
         .dynamicTypeSize(.large)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            BottomNavBar(
+                activeTab: .myPlaces,
+                onMyBlogs: { onNavMyBlogs?() },
+                onCamera: { onNavCamera?() },
+                onMyPlaces: { }
+            )
+        }
     }
 }
 
@@ -52,6 +66,7 @@ struct PlacesVisitedView: View {
     @Binding var initialScrollToStopIdForRecap: UUID?
     /// When set (standalone presentation), shows a leading dismiss control in the navigation bar.
     var standaloneOnDismiss: (() -> Void)? = nil
+    var onShowSettings: (() -> Void)? = nil
 
     @State private var selectedYear: Int? = nil
     @State private var selectedCountry: String? = nil
@@ -272,7 +287,7 @@ struct PlacesVisitedView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.trailing, bottomBarHorizontalPadding)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 8)
                 }
                 placesSearchBar
             }
@@ -388,13 +403,10 @@ struct PlacesVisitedView: View {
             ToolbarItemGroup(placement: .topBarLeading) {
                 if let standaloneOnDismiss {
                     Button {
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            standaloneOnDismiss()
-                        }
+                        onShowSettings?()
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.body.weight(.semibold))
+                        Image(systemName: "gearshape.fill")
+                            .font(.title3.weight(.semibold))
                             .foregroundStyle(.primary)
                     }
                 }
@@ -582,7 +594,7 @@ struct PlacesVisitedView: View {
         .frame(height: searchBarHeight)
         .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
         .padding(.horizontal, bottomBarHorizontalPadding)
-        .padding(.bottom, 12)
+        .padding(.bottom, 6)
     }
 
     private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
