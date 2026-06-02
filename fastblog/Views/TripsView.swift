@@ -3768,7 +3768,7 @@ struct CameraCaptureView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .onChange(of: previewCaptionFocused) { _, focused in
                     if !focused && pendingPreviewCaptionClose {
                         pendingPreviewCaptionClose = false
@@ -3804,11 +3804,6 @@ struct CameraCaptureView: View {
         .padding(.top, 12)
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Color.black.opacity(0.88)
-                .background(.ultraThinMaterial)
-                .ignoresSafeArea(edges: .bottom)
-        )
         .onAppear {
             DispatchQueue.main.async { previewCaptionFocused = true }
         }
