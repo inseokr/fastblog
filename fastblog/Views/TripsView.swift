@@ -2509,6 +2509,10 @@ struct CameraCaptureView: View {
     /// Inline caption editor visibility within the post-capture preview overlay.
     @State private var previewIsEditingCaption = false
     @FocusState private var previewCaptionFocused: Bool
+    /// Caption text at the moment editing began — restored on Cancel.
+    @State private var previewCaptionDraftSnapshot: String = ""
+    /// Guards against the panel closing before the keyboard finishes animating down.
+    @State private var pendingPreviewCaptionClose = false
     /// Voice memo half-sheet presentation + playback player for the preview overlay.
     @State private var showVoiceMemoSheet = false
     @StateObject private var previewVoiceMemoPlayer = VibePlayer()
@@ -3163,10 +3167,16 @@ struct CameraCaptureView: View {
                 previewBottomChrome
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        // Caption panel rides UIKit keyboardLayoutGuide (see PreviewCaptionKeyboardDock).
+        .overlay {
             if previewIsEditingCaption {
-                previewCaptionEditingPanel
-            } else {
+                PreviewCaptionKeyboardDock {
+                    previewCaptionEditingPanel
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !previewIsEditingCaption {
                 previewActionDock
             }
         }
@@ -3564,52 +3574,6 @@ struct CameraCaptureView: View {
         )
     }
 
-    private var previewActionBar: some View {
-        HStack(spacing: 14) {
-            if !previewCaptionFocused {
-                previewActionCircleButton(
-                    systemImage: "pencil",
-                    tint: .white
-                ) {
-                    beginPreviewCaptionEditing()
-                }
-                .accessibilityLabel("Edit caption")
-
-                previewActionCircleButton(
-                    systemImage: previewVoiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill",
-                    tint: previewChromeHasVoiceMemo ? .cyan : .white
-                ) {
-                    showVoiceMemoSheet = true
-                }
-                .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
-            }
-
-            Spacer(minLength: 0)
-
-            Button {
-                if previewCaptionFocused {
-                    dismissPreviewCaptionEditor()
-                } else {
-                    dismissPreviewCaptionEditor()
-                    commitCaptionModeDone()
-                    AppAnalytics.track(.appInAppCameraPreviewSave)
-                }
-            } label: {
-                Text(previewCaptionFocused ? "Done" : "Save")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 11)
-                    .background(Color.blue.opacity(0.9))
-                    .clipShape(Capsule())
-                    .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(previewCaptionFocused ? "Done editing caption" : "Save moment to Bloggo Gallery")
-        }
-        .frame(maxWidth: .infinity)
-    }
-
     private func previewActionCircleButton(
         systemImage: String,
         tint: Color,
@@ -3632,10 +3596,58 @@ struct CameraCaptureView: View {
     }
 
     private func beginPreviewCaptionEditing() {
+        previewCaptionDraftSnapshot = captionModeCaptionBinding.wrappedValue
         withAnimation(.easeOut(duration: 0.2)) {
             previewIsEditingCaption = true
         }
         DispatchQueue.main.async { previewCaptionFocused = true }
+    }
+
+    private func cancelPreviewCaptionEditing() {
+        // Restore caption to the value before editing began.
+        let snapshot = previewCaptionDraftSnapshot
+        let trimmed = snapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stored: String? = trimmed.isEmpty ? nil : snapshot
+        if let id = captionModeMomentId {
+            if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == id }) {
+                sessionCapturesForDisplay[idx].caption = stored
+            } else if let idx = sessionMoments.firstIndex(where: { $0.id == id }) {
+                sessionMoments[idx].caption = stored
+            }
+        }
+        requestPreviewCaptionEditorClose()
+    }
+
+    private func savePreviewCaptionEditing() {
+        // Persist caption only — does not exit the preview or run the "moment added" flow.
+        syncSessionCaptionsToBlog()
+        if let moment = captionModeResolvedMoment, let photoId = moment.injectedPhotoId {
+            let caption = moment.caption
+            if sessionSourceTripId != nil {
+                createdRecapStore.updatePhotoCaption(photoId: photoId, newCaption: caption ?? "")
+            } else if let draftId = sessionDraftTripId {
+                tripsViewModel.updatePhotoCaptionInCameraDraft(tripId: draftId, photoId: photoId, caption: caption)
+            }
+        } else if let moment = captionModeResolvedMoment,
+                  let localId = moment.localIdentifier,
+                  let captureId = AppCapturePhotoService.uuid(from: localId) {
+            let caption = moment.caption
+            try? AppCapturePhotoService.shared.updateCaption(captureId: captureId, caption: caption)
+        }
+        requestPreviewCaptionEditorClose()
+    }
+
+    private func requestPreviewCaptionEditorClose() {
+        pendingPreviewCaptionClose = true
+        previewCaptionFocused = false
+        // If no software keyboard animation fires (e.g. hardware keyboard), close immediately after a short fallback.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            guard pendingPreviewCaptionClose else { return }
+            pendingPreviewCaptionClose = false
+            withAnimation(.easeOut(duration: 0.2)) {
+                previewIsEditingCaption = false
+            }
+        }
     }
 
     private var canOpenCaptionModePlaceEditor: Bool {
@@ -3644,8 +3656,8 @@ struct CameraCaptureView: View {
     }
 
     private func dismissPreviewCaptionEditor() {
+        pendingPreviewCaptionClose = false
         previewCaptionFocused = false
-        syncSessionCaptionsToBlog()
         withAnimation(.easeOut(duration: 0.2)) {
             previewIsEditingCaption = false
         }
@@ -3723,8 +3735,10 @@ struct CameraCaptureView: View {
         }
     }
 
-    /// Caption editor anchored above the keyboard via bottom `safeAreaInset`.
-    /// Cancel/Save sit directly above the keyboard; the text field grows upward as lines are added.
+    /// Caption editor panel docked to the keyboard via `PreviewCaptionKeyboardDock`.
+    /// VStack order (top → bottom): PlaceTitle → TextField → Cancel/Save.
+    /// As the user types more lines the panel grows upward; Cancel/Save stay fixed
+    /// at the keyboard edge.
     private var previewCaptionEditingPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let moment = captionModeResolvedMoment {
@@ -3755,12 +3769,20 @@ struct CameraCaptureView: View {
                 .padding(.vertical, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .onChange(of: previewCaptionFocused) { _, focused in
+                    if !focused && pendingPreviewCaptionClose {
+                        pendingPreviewCaptionClose = false
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            previewIsEditingCaption = false
+                        }
+                    }
+                }
             }
 
+            // Cancel / Save — always at the bottom, pinned just above the keyboard.
             HStack(alignment: .center) {
                 Button("Cancel") {
-                    previewCaptionFocused = false
-                    dismissPreviewCaptionEditor()
+                    cancelPreviewCaptionEditing()
                 }
                 .font(.body)
                 .fontWeight(.semibold)
@@ -3770,10 +3792,7 @@ struct CameraCaptureView: View {
                 Spacer()
 
                 Button("Save") {
-                    previewCaptionFocused = false
-                    dismissPreviewCaptionEditor()
-                    commitCaptionModeDone()
-                    AppAnalytics.track(.appInAppCameraPreviewSave)
+                    savePreviewCaptionEditing()
                 }
                 .font(.body)
                 .fontWeight(.bold)
@@ -3783,7 +3802,7 @@ struct CameraCaptureView: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
-        .padding(.bottom, 14)
+        .padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             Color.black.opacity(0.88)

@@ -27,6 +27,7 @@
 		43EA38F00CD64247BB84651D /* StoryBookViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */; };
 		5050088081A6CE14C59511C2 /* DayContentPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A01A8A2A53646AA22C132E3 /* DayContentPageView.swift */; };
 		5FSCME02E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FSCME01E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift */; };
+		PCKBD02E5D40718293A4B6D /* PreviewCaptionKeyboardDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = PCKBD01E5D40718293A4B6D /* PreviewCaptionKeyboardDock.swift */; };
 		719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */; };
 		75A557C81671BBFA4382AAA5 /* PageFooterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FBC69125D4B22AEC596A03 /* PageFooterView.swift */; };
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
@@ -296,6 +297,7 @@
 		4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoCaptionEditSheet.swift; sourceTree = "<group>"; };
 		4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryCaptionGenerator.swift; sourceTree = "<group>"; };
 		5FSCME01E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollMetricsReportingTextEditor.swift; sourceTree = "<group>"; };
+		PCKBD01E5D40718293A4B6D /* PreviewCaptionKeyboardDock.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PreviewCaptionKeyboardDock.swift; sourceTree = "<group>"; };
 		67D919F737961D65785318BA /* StoryBookContent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookContent.swift; sourceTree = "<group>"; };
 		6ABC2F392F2EBDD1636DC399 /* StoryBookView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StoryBookView.swift; path = StoryBook/StoryBookView.swift; sourceTree = "<group>"; };
 		72929F115FE37110FB2BE7BF /* CoverPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CoverPageView.swift; path = StoryBook/CoverPageView.swift; sourceTree = "<group>"; };
@@ -777,6 +779,7 @@
 				BB00040E /* KakaoPlaceDetailSheet.swift */,
 				4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */,
 				5FSCME01E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift */,
+				PCKBD01E5D40718293A4B6D /* PreviewCaptionKeyboardDock.swift */,
 				BB0002A2 /* StoryWritingStyleSheet.swift */,
 				BB0003A2 /* PDFExportOptionsSheet.swift */,
 				E304D9246790A5FC17716A85 /* BlogPDFView.swift */,
@@ -1230,6 +1233,7 @@
 				BB00040F /* KakaoPlaceDetailSheet.swift in Sources */,
 				3A9F2B1C4D8E5F7A2B0C6E91 /* PhotoCaptionEditSheet.swift in Sources */,
 				5FSCME02E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift in Sources */,
+				PCKBD02E5D40718293A4B6D /* PreviewCaptionKeyboardDock.swift in Sources */,
 				BB0002A1 /* StoryWritingStyleSheet.swift in Sources */,
 				BB0003A1 /* PDFExportOptionsSheet.swift in Sources */,
 				BB0003B1 /* VisitedCitiesService.swift in Sources */,
