@@ -48,8 +48,10 @@ struct ContentView: View {
     @State private var newMomentsBannerDragOffset: CGFloat = 0
     @State private var postCameraToastDragOffset: CGFloat = 0
 
-    /// Matches the camera shutter stack so bottom banners sit just above controls.
+    /// Post-camera toast: sits just above the camera shutter controls.
     private let cameraHomeBannerBottomInset: CGFloat = 156
+    /// New moments banner: sits near the bottom of the screen (above home indicator).
+    private let newMomentsBannerBottomInset: CGFloat = 32
 
     init() {
         _tripsViewModel = StateObject(wrappedValue: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared))
@@ -445,7 +447,7 @@ struct ContentView: View {
                     )
             )
             .padding(.horizontal, 20)
-            .padding(.bottom, cameraHomeBannerBottomInset)
+            .padding(.bottom, newMomentsBannerBottomInset)
             .shadow(color: .black.opacity(0.35), radius: 12, y: -4)
             .offset(y: newMomentsBannerDragOffset)
             .gesture(newMomentsBannerDismissDragGesture)

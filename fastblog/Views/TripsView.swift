@@ -2942,9 +2942,8 @@ struct CameraCaptureView: View {
             cameraController.releaseMomentVideoCaptureConfiguration()
         }
         if mode == .vibe {
-            if hasSeenVibeTooltip {
-                vibeRecorder.start()
-            }
+            // Always record ambient audio in Vibe mode; preview playback stays manual-only.
+            vibeRecorder.start()
             AppAnalytics.track(.appInAppCameraVibeON)
         } else {
             vibeRecorder.cancelAndDelete()
@@ -3026,10 +3025,6 @@ struct CameraCaptureView: View {
         // SwiftUI evaluates those relentlessly during layout/animations).
         refreshPreviewChromeAttachmentFlags(for: moment)
         isHomeBottomNavRevealed = false
-        if let vibeURL = resolvedVibeURL(for: moment) {
-            // Auto-play attached vibe when the post-capture preview appears.
-            previewVibePlayer.play(url: vibeURL)
-        }
 
         captionModeMomentId = moment.id
         captionModeFrozenImage = frozen
