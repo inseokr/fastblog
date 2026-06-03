@@ -718,3 +718,55 @@ extension RecapBlogDetail {
         }
     }
 }
+
+// MARK: - New moments → day mapping
+
+extension RecapBlogDetail {
+    /// Maps library photos to 0-based day indices, including continuation shots after the last blog day.
+    func dayIndicesForNewMomentPhotos(_ photos: [MockPhoto]) -> Set<Int> {
+        guard !photos.isEmpty, !days.isEmpty else { return [] }
+        return Set(photos.compactMap { dayIndexForNewMomentPhoto(at: $0.timestamp) })
+    }
+
+    func preferredDayIndexForNewMoments(
+        from photos: [MockPhoto],
+        fallbackDayIndex: Int? = nil
+    ) -> Int? {
+        if let latest = dayIndicesForNewMomentPhotos(photos).max() {
+            return latest
+        }
+        if let fallback = fallbackDayIndex, days.indices.contains(fallback) {
+            return fallback
+        }
+        return days.isEmpty ? nil : days.count - 1
+    }
+
+    private func dayIndexForNewMomentPhoto(at timestamp: Date) -> Int? {
+        guard !days.isEmpty else { return nil }
+        let photoKey = TripCalendarDayKey.from(date: timestamp)
+
+        if let exact = days.firstIndex(where: { $0.storyBookCalendarDayKey == photoKey }) {
+            return exact
+        }
+
+        let lastIdx = days.count - 1
+        let lastKey = days[lastIdx].storyBookCalendarDayKey
+
+        // Continuation trip: photos after the blog's last calendar day land on the latest day (or a new day on inject).
+        if photoKey > lastKey {
+            return lastIdx
+        }
+
+        if let firstKey = days.first?.storyBookCalendarDayKey, photoKey < firstKey {
+            return 0
+        }
+
+        var bestIdx = 0
+        for (index, day) in days.enumerated() {
+            if day.storyBookCalendarDayKey <= photoKey {
+                bestIdx = index
+            }
+        }
+        return bestIdx
+    }
+}

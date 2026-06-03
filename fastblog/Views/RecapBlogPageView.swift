@@ -317,8 +317,14 @@ struct RecapBlogPageView: View {
     @State private var showRescanResultAlert = false
     @State private var rescanResultMessage = ""
     @State private var hasCheckedFirstTimeTip = false
+    /// Avoids repeated auto-jumps when new library moments are detected.
+    @State private var hasAutoScrolledToNewMomentsDay = false
+    /// Persists which days to highlight until the user adds or dismisses the new-moments batch.
+    @State private var highlightedNewMomentsDayIndices: Set<Int> = []
     /// Presents the in-app camera from an ongoing/current blog.
     @State private var showCameraCaptureFromRecap = false
+
+    private static let newMomentsAccent = Color(red: 1.0, green: 0.45, blue: 0.25)
 
     // MARK: - Panorama
     @State private var showPanorama = false
@@ -333,6 +339,69 @@ struct RecapBlogPageView: View {
     /// Number of unique places in new moments (for "N moments found").
     private var newMomentsPlaceCount: Int {
         Set(newMomentPhotos.map { $0.locationName ?? "Moment" }).count
+    }
+
+    /// 0-based day indices to highlight in the day filter and section header.
+    private var newMomentsDayIndices: Set<Int> {
+        highlightedNewMomentsDayIndices
+    }
+
+    /// Latest day index that has pending new moments (typical continuation-trip case).
+    private var preferredNewMomentsDayIndex: Int? {
+        draft.preferredDayIndexForNewMoments(
+            from: newMomentPhotos,
+            fallbackDayIndex: clampedInitialDayIndex ?? clampedOnTheGoDayIndex
+        )
+    }
+
+    private var clampedInitialDayIndex: Int? {
+        guard let idx = initialDayIndex, !draft.days.isEmpty else { return nil }
+        return min(max(0, idx), draft.days.count - 1)
+    }
+
+    private var clampedOnTheGoDayIndex: Int? {
+        guard OnTheGoTripStore.activeBlogId == blogId,
+              OnTheGoTripStore.hasNewMoments,
+              let idx = OnTheGoTripStore.newMomentsDayIndex,
+              !draft.days.isEmpty else { return nil }
+        return min(max(0, idx), draft.days.count - 1)
+    }
+
+    private func refreshHighlightedNewMomentsDays() {
+        var indices = draft.dayIndicesForNewMomentPhotos(newMomentPhotos)
+        if let idx = clampedInitialDayIndex {
+            indices.insert(idx)
+        }
+        if indices.isEmpty, let idx = clampedOnTheGoDayIndex {
+            indices.insert(idx)
+        }
+        if !indices.isEmpty {
+            highlightedNewMomentsDayIndices = indices
+        }
+    }
+
+    private func clearHighlightedNewMomentsDays() {
+        highlightedNewMomentsDayIndices = []
+    }
+
+    private func focusNewMomentsDayIfNeeded(animated: Bool = true, force: Bool = false) {
+        refreshHighlightedNewMomentsDays()
+        guard !highlightedNewMomentsDayIndices.isEmpty else { return }
+        guard force || !hasAutoScrolledToNewMomentsDay,
+              initialScrollToStopId == nil,
+              let idx = preferredNewMomentsDayIndex,
+              draft.days.indices.contains(idx) else { return }
+        hasAutoScrolledToNewMomentsDay = true
+        shouldAnimateDayChange = animated
+        if animated {
+            withAnimation(.easeInOut(duration: 0.35)) {
+                selectedDayIndex = idx
+            }
+        } else {
+            withTransaction(Transaction(animation: nil)) {
+                selectedDayIndex = idx
+            }
+        }
     }
 
     private var pdfExportOptions: PDFExportOptions {
@@ -950,6 +1019,12 @@ struct RecapBlogPageView: View {
                         }
                     } else if updated != draft {
                         draft = updated
+                    }
+                }
+                if !newMomentPhotos.isEmpty || !highlightedNewMomentsDayIndices.isEmpty {
+                    refreshHighlightedNewMomentsDays()
+                    if !hasAutoScrolledToNewMomentsDay, initialScrollToStopId == nil {
+                        focusNewMomentsDayIfNeeded(animated: false)
                     }
                 }
                 if showUnprocessedDayAlert {
@@ -1643,11 +1718,23 @@ struct RecapBlogPageView: View {
         .onChange(of: draft.days.count) { _, _ in
             schedulePlacesVisitedDeepLinkScroll()
         }
+        .onChange(of: newMomentsPlaceCount) { _, count in
+            guard count > 0, hasFinishedInitialLoad else { return }
+            focusNewMomentsDayIfNeeded()
+        }
+        .onChange(of: newMomentPhotos.count) { _, count in
+            guard count > 0, hasFinishedInitialLoad else { return }
+            focusNewMomentsDayIfNeeded()
+        }
         .onChange(of: hasFinishedInitialLoad) { _, finished in
             guard finished else { return }
             if initialScrollToStopId == nil {
-                if let idx = initialDayIndex, draft.days.indices.contains(idx) {
+                if let idx = clampedInitialDayIndex {
+                    highlightedNewMomentsDayIndices.insert(idx)
                     selectedDayIndex = idx
+                    hasAutoScrolledToNewMomentsDay = true
+                } else {
+                    focusNewMomentsDayIfNeeded(animated: false)
                 }
             }
             preloadDayPagerThumbnails(around: selectedDayIndex)
@@ -1752,7 +1839,7 @@ struct RecapBlogPageView: View {
             }
 
             VStack(alignment: .leading, spacing: 16) {
-                daySection(day: blogDay)
+                daySection(day: blogDay, dayIndex: index)
                     .id("day-section-\(blogDay.id)")
             }
             .padding(.horizontal, 8)
@@ -2540,6 +2627,7 @@ struct RecapBlogPageView: View {
         let isProcessing = processingIndex == index
         let isUnprocessed = !isProcessed && !isProcessing
         let isBlocked = isUnprocessed || isProcessing
+        let hasNewMoments = newMomentsDayIndices.contains(index)
         return Button {
             if isBlocked {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
@@ -2559,6 +2647,11 @@ struct RecapBlogPageView: View {
                         .scaleEffect(0.8)
                         .tint(recapChromeForeground)
                 }
+                if hasNewMoments {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(isSelected ? .white : Self.newMomentsAccent)
+                }
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(isSelected ? .semibold : .regular)
@@ -2569,9 +2662,16 @@ struct RecapBlogPageView: View {
             .padding(.vertical, 10)
             .background(isSelected ? Color.blue : recapDayPillIdleBackground)
             .clipShape(Capsule())
+            .overlay {
+                if hasNewMoments {
+                    Capsule()
+                        .stroke(Self.newMomentsAccent.opacity(isSelected ? 0.55 : 0.9), lineWidth: 2)
+                }
+            }
             .opacity(isUnprocessed ? 0.85 : 1)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(hasNewMoments ? "\(title), new moments" : title)
     }
 
     @ViewBuilder
@@ -2704,13 +2804,17 @@ struct RecapBlogPageView: View {
         )
     }
 
-    private func daySection(day: RecapBlogDay) -> some View {
+    private func daySection(day: RecapBlogDay, dayIndex: Int) -> some View {
         let isDayLoading = !day.isPlaceNamesResolved
+        let hasNewMoments = newMomentsDayIndices.contains(dayIndex)
         return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 6) {
                 Text(day.shortDateText)
                     .font(.blog(selectedBlogFont, size: 20, bold: true))
                     .foregroundColor(recapChromeForeground)
+                if hasNewMoments {
+                    BlogMenuIndicatorBadge(kind: .newMoments)
+                }
                 if isDayLoading {
                     ProgressView()
                         .scaleEffect(0.75)
@@ -2808,6 +2912,18 @@ struct RecapBlogPageView: View {
                 }
             }
             .padding(.top, 4)
+            .padding(.horizontal, hasNewMoments ? 10 : 0)
+            .padding(.bottom, hasNewMoments ? 8 : 0)
+            .background {
+                if hasNewMoments {
+                    RoundedRectangle(appChromeBaseRadius: 12)
+                        .fill(Self.newMomentsAccent.opacity(colorScheme == .dark ? 0.14 : 0.1))
+                        .overlay(
+                            RoundedRectangle(appChromeBaseRadius: 12)
+                                .stroke(Self.newMomentsAccent.opacity(0.35), lineWidth: 1)
+                        )
+                }
+            }
 
             // Day-level caption — right below the date header
             dayCaptionRow(day: day)
@@ -3443,6 +3559,10 @@ struct RecapBlogPageView: View {
             isCheckingNewMoments = false
             if !photos.isEmpty {
                 BlogMenuIndicatorStore.shared.noteMomentsAdded(to: blogId)
+                refreshHighlightedNewMomentsDays()
+                if hasFinishedInitialLoad {
+                    focusNewMomentsDayIfNeeded()
+                }
             }
             considerPresentingNewMomentsReviewSheetIfNeeded()
         }
@@ -3461,6 +3581,7 @@ struct RecapBlogPageView: View {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 450_000_000)
             guard newMomentsPlaceCount > 0, !showStoryMode, !isExportingPDF else { return }
+            focusNewMomentsDayIfNeeded(force: true)
             withAnimation(.easeInOut(duration: 0.3)) {
                 showNewMomentsReviewSheet = true
             }
@@ -3473,6 +3594,8 @@ struct RecapBlogPageView: View {
             return
         }
         NewMomentsPullUpPresentationStore.recordDismissal(for: blogId, batchMaxPhotoDate: maxDate)
+        newMomentPhotos = []
+        clearHighlightedNewMomentsDays()
         withAnimation(.easeInOut(duration: 0.3)) {
             showNewMomentsReviewSheet = false
         }
@@ -3481,25 +3604,37 @@ struct RecapBlogPageView: View {
     private func addNewMomentsToBlog(_ selected: [MockPhoto]) {
         guard !selected.isEmpty else { return }
         AppAnalytics.track(.blogMoreMemoriesCreateBlog(sourceBlogId: blogId.uuidString))
-        createdRecapStore.injectPhotos(selected, intoSourceTripId: blogId, notifyMenuIndicator: false)
-        // Save cutoff so these photos don't resurface.
-        if let maxDate = newMomentPhotos.map(\.timestamp).max() {
-            ScanSessionStore.saveBlogNotifiedDate(maxDate, for: blogId)
-            // Also save under `CreatedRecapBlog.id` because Trips-flow scan logic uses that UUID.
-            if let created = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) {
-                ScanSessionStore.saveBlogNotifiedDate(maxDate, for: created.id)
-            }
-        }
-        NewMomentsPullUpPresentationStore.clear(for: blogId)
-        // Reload the draft with injected photos.
-        if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
-            draft = updated
-            draftSnapshot = updated
-        }
+        let batchMax = newMomentPhotos.map(\.timestamp).max()
         newMomentPhotos = []
-        BlogMenuIndicatorStore.shared.clear(sourceTripId: blogId)
         withAnimation(.easeInOut(duration: 0.3)) {
             showNewMomentsReviewSheet = false
+        }
+        Task { @MainActor in
+            await createdRecapStore.injectPhotosAndWait(
+                selected,
+                intoSourceTripId: blogId,
+                notifyMenuIndicator: false
+            )
+            if let maxDate = batchMax {
+                ScanSessionStore.saveBlogNotifiedDate(maxDate, for: blogId)
+                if let created = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) {
+                    ScanSessionStore.saveBlogNotifiedDate(maxDate, for: created.id)
+                }
+            }
+            NewMomentsPullUpPresentationStore.clear(for: blogId)
+            if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
+                draft = updated
+                draftSnapshot = updated
+            }
+            if let idx = draft.preferredDayIndexForNewMoments(from: selected),
+               draft.days.indices.contains(idx) {
+                highlightedNewMomentsDayIndices = [idx]
+                hasAutoScrolledToNewMomentsDay = true
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    selectedDayIndex = idx
+                }
+            }
+            BlogMenuIndicatorStore.shared.clear(sourceTripId: blogId)
         }
     }
 
@@ -3533,6 +3668,7 @@ struct RecapBlogPageView: View {
 
     private func dismissNewMoments() {
         newMomentPhotos = []
+        clearHighlightedNewMomentsDays()
     }
 
     private func dismissAndSuppressNewMoments() {
@@ -3546,6 +3682,7 @@ struct RecapBlogPageView: View {
         }
         NewMomentsPullUpPresentationStore.clear(for: blogId)
         newMomentPhotos = []
+        clearHighlightedNewMomentsDays()
         BlogMenuIndicatorStore.shared.clear(sourceTripId: blogId)
         withAnimation(.easeInOut(duration: 0.3)) {
             showNewMomentsReviewSheet = false

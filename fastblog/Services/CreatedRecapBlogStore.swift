@@ -834,6 +834,20 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
+    /// Awaits injection so callers can navigate to the correct day after photos are in the blog.
+    func injectPhotosAndWait(
+        _ newPhotos: [MockPhoto],
+        intoSourceTripId sourceTripId: UUID,
+        notifyMenuIndicator: Bool = true
+    ) async {
+        guard !newPhotos.isEmpty else { return }
+        await injectPhotosAsync(
+            newPhotos,
+            intoSourceTripId: sourceTripId,
+            notifyMenuIndicator: notifyMenuIndicator
+        )
+    }
+
     /// Injects photos grouped by capture-timezone calendar day (same rule as library scan / digitizedTime).
     private func injectPhotosAsync(
         _ newPhotos: [MockPhoto],

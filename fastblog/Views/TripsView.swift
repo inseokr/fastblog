@@ -2821,6 +2821,7 @@ struct CameraCaptureView: View {
     @State private var addNotePulse: Bool = false
     @State private var toastMessage: String?
     @State private var isShowingToast: Bool = false
+    @State private var toastDragOffset: CGFloat = 0
     @State private var attachedCountThisSession: Int = 0
     /// Trip/blog name that received photos this session, for the exit toast.
     @State private var sessionTripTitle: String? = nil
@@ -3348,6 +3349,14 @@ struct CameraCaptureView: View {
     /// Bottom inset when the home bottom nav is hidden (immersive camera).
     private var cameraChromeSafeBottom: CGFloat {
         previewDeviceSafeAreaInsets.bottom
+    }
+
+    /// Space above shutter + mode picker; keeps toasts low but clear of capture controls.
+    private var cameraToastBottomInset: CGFloat {
+        let shutterArea: CGFloat = 152
+        let bottomNav: CGFloat = (showsBottomNavBar && isHomeBottomNavRevealed) ? 63 : 0
+        let safeBottom: CGFloat = (showsBottomNavBar && isHomeBottomNavRevealed) ? 0 : max(cameraChromeSafeBottom, 8)
+        return shutterArea + bottomNav + safeBottom + 4
     }
 
     @ViewBuilder
@@ -4440,7 +4449,7 @@ struct CameraCaptureView: View {
                     .opacity(flashOpacity)
                     .ignoresSafeArea()
             )
-            .overlay(alignment: .top) { toastOverlay }
+            .overlay(alignment: .bottom) { toastOverlay }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if showsBottomNavBar, isHomeBottomNavRevealed, !isCaptionModeActive {
                     BottomNavBar(
@@ -4914,10 +4923,31 @@ struct CameraCaptureView: View {
                     )
             )
             .padding(.horizontal, 20)
-            .padding(.top, 72)
-            .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
-            .transition(.move(edge: .top).combined(with: .opacity))
+            .padding(.bottom, cameraToastBottomInset)
+            .shadow(color: .black.opacity(0.3), radius: 10, y: -4)
+            .offset(y: toastDragOffset)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .gesture(cameraToastDismissDragGesture)
         }
+    }
+
+    private var cameraToastDismissDragGesture: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                toastDragOffset = max(0, value.translation.height)
+            }
+            .onEnded { value in
+                if value.translation.height > 72 || value.predictedEndTranslation.height > 120 {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        isShowingToast = false
+                        toastDragOffset = 0
+                    }
+                } else {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        toastDragOffset = 0
+                    }
+                }
+            }
     }
 
     @ViewBuilder private var blogStartedPromptOverlay: some View {
@@ -5868,6 +5898,7 @@ extension CameraCaptureView {
 
     private func showToast(_ message: String) {
         toastMessage = message
+        toastDragOffset = 0
         withAnimation(.easeInOut(duration: 0.2)) {
             isShowingToast = true
         }

@@ -1699,7 +1699,9 @@ final class TripsViewModel: ObservableObject {
         debugPrint("[detectNewMomentsForOnTheGoTrip] blogEndDate=\(blogEndDate), continuationDrafts.count=\(continuationDrafts.count)")
 
         if !continuationDrafts.isEmpty {
-            let lastDayIndex = max(0, activeBlog.tripDurationDays - 1)
+            let blogDayCount = createdRecapStore.getBlogDetail(blogId: activeBlogId)?.days.count
+                ?? activeBlog.tripDurationDays
+            let lastDayIndex = max(0, blogDayCount - 1)
             // Apply the same cutoff filter used in collectNewPhotosForSavedBlogs so that
             // already-notified photos are not re-surfaced on every scan while the trip
             // is still considered "ongoing".

@@ -40,6 +40,17 @@ struct ContentView: View {
     @AppStorage("blogify.justFinishedOnboarding") private var justFinishedOnboarding = false
     @State private var showSettingsFromNav = false
 
+    // On-the-go new-moments banner (camera home)
+    @State private var showNewMomentsBanner = false
+    @State private var newMomentsBannerBlogTitle = ""
+    @State private var newMomentsBannerBlogId: UUID?
+    @State private var newMomentsBannerDayIndex: Int?
+    @State private var newMomentsBannerDragOffset: CGFloat = 0
+    @State private var postCameraToastDragOffset: CGFloat = 0
+
+    /// Matches the camera shutter stack so bottom banners sit just above controls.
+    private let cameraHomeBannerBottomInset: CGFloat = 156
+
     init() {
         _tripsViewModel = StateObject(wrappedValue: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared))
     }
@@ -52,6 +63,7 @@ struct ContentView: View {
             .animation(.easeInOut(duration: 0.35), value: showTrips)
             .animation(.easeInOut(duration: 0.25), value: selectedCreatedRecap != nil)
             .animation(.easeInOut(duration: 0.3), value: postCameraToastMessage != nil)
+            .animation(.easeInOut(duration: 0.3), value: showNewMomentsBanner)
             .alert("No Photos Selected", isPresented: $showNoPhotosAlert) {
                 Button("Select Photos") {
                     presentLimitedLibraryPickerFromLanding()
@@ -104,6 +116,7 @@ struct ContentView: View {
                 }
                 if newState == .idle {
                     didSeeWeakResultOnLimitedScan = photoAuth.status == .limited && tripsViewModel.scanResultIsWeak
+                    considerPresentingNewMomentsBannerOnCamera()
                 }
             }
             .onChange(of: selectedCreatedRecap?.sourceTripId) { _, sourceTripId in
@@ -139,6 +152,17 @@ struct ContentView: View {
                         pendingShowTripsWhenIdle = true
                     } else {
                         showTrips = true
+                    }
+                }
+                considerPresentingNewMomentsBannerOnCamera()
+            }
+            .onChange(of: isCameraHomeVisible) { _, visible in
+                if visible {
+                    considerPresentingNewMomentsBannerOnCamera()
+                } else {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        showNewMomentsBanner = false
+                        newMomentsBannerDragOffset = 0
                     }
                 }
             }
@@ -300,10 +324,149 @@ struct ContentView: View {
             // Post-camera toast banner (shown over camera base layer).
             if let toastMsg = postCameraToastMessage {
                 postCameraToastBanner(message: toastMsg)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(15)
             }
+
+            // New moments from library scan — bottom banner on camera home.
+            if showNewMomentsBanner {
+                newMomentsCameraBanner
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(14)
+            }
         }
+    }
+
+    private var isCameraHomeVisible: Bool {
+        !showSeeAll && !showTrips && !showPlacesVisited && selectedCreatedRecap == nil
+    }
+
+    private func considerPresentingNewMomentsBannerOnCamera() {
+        guard isCameraHomeVisible else { return }
+        guard OnTheGoTripStore.hasNewMoments,
+              let blogId = OnTheGoTripStore.activeBlogId,
+              let title = OnTheGoTripStore.activeBlogTitle,
+              createdRecapStore.visibleRecents.contains(where: { $0.sourceTripId == blogId }) else { return }
+        newMomentsBannerBlogId = blogId
+        newMomentsBannerBlogTitle = title
+        newMomentsBannerDayIndex = OnTheGoTripStore.newMomentsDayIndex
+        newMomentsBannerDragOffset = 0
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showNewMomentsBanner = true
+        }
+    }
+
+    private func dismissNewMomentsBannerLater() {
+        OnTheGoTripStore.clearNewMoments()
+        withAnimation(.easeOut(duration: 0.25)) {
+            showNewMomentsBanner = false
+            newMomentsBannerDragOffset = 0
+        }
+    }
+
+    private func openNewMomentsBannerBlog() {
+        let blogId = newMomentsBannerBlogId
+        let photos = tripsViewModel.newlyScannedPhotos
+        let fallbackDay = newMomentsBannerDayIndex
+        withAnimation(.easeOut(duration: 0.25)) {
+            showNewMomentsBanner = false
+            newMomentsBannerDragOffset = 0
+        }
+        tripsViewModel.clearNewMomentsSignal()
+        OnTheGoTripStore.clearNewMoments()
+        guard let blogId,
+              let recap = createdRecapStore.displayRecents.first(where: { $0.sourceTripId == blogId }) else { return }
+        Task { @MainActor in
+            await createdRecapStore.injectPhotosAndWait(
+                photos,
+                intoSourceTripId: blogId,
+                notifyMenuIndicator: false
+            )
+            let detail = createdRecapStore.getBlogDetail(blogId: blogId)
+            initialDayIndexForRecap = detail?.preferredDayIndexForNewMoments(
+                from: photos,
+                fallbackDayIndex: fallbackDay
+            ) ?? fallbackDay
+            selectedCreatedRecap = recap
+        }
+    }
+
+    private var newMomentsCameraBanner: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: "sparkles")
+                        .font(.title3)
+                        .foregroundColor(Color(red: 1.0, green: 0.45, blue: 0.25))
+                    Text("New moments found")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    Spacer()
+                }
+                Text("Photos in \"\(newMomentsBannerBlogTitle)\" since your last visit.")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.82))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 10) {
+                    Button(action: openNewMomentsBannerBlog) {
+                        Text("View")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.blue)
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: dismissNewMomentsBannerLater) {
+                        Text("Later")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white.opacity(0.85))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.white.opacity(0.14))
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(appChromeBaseRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(appChromeBaseRadius: 16)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+            .padding(.horizontal, 20)
+            .padding(.bottom, cameraHomeBannerBottomInset)
+            .shadow(color: .black.opacity(0.35), radius: 12, y: -4)
+            .offset(y: newMomentsBannerDragOffset)
+            .gesture(newMomentsBannerDismissDragGesture)
+        }
+        .allowsHitTesting(true)
+    }
+
+    private var newMomentsBannerDismissDragGesture: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                newMomentsBannerDragOffset = max(0, value.translation.height)
+            }
+            .onEnded { value in
+                if value.translation.height > 72 || value.predictedEndTranslation.height > 120 {
+                    dismissNewMomentsBannerLater()
+                } else {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        newMomentsBannerDragOffset = 0
+                    }
+                }
+            }
     }
 
     // MARK: - Trips overlay lifecycle
@@ -375,7 +538,8 @@ struct ContentView: View {
     }
 
     private func postCameraToastBanner(message toastMsg: String) -> some View {
-        VStack {
+        VStack(spacing: 0) {
+            Spacer()
             HStack(spacing: 12) {
                 Group {
                     if toastMsg.contains("added to") {
@@ -396,7 +560,10 @@ struct ContentView: View {
                     .foregroundColor(.white)
                 Spacer()
                 Button {
-                    withAnimation { postCameraToastMessage = nil }
+                    withAnimation {
+                        postCameraToastMessage = nil
+                        postCameraToastDragOffset = 0
+                    }
                 } label: {
                     Image(systemName: "xmark")
                         .font(.body)
@@ -416,19 +583,41 @@ struct ContentView: View {
                     )
             )
             .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
-            Spacer()
+            .padding(.bottom, cameraHomeBannerBottomInset)
+            .shadow(color: .black.opacity(0.3), radius: 10, y: -4)
+            .offset(y: postCameraToastDragOffset)
+            .gesture(postCameraToastDismissDragGesture)
         }
         .onChange(of: postCameraToastMessage) { _, msg in
             if msg != nil {
+                postCameraToastDragOffset = 0
                 DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
                     withAnimation(.easeOut(duration: 0.3)) {
                         postCameraToastMessage = nil
+                        postCameraToastDragOffset = 0
                     }
                 }
             }
         }
+    }
+
+    private var postCameraToastDismissDragGesture: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                postCameraToastDragOffset = max(0, value.translation.height)
+            }
+            .onEnded { value in
+                if value.translation.height > 72 || value.predictedEndTranslation.height > 120 {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        postCameraToastMessage = nil
+                        postCameraToastDragOffset = 0
+                    }
+                } else {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        postCameraToastDragOffset = 0
+                    }
+                }
+            }
     }
 }
 
