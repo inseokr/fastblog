@@ -41,27 +41,11 @@ enum HomeChromeMetrics {
     static let homeMapActionSize: CGFloat = 52
     static let homeSearchChromeMapGap: CGFloat = 8
     static let homeSearchBarOuterBottomPadding: CGFloat = 12
+    /// Horizontal inset for map + search (My Places uses 20).
+    static let homeChromeHorizontalPadding: CGFloat = 20
     /// Map + search stack only (`ContentView` owns the tab bar below this).
     static var homeTabFloatingSearchChromeHeight: CGFloat {
         homeMapActionSize + homeSearchChromeMapGap + homeSearchBarHeight + homeSearchBarOuterBottomPadding
-    }
-
-    /// Slightly tighter chrome on short screens (SE, mini) so search + map stay above the tab bar.
-    static func homeTabFloatingSearchChromeHeight(isCompactHeight: Bool) -> CGFloat {
-        if isCompactHeight {
-            let map = CGFloat(44)
-            let search = CGFloat(48)
-            return map + homeSearchChromeMapGap + search + homeSearchBarOuterBottomPadding
-        }
-        return homeTabFloatingSearchChromeHeight
-    }
-
-    static func homeSearchBarHeight(isCompactHeight: Bool) -> CGFloat {
-        isCompactHeight ? 48 : homeSearchBarHeight
-    }
-
-    static func homeMapActionSize(isCompactHeight: Bool) -> CGFloat {
-        isCompactHeight ? 44 : homeMapActionSize
     }
 
     /// Camera shutter + Photo/Vibe/Reel picker stack (toast sits above this).
@@ -70,8 +54,85 @@ enum HomeChromeMetrics {
     }
 }
 
+// MARK: - My Blogs / My Places bottom search + map (shared sizing)
+
+/// Blue map capsule above the search field — same 52×52 on My Blogs and My Places.
+struct HomeTabMapFloatingButton: View {
+    let action: () -> Void
+
+    /// Matches `.title2` (22pt) — fixed so map glyph scale is identical across home tabs.
+    private static let mapSymbolPointSize: CGFloat = 22
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "map.fill")
+                .font(.system(size: Self.mapSymbolPointSize))
+                .foregroundColor(.white)
+                .frame(width: HomeChromeMetrics.homeMapActionSize, height: HomeChromeMetrics.homeMapActionSize)
+                .background(Color.blue)
+                .clipShape(Capsule())
+                .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Shared search row for My Blogs / My Places — body text + white field styling.
+struct HomeTabSearchFieldRow<Trailing: View>: View {
+    let placeholder: String
+    @Binding var text: String
+    var focus: FocusState<Bool>.Binding
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.body)
+                .foregroundStyle(.white.opacity(0.7))
+            TextField(placeholder, text: $text)
+                .font(.body)
+                .foregroundStyle(.white)
+                .autocorrectionDisabled()
+                .focused(focus)
+            trailing()
+        }
+    }
+}
+
+/// Search field chrome (56pt tall, 12pt corner radius) — content supplied by each tab.
+struct HomeTabSearchBarContainer<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .padding(.horizontal, 16)
+            .frame(height: HomeChromeMetrics.homeSearchBarHeight)
+            .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+            .padding(.horizontal, HomeChromeMetrics.homeChromeHorizontalPadding)
+            .padding(.bottom, HomeChromeMetrics.homeSearchBarOuterBottomPadding)
+    }
+}
+
+/// Map row + search bar inset above the home tab bar.
+struct HomeTabFloatingSearchChrome<SearchContent: View>: View {
+    let onMapTap: () -> Void
+    @ViewBuilder let searchContent: () -> SearchContent
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                HomeTabMapFloatingButton(action: onMapTap)
+                    .padding(.trailing, HomeChromeMetrics.homeChromeHorizontalPadding)
+                    .padding(.bottom, HomeChromeMetrics.homeSearchChromeMapGap)
+            }
+            HomeTabSearchBarContainer(content: searchContent)
+        }
+        .allowsHitTesting(true)
+    }
+}
+
 extension View {
-    /// Map + search pinned above the home tab bar; scroll content avoids this band automatically.
     /// Pins map + search above the home tab bar; tab content scrolls clear of this band.
     @ViewBuilder
     func homeTabFloatingSearchInset<Chrome: View>(@ViewBuilder chrome: () -> Chrome) -> some View {

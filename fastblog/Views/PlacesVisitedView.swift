@@ -70,7 +70,6 @@ struct PlacesVisitedStandaloneView: View {
 }
 
 struct PlacesVisitedView: View {
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
 
     @Binding var searchText: String
@@ -102,8 +101,6 @@ struct PlacesVisitedView: View {
     @State private var showPlacesVideoShareSheet = false
 
     private let horizontalPadding: CGFloat = 16
-    /// Bottom bar padding (match My Blogs layout).
-    private let bottomBarHorizontalPadding: CGFloat = 20
 
     private var availableYears: [Int] {
         Array(Set(createdRecapStore.visitedPlaces.map(\.year))).sorted(by: >)
@@ -543,60 +540,34 @@ struct PlacesVisitedView: View {
         .padding(.vertical, 8)
     }
 
-    private var isCompactHomeHeight: Bool { verticalSizeClass == .compact }
-
     private var placesBottomChrome: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                Button {
-                    isSearchFocused = false
-                    showPlacesMap = true
-                } label: {
-                    Image(systemName: "map.fill")
-                        .font(.title2)
-                        .foregroundColor(.white)
-                        .frame(
-                            width: HomeChromeMetrics.homeMapActionSize(isCompactHeight: isCompactHomeHeight),
-                            height: HomeChromeMetrics.homeMapActionSize(isCompactHeight: isCompactHomeHeight)
-                        )
-                        .background(Color.blue)
-                        .clipShape(Capsule())
-                        .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, bottomBarHorizontalPadding)
-                .padding(.bottom, HomeChromeMetrics.homeSearchChromeMapGap)
-            }
-            placesSearchBar
-        }
-        .allowsHitTesting(true)
+        HomeTabFloatingSearchChrome(
+            onMapTap: {
+                isSearchFocused = false
+                showPlacesMap = true
+            },
+            searchContent: { placesSearchField }
+        )
     }
 
-    private var placesSearchBar: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.white.opacity(0.7))
-            TextField("Search place, city, or country", text: $searchText)
-                .foregroundColor(.white)
-                .autocorrectionDisabled()
-                .focused($isSearchFocused)
-                .onTapGesture { isSearchActive = true }
+    private var placesSearchField: some View {
+        HomeTabSearchFieldRow(
+            placeholder: "Search place, city, or country",
+            text: $searchText,
+            focus: $isSearchFocused
+        ) {
             if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button {
                     searchText = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.white.opacity(0.5))
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.5))
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: HomeChromeMetrics.homeSearchBarHeight(isCompactHeight: isCompactHomeHeight))
-        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
-        .padding(.horizontal, bottomBarHorizontalPadding)
-        .padding(.bottom, HomeChromeMetrics.homeSearchBarOuterBottomPadding)
+        .onTapGesture { isSearchActive = true }
     }
 
     private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {

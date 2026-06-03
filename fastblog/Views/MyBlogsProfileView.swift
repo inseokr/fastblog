@@ -13,7 +13,6 @@ private enum MyBlogsPage: Equatable {
     case country(CountrySection)
 }
 
-private let myMapButtonSize: CGFloat = 52
 private let cardSpacing: CGFloat = 16
 private let horizontalPadding: CGFloat = 20
 
@@ -26,7 +25,6 @@ private struct MyBlogsScrollOffsetKey: PreferenceKey {
 
 struct MyBlogsProfileView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialDayIndexForRecap: Int?
@@ -64,6 +62,8 @@ struct MyBlogsProfileView: View {
     @State private var scrollOffset: CGFloat = 0
     /// Scroll offset for country page — used for swipe-down-to-dismiss when at top.
     @State private var countryScrollOffset: CGFloat = 0
+    /// While the user pans Latest Edits sideways, the outer vertical list must not scroll.
+    @State private var latestEditsLocksVerticalScroll = false
     /// Mirrors search field focus while on a country page (Manage → Done in `CountryBlogsView`).
     @State private var countrySearchBarFocused = false
 
@@ -411,6 +411,7 @@ struct MyBlogsProfileView: View {
                             .frame(maxWidth: .infinity)
                         }
                     }
+                    .allowsHitTesting(!latestEditsLocksVerticalScroll)
                 }
             }
             .background(GeometryReader { proxy in
@@ -422,6 +423,7 @@ struct MyBlogsProfileView: View {
         }
         .coordinateSpace(name: "MyBlogsScroll")
         .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in scrollOffset = value }
+        .scrollDisabled(latestEditsLocksVerticalScroll)
         .transition(.opacity)
     }
 
@@ -472,19 +474,27 @@ struct MyBlogsProfileView: View {
                     .font(.headline)
                     .foregroundColor(.white)
 
-                ScrollView(.horizontal, showsIndicators: false) {
+                LatestEditsNestedHorizontalScroll(
+                    locksParentVerticalScroll: $latestEditsLocksVerticalScroll,
+                    height: CreatedRecapCard.layoutHeight
+                ) {
                     HStack(spacing: 12) {
                         ForEach(Array(recents.prefix(8))) { recap in
-                            CreatedRecapCard(
-                                recap: recap,
-                                menuIndicatorKind: menuIndicators.kind(forSourceTripId: recap.sourceTripId)
-                            )
-                            .onTapGesture {
+                            Button {
+                                openRecapInEditMode = false
+                                openRecapPresentShareYourBlogSheet = false
                                 selectedCreatedRecap = recap
+                            } label: {
+                                CreatedRecapCard(
+                                    recap: recap,
+                                    menuIndicatorKind: menuIndicators.kind(forSourceTripId: recap.sourceTripId)
+                                )
                             }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .padding(.bottom, 4)
+                    .padding(.bottom, 8)
+                    .scrollTargetLayout()
                 }
             }
         }
@@ -492,54 +502,25 @@ struct MyBlogsProfileView: View {
 
     // MARK: - Persistent bottom bar (inset above home tab bar)
 
-    private var isCompactHomeHeight: Bool { verticalSizeClass == .compact }
-
     private var persistentBottomChrome: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                MyMapButton(
-                    size: HomeChromeMetrics.homeMapActionSize(isCompactHeight: isCompactHomeHeight)
-                ) {
-                    isSearchFocused = false
-                    switch currentPage {
-                    case .blogs:   showMyMap = true
-                    case .country: showCountryMap = true
-                    }
+        HomeTabFloatingSearchChrome(
+            onMapTap: {
+                isSearchFocused = false
+                switch currentPage {
+                case .blogs:   showMyMap = true
+                case .country: showCountryMap = true
                 }
-                .padding(.trailing, horizontalPadding)
-                .padding(.bottom, HomeChromeMetrics.homeSearchChromeMapGap)
-            }
-            adaptiveSearchBar
-        }
-        .allowsHitTesting(true)
+            },
+            searchContent: { adaptiveSearchField }
+        )
     }
 
-    private var adaptiveSearchBar: some View {
-        let placeholder: String
-        let isDark: Bool
-        switch currentPage {
-        case .blogs:   placeholder = "Search city or blog title"; isDark = true
-        case .country: placeholder = "Search blog title";          isDark = false
-        }
-        return HStack(spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(isDark ? .white.opacity(0.7) : .secondary)
-            TextField(placeholder, text: $sharedSearchText)
-                .foregroundColor(isDark ? .white : .primary)
-                .autocorrectionDisabled()
-                .focused($isSearchFocused)
-                .onChange(of: isSearchFocused) { _, focused in
-                    if isOnBlogsPage {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isSearchActive = focused
-                        }
-                    } else if case .country = currentPage {
-                        withAnimation(.easeOut(duration: 0.22)) {
-                            countrySearchBarFocused = focused
-                        }
-                    }
-                }
+    private var adaptiveSearchField: some View {
+        HomeTabSearchFieldRow(
+            placeholder: adaptiveSearchPlaceholder,
+            text: $sharedSearchText,
+            focus: $isSearchFocused
+        ) {
             if isSearchActive {
                 Button {
                     sharedSearchText = ""
@@ -549,16 +530,30 @@ struct MyBlogsProfileView: View {
                     }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(isDark ? .white.opacity(0.5) : .secondary)
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.5))
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: HomeChromeMetrics.homeSearchBarHeight(isCompactHeight: isCompactHomeHeight))
-        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
-        .padding(.horizontal, horizontalPadding)
-        .padding(.bottom, HomeChromeMetrics.homeSearchBarOuterBottomPadding)
+        .onChange(of: isSearchFocused) { _, focused in
+            if isOnBlogsPage {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isSearchActive = focused
+                }
+            } else if case .country = currentPage {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    countrySearchBarFocused = focused
+                }
+            }
+        }
+    }
+
+    private var adaptiveSearchPlaceholder: String {
+        switch currentPage {
+        case .blogs:   return "Search city or blog title"
+        case .country: return "Search blog title"
+        }
     }
 
     /// Autocomplete results used while the bottom search bar is active.
@@ -666,21 +661,38 @@ struct MyBlogsProfileView: View {
 
 }
 
-private struct MyMapButton: View {
-    var size: CGFloat = myMapButtonSize
-    var action: () -> Void
+// MARK: - Latest Edits horizontal strip (nested in vertical scroll)
+
+/// Horizontal Latest Edits inside My Blogs' vertical `ScrollView`.
+/// Locks the parent scroll while the user pans sideways so country cards below don't steal the gesture.
+private struct LatestEditsNestedHorizontalScroll<Content: View>: View {
+    @Binding var locksParentVerticalScroll: Bool
+    let height: CGFloat
+    @ViewBuilder var content: () -> Content
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: "map.fill")
-                .font(.title2)
-                .foregroundColor(.white)
-                .frame(width: size, height: size)
-                .background(Color.blue)
-                .clipShape(Capsule())
-                .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
+        ScrollView(.horizontal, showsIndicators: false) {
+            content()
         }
-        .buttonStyle(.plain)
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .frame(height: height)
+        .clipped()
+        .contentShape(Rectangle())
+        .simultaneousGesture(horizontalDominanceDrag)
+    }
+
+    private var horizontalDominanceDrag: some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { value in
+                let dx = abs(value.translation.width)
+                let dy = abs(value.translation.height)
+                if dx > dy + 6 {
+                    locksParentVerticalScroll = true
+                }
+            }
+            .onEnded { _ in
+                locksParentVerticalScroll = false
+            }
     }
 }
 

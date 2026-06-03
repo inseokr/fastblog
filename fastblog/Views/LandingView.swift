@@ -81,7 +81,7 @@ struct LandingView: View {
 
     /// Stable vertical footprint so loading more rows does not shift the footer stack.
     private var latestEditsSectionHeight: CGFloat {
-        22 + 12 + 128 + 16 + 8
+        22 + 12 + CreatedRecapCard.layoutHeight + 16 + 8
     }
 
     private var allLatestEdits: [CreatedRecapBlog] {
@@ -439,10 +439,9 @@ struct LandingView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(visibleLatestEdits) { recap in
-                            CreatedRecapCard(recap: recap)
-                                .onTapGesture {
-                                    selectedCreatedRecap = recap
-                                }
+                            LatestEditsRecapCardButton(recap: recap) {
+                                selectedCreatedRecap = recap
+                            }
                         }
 
                         if hasMoreLatestEdits {
@@ -454,7 +453,7 @@ struct LandingView: View {
                     .padding(.bottom, 8)
                 }
                 .contentMargins(.horizontal, 20, for: .scrollContent)
-                .frame(height: 128)
+                .frame(height: CreatedRecapCard.layoutHeight)
                 .clipped()
                 .overlay(alignment: .trailing) {
                     if hasMoreLatestEdits {
@@ -596,6 +595,30 @@ struct CreatedRecapCard: View {
     let recap: CreatedRecapBlog
     var menuIndicatorKind: BlogMenuIndicatorStore.Kind? = nil
 
+    private static let coverSide: CGFloat = 76
+    private static let cardWidth: CGFloat = 260
+    private static let cardPadding: CGFloat = 10
+    private static let badgeRowHeight: CGFloat = 18
+    /// Always two lines max — fixed height keeps Latest Edits row even.
+    private static let titleRowHeight: CGFloat = 36
+    private static let dateRangeRowHeight: CGFloat = 15
+    private static let lastEditedRowHeight: CGFloat = 13
+    private static let textRowSpacing: CGFloat = 3
+    private static var textColumnHeight: CGFloat {
+        badgeRowHeight
+            + textRowSpacing + titleRowHeight
+            + textRowSpacing + dateRangeRowHeight
+            + textRowSpacing + lastEditedRowHeight
+    }
+    private static var innerContentHeight: CGFloat {
+        max(coverSide, textColumnHeight)
+    }
+
+    /// Total card height for horizontal Latest Edits scroller (padding applied once).
+    static var layoutHeight: CGFloat {
+        innerContentHeight + cardPadding * 2
+    }
+
     private static let lastEditedFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .medium
@@ -604,10 +627,10 @@ struct CreatedRecapCard: View {
     }()
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .center, spacing: 10) {
             ZStack(alignment: .topLeading) {
                 TripCoverImage(theme: recap.coverImageName, coverAssetIdentifier: recap.coverAssetIdentifier)
-                    .frame(width: 80, height: 80)
+                    .frame(width: Self.coverSide, height: Self.coverSide)
                     .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
                 if recap.lastEditedAt == nil {
                     Text("Draft")
@@ -628,35 +651,77 @@ struct CreatedRecapCard: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                if let menuIndicatorKind {
-                    BlogMenuIndicatorBadge(kind: menuIndicatorKind)
+            VStack(alignment: .leading, spacing: Self.textRowSpacing) {
+                ZStack(alignment: .leading) {
+                    if let menuIndicatorKind {
+                        BlogMenuIndicatorBadge(kind: menuIndicatorKind)
+                    }
                 }
+                .frame(height: Self.badgeRowHeight, alignment: .leading)
+
                 Text(recap.title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                     .lineLimit(2)
-                if let range = recap.tripDateRangeText, !range.isEmpty {
-                    Text(range)
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.85))
-                }
+                    .truncationMode(.tail)
+                    .frame(height: Self.titleRowHeight, alignment: .topLeading)
+
+                Text(dateRangeLine)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.85))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(height: Self.dateRangeRowHeight, alignment: .leading)
+
                 Text(lastEditedText)
                     .font(.caption2)
                     .foregroundColor(.white.opacity(0.65))
+                    .lineLimit(1)
+                    .frame(height: Self.lastEditedRowHeight, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: Self.textColumnHeight, maxHeight: Self.textColumnHeight, alignment: .topLeading)
         }
-        .frame(width: 260)
-        .padding(10)
+        .frame(width: Self.cardWidth - Self.cardPadding * 2, height: Self.innerContentHeight, alignment: .topLeading)
+        .padding(Self.cardPadding)
+        .frame(width: Self.cardWidth, height: Self.layoutHeight, alignment: .topLeading)
         .background(Color.white.opacity(0.1))
         .appChromeCornerRadius(12)
+    }
+
+    private var dateRangeLine: String {
+        let trimmed = recap.tripDateRangeText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? " " : trimmed
     }
 
     private var lastEditedText: String {
         let date = recap.lastEditedAt ?? recap.createdAt
         return "Edited \(Self.lastEditedFormatter.string(from: date))"
+    }
+}
+
+/// Latest Edits card — opens the blog only when the touch wasn't a scroll drag.
+struct LatestEditsRecapCardButton: View {
+    let recap: CreatedRecapBlog
+    var menuIndicatorKind: BlogMenuIndicatorStore.Kind? = nil
+    let action: () -> Void
+
+    @State private var suppressTapForDrag = false
+
+    var body: some View {
+        CreatedRecapCard(recap: recap, menuIndicatorKind: menuIndicatorKind)
+            .contentShape(RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let distance = hypot(value.translation.width, value.translation.height)
+                        if distance > 10 { suppressTapForDrag = true }
+                    }
+                    .onEnded { _ in
+                        if !suppressTapForDrag { action() }
+                        suppressTapForDrag = false
+                    }
+            )
     }
 }
 
