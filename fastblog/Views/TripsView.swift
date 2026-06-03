@@ -2793,6 +2793,7 @@ struct CameraCaptureView: View {
     @ObservedObject var tripsViewModel: TripsViewModel
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     /// When set, receives the summary message (e.g. "3 moments added to Trip") when user leaves with attached photos.
     var postDismissToast: ((String) -> Void)? = nil
     /// When set (ZStack overlay presentation), called instead of dismiss().
@@ -3352,6 +3353,39 @@ struct CameraCaptureView: View {
         let bottomNav: CGFloat = (showsBottomNavBar && isHomeBottomNavRevealed) ? 63 : 0
         let safeBottom: CGFloat = (showsBottomNavBar && isHomeBottomNavRevealed) ? 0 : max(cameraChromeSafeBottom, 8)
         return shutterArea + bottomNav + safeBottom + 4
+    }
+
+    /// Height of the bottom screen band where the system home / app-switcher swipe begins.
+    private var systemHomeGestureExclusionHeight: CGFloat {
+        max(cameraChromeSafeBottom, 34) + 32
+    }
+
+    /// Pull-up on the preview opens Bloggo Gallery; ignore drags that match the system home swipe.
+    private func shouldOpenCapturesGalleryFromCameraDrag(_ value: DragGesture.Value) -> Bool {
+        guard scenePhase == .active else { return false }
+        guard value.translation.height < -50 else { return false }
+        guard abs(value.translation.height) > abs(value.translation.width) else { return false }
+        let bandTopY = UIScreen.main.bounds.maxY - systemHomeGestureExclusionHeight
+        return value.startLocation.y < bandTopY
+    }
+
+    private func handleInAppCameraPullGestureEnded(_ value: DragGesture.Value) {
+        guard !isCaptionModeActive else { return }
+        if shouldOpenCapturesGalleryFromCameraDrag(value) {
+            isShowingCapturesGallery = true
+            return
+        }
+        if value.translation.height > 50 {
+            // Home camera: no swipe-down dismiss.
+            guard !showsBottomNavBar else { return }
+            // Overlay camera: swipe-down dismiss is allowed only before any photo is captured.
+            let hasCapturedPhotos =
+                photosCapturedThisSession > 0
+                || !sessionCapturesForDisplay.isEmpty
+                || !sessionMoments.isEmpty
+            guard !hasCapturedPhotos else { return }
+            closeCamera()
+        }
     }
 
     @ViewBuilder
@@ -4416,23 +4450,8 @@ struct CameraCaptureView: View {
         inAppCameraPreviewStack
             .contentShape(Rectangle())
             .gesture(
-                DragGesture(minimumDistance: 50)
-                    .onEnded { value in
-                        guard !isCaptionModeActive else { return }
-                        if value.translation.height < -50 {
-                            isShowingCapturesGallery = true
-                        } else if value.translation.height > 50 {
-                            // Home camera: no swipe-down dismiss.
-                            guard !showsBottomNavBar else { return }
-                            // Overlay camera: swipe-down dismiss is allowed only before any photo is captured.
-                            let hasCapturedPhotos =
-                                photosCapturedThisSession > 0
-                                || !sessionCapturesForDisplay.isEmpty
-                                || !sessionMoments.isEmpty
-                            guard !hasCapturedPhotos else { return }
-                            closeCamera()
-                        }
-                    }
+                DragGesture(minimumDistance: 50, coordinateSpace: .global)
+                    .onEnded { handleInAppCameraPullGestureEnded($0) }
             )
             .navigationBarBackButtonHidden(true)
             .toolbar(.hidden, for: .navigationBar)
@@ -4595,6 +4614,12 @@ struct CameraCaptureView: View {
             .onChange(of: isCaptionModeActive) { _, inCaption in
                 if inCaption {
                     cancelHomeBottomNavAutoHide()
+                }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active {
+                    isShowingCapturesGallery = false
+                    isShowingSessionGallery = false
                 }
             }
             .onDisappear {

@@ -163,7 +163,7 @@ struct PanoramaPlayerView: View {
     // MARK: - Scope
     @State private var dayScope: SlideshowDayScope = .allDays
     @State private var showDayPicker = false
-    /// AVPlayer for video slides (original clip audio; bundled music is ducked).
+    /// AVPlayer for video slides (original clip audio mixed with bundled music).
     @State private var videoPlayer: AVPlayer?
     /// Controls the auto-dismissing place/caption overlay shown at the start of each reel slide.
     @State private var showReelInfoOverlay = false
@@ -175,8 +175,6 @@ struct PanoramaPlayerView: View {
     private let zoomScale: CGFloat = 1.12   // how far to zoom in/out
     private let pinchScaleMin: CGFloat = 0.5
     private let pinchScaleMax: CGFloat = 4.0
-    /// Bundled slideshow music level while a reel clip with its own soundtrack is playing.
-    private static let slideshowMusicDuckedVolume: Float = 0.2
 
     // MARK: - Derived
 
@@ -444,7 +442,6 @@ struct PanoramaPlayerView: View {
             guard let url = currentPrimaryEntry?.momentVideoURL else {
                 // No new video — fade out whatever is showing.
                 await MainActor.run {
-                    restoreSlideshowMusicVolumeForPhotos()
                     withAnimation(.easeOut(duration: 0.4)) { videoPlayer = nil }
                 }
                 return
@@ -461,7 +458,6 @@ struct PanoramaPlayerView: View {
             ) { _ in newPlayer.seek(to: .zero); newPlayer.play() }
 
             await MainActor.run {
-                duckSlideshowMusicForReelPlayback()
                 configureAudioSessionForReelSlideshow()
                 // Crossfade: replacing videoPlayer with a new instance changes the view's
                 // .id(ObjectIdentifier(player)), so SwiftUI dissolves the old view out while
@@ -1394,15 +1390,6 @@ struct PanoramaPlayerView: View {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
-    }
-
-    /// Restores bundled track from `UserDefaults` when the file is still in the app bundle.
-    private func duckSlideshowMusicForReelPlayback() {
-        slideshowMusic.setVolume(Self.slideshowMusicDuckedVolume)
-    }
-
-    private func restoreSlideshowMusicVolumeForPhotos() {
-        slideshowMusic.setVolume(1)
     }
 
     private func configureAudioSessionForReelSlideshow() {
