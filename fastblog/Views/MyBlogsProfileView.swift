@@ -13,7 +13,6 @@ private enum MyBlogsPage: Equatable {
     case country(CountrySection)
 }
 
-private let searchBarHeight: CGFloat = 56
 private let myMapButtonSize: CGFloat = 52
 private let cardSpacing: CGFloat = 16
 private let horizontalPadding: CGFloat = 20
@@ -27,6 +26,7 @@ private struct MyBlogsScrollOffsetKey: PreferenceKey {
 
 struct MyBlogsProfileView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialDayIndexForRecap: Int?
@@ -173,30 +173,14 @@ struct MyBlogsProfileView: View {
                         }
                         .padding(.horizontal, horizontalPadding)
                         .padding(.top, 16)
-                        // Leave room for the bottom search bar + map button
-                        .padding(.bottom, searchBarHeight + myMapButtonSize + 40)
+                        .padding(.bottom, 12)
                     }
                 }
                 .transition(.opacity)
             }
-
-            // ── Persistent bottom bar (always visible) ───────────────────
-            VStack(spacing: 0) {
-                HStack {
-                    Spacer()
-                    MyMapButton {
-                        isSearchFocused = false
-                        switch currentPage {
-                        case .blogs:   showMyMap = true
-                        case .country: showCountryMap = true
-                        }
-                    }
-                    .padding(.trailing, horizontalPadding)
-                    .padding(.bottom, 8)
-                }
-                adaptiveSearchBar
-            }
-            .allowsHitTesting(true)
+        }
+        .homeTabFloatingSearchInset {
+            persistentBottomChrome
         }
         .navigationTitle(pageTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -334,14 +318,6 @@ struct MyBlogsProfileView: View {
         }
         .onChange(of: scrollOffset) { _, _ in reportTopScrollState() }
         .onChange(of: countryScrollOffset) { _, _ in reportTopScrollState() }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            BottomNavBar(
-                activeTab: .myBlogs,
-                onMyBlogs: { },
-                onCamera: { onNavCamera?() },
-                onMyPlaces: { onNavMyPlaces?() }
-            )
-        }
     }
 
     // MARK: - Page routing
@@ -442,7 +418,7 @@ struct MyBlogsProfileView: View {
             })
             .padding(.horizontal, horizontalPadding)
             .padding(.top, 12)
-            .padding(.bottom, searchBarHeight + myMapButtonSize + 24)
+            .padding(.bottom, 12)
         }
         .coordinateSpace(name: "MyBlogsScroll")
         .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in scrollOffset = value }
@@ -514,7 +490,30 @@ struct MyBlogsProfileView: View {
         }
     }
 
-    // MARK: - Persistent bottom bar
+    // MARK: - Persistent bottom bar (inset above home tab bar)
+
+    private var isCompactHomeHeight: Bool { verticalSizeClass == .compact }
+
+    private var persistentBottomChrome: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                MyMapButton(
+                    size: HomeChromeMetrics.homeMapActionSize(isCompactHeight: isCompactHomeHeight)
+                ) {
+                    isSearchFocused = false
+                    switch currentPage {
+                    case .blogs:   showMyMap = true
+                    case .country: showCountryMap = true
+                    }
+                }
+                .padding(.trailing, horizontalPadding)
+                .padding(.bottom, HomeChromeMetrics.homeSearchChromeMapGap)
+            }
+            adaptiveSearchBar
+        }
+        .allowsHitTesting(true)
+    }
 
     private var adaptiveSearchBar: some View {
         let placeholder: String
@@ -556,10 +555,10 @@ struct MyBlogsProfileView: View {
             }
         }
         .padding(.horizontal, 16)
-        .frame(height: searchBarHeight)
+        .frame(height: HomeChromeMetrics.homeSearchBarHeight(isCompactHeight: isCompactHomeHeight))
         .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
         .padding(.horizontal, horizontalPadding)
-        .padding(.bottom, 12)
+        .padding(.bottom, HomeChromeMetrics.homeSearchBarOuterBottomPadding)
     }
 
     /// Autocomplete results used while the bottom search bar is active.
@@ -668,6 +667,7 @@ struct MyBlogsProfileView: View {
 }
 
 private struct MyMapButton: View {
+    var size: CGFloat = myMapButtonSize
     var action: () -> Void
 
     var body: some View {
@@ -675,7 +675,7 @@ private struct MyMapButton: View {
             Image(systemName: "map.fill")
                 .font(.title2)
                 .foregroundColor(.white)
-                .frame(width: myMapButtonSize, height: myMapButtonSize)
+                .frame(width: size, height: size)
                 .background(Color.blue)
                 .clipShape(Capsule())
                 .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)

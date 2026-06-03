@@ -2,6 +2,27 @@ import MapKit
 import SwiftUI
 import UIKit
 
+private enum PlacesVisitedPlaceGrid {
+    static let columns: [GridItem] = [
+        GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 12, alignment: .top),
+        GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 12, alignment: .top)
+    ]
+}
+
+/// Hides map + search inset while the place viewer or share studio is full-screen.
+private struct PlacesVisitedBottomChromeInset<Chrome: View>: ViewModifier {
+    let isHidden: Bool
+    @ViewBuilder let chrome: () -> Chrome
+
+    func body(content: Content) -> some View {
+        if isHidden {
+            content
+        } else {
+            content.homeTabFloatingSearchInset(chrome: chrome)
+        }
+    }
+}
+
 /// Unselected filter chip fill: `systemGray5` blended ~15% toward white (lighter tone).
 private func filterChipUnselectedFill() -> Color {
     Color(uiColor: UIColor { traits in
@@ -18,12 +39,10 @@ struct PlacesVisitedStandaloneView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialScrollToStopIdForRecap: UUID?
+    @Binding var suppressHomeBottomNav: Bool
     var onDismiss: () -> Void
-    
-    // Home redesign callbacks (bottom nav + settings).
+
     var onShowSettings: (() -> Void)? = nil
-    var onNavMyBlogs: (() -> Void)? = nil
-    var onNavCamera: (() -> Void)? = nil
 
     @State private var searchText: String = ""
     @State private var showPlacesMap: Bool = false
@@ -36,6 +55,7 @@ struct PlacesVisitedStandaloneView: View {
             showPlacesMap: $showPlacesMap,
             selectedCreatedRecap: $selectedCreatedRecap,
             initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
+            suppressHomeBottomNav: $suppressHomeBottomNav,
             standaloneOnDismiss: onDismiss,
             onShowSettings: onShowSettings
         )
@@ -45,26 +65,19 @@ struct PlacesVisitedStandaloneView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .preferredColorScheme(.dark)
-        .dynamicTypeSize(.large)
         .homeSettingsToolbar(onShowSettings: onShowSettings)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            BottomNavBar(
-                activeTab: .myPlaces,
-                onMyBlogs: { onNavMyBlogs?() },
-                onCamera: { onNavCamera?() },
-                onMyPlaces: { }
-            )
-        }
     }
 }
 
 struct PlacesVisitedView: View {
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
 
     @Binding var searchText: String
     @Binding var showPlacesMap: Bool
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialScrollToStopIdForRecap: UUID?
+    @Binding var suppressHomeBottomNav: Bool
     /// When set (standalone presentation), shows a leading dismiss control in the navigation bar.
     var standaloneOnDismiss: (() -> Void)? = nil
     var onShowSettings: (() -> Void)? = nil
@@ -88,16 +101,9 @@ struct PlacesVisitedView: View {
     @State private var placesVideoShareURL: URL?
     @State private var showPlacesVideoShareSheet = false
 
-    private let searchBarHeight: CGFloat = 56
-    private let mapButtonSize: CGFloat = 52
     private let horizontalPadding: CGFloat = 16
     /// Bottom bar padding (match My Blogs layout).
     private let bottomBarHorizontalPadding: CGFloat = 20
-
-    private let gridColumns: [GridItem] = [
-        GridItem(.flexible(), spacing: 12, alignment: .top),
-        GridItem(.flexible(), spacing: 12, alignment: .top)
-    ]
 
     private var availableYears: [Int] {
         Array(Set(createdRecapStore.visitedPlaces.map(\.year))).sorted(by: >)
@@ -229,70 +235,32 @@ struct PlacesVisitedView: View {
                                             .padding(.top, 10)
                                             .padding(.bottom, 6)
 
-                                        // 2-column grid for places in this month
-                                        let pairs = stride(from: 0, to: monthGroup.places.count, by: 2).map {
-                                            Array(monthGroup.places[$0 ..< min($0 + 2, monthGroup.places.count)])
-                                        }
-                                        ForEach(pairs, id: \.first?.id) { pair in
-                                            HStack(alignment: .top, spacing: 12) {
-                                                ForEach(Array(pair.enumerated()), id: \.element.id) { _, place in
-                                                    PlaceVisitedCard(
-                                                        place: place,
-                                                        onTap: {
-                                                            openCategoryPickerWhenPlaceModalOpens = false
-                                                            selectedPlaceForModal = place
-                                                        },
-                                                        onAddCategoryTap: {
-                                                            openCategoryPickerWhenPlaceModalOpens = true
-                                                            selectedPlaceForModal = place
-                                                        }
-                                                    )
-                                                    .frame(maxWidth: .infinity)
-                                                }
-                                                // If odd number in this row, fill the gap
-                                                if pair.count == 1 {
-                                                    Color.clear
-                                                        .frame(maxWidth: .infinity)
-                                                        .allowsHitTesting(false)
-                                                }
+                                        LazyVGrid(columns: PlacesVisitedPlaceGrid.columns, spacing: 12) {
+                                            ForEach(monthGroup.places) { place in
+                                                PlaceVisitedCard(
+                                                    place: place,
+                                                    onTap: {
+                                                        openCategoryPickerWhenPlaceModalOpens = false
+                                                        selectedPlaceForModal = place
+                                                    },
+                                                    onAddCategoryTap: {
+                                                        openCategoryPickerWhenPlaceModalOpens = true
+                                                        selectedPlaceForModal = place
+                                                    }
+                                                )
                                             }
-                                            .padding(.bottom, 12)
                                         }
+                                        .padding(.bottom, 12)
                                     }
                                 }
                             }
                         }
                     }
                     .padding(.horizontal, horizontalPadding)
-                    .padding(.bottom, 140)
+                    .padding(.bottom, 12)
                 }
                 .scrollDismissesKeyboard(.immediately)
             }
-
-            // Persistent bottom bar (search + map), same design as My Blogs
-            VStack(spacing: 0) {
-                Spacer()
-                HStack {
-                    Spacer()
-                    Button {
-                        isSearchFocused = false
-                        showPlacesMap = true
-                    } label: {
-                        Image(systemName: "map.fill")
-                            .font(.title2)
-                            .foregroundColor(.white)
-                            .frame(width: mapButtonSize, height: mapButtonSize)
-                            .background(Color.blue)
-                            .clipShape(Capsule())
-                            .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, bottomBarHorizontalPadding)
-                    .padding(.bottom, 8)
-                }
-                placesSearchBar
-            }
-            .allowsHitTesting(true)
 
             // Full-screen place viewer (matches blog overlay, not a sheet).
             if let place = selectedPlaceForModal {
@@ -322,6 +290,9 @@ struct PlacesVisitedView: View {
                 .ignoresSafeArea()
             }
         }
+        .modifier(PlacesVisitedBottomChromeInset(isHidden: shouldHidePlacesVisitedNavigationBar) {
+            placesBottomChrome
+        })
         .onTapGesture {
             if isSearchFocused {
                 isSearchFocused = false
@@ -396,7 +367,8 @@ struct PlacesVisitedView: View {
                 selectedCategory: $selectedCategory,
                 searchText: $searchText,
                 selectedCreatedRecap: $selectedCreatedRecap,
-                initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap
+                initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
+                suppressHomeBottomNav: $suppressHomeBottomNav
             )
             .environmentObject(createdRecapStore)
         }
@@ -458,11 +430,19 @@ struct PlacesVisitedView: View {
                 self.selectedCategory = nil
             }
         }
+        .onChange(of: selectedPlaceForModal?.id) { _, _ in syncHomeBottomNavSuppression() }
+        .onChange(of: revealNavDuringModalDismiss) { _, _ in syncHomeBottomNavSuppression() }
+        .onChange(of: showPlacesSocialStudio) { _, _ in syncHomeBottomNavSuppression() }
+        .onDisappear { suppressHomeBottomNav = false }
     }
 
-    /// Hide My Places chrome while Carousel Studio is full-screen (matches blog recap during share).
+    /// Hide My Places chrome while place viewer or Carousel Studio is full-screen (matches blog recap during share).
     private var shouldHidePlacesVisitedNavigationBar: Bool {
         (selectedPlaceForModal != nil && !revealNavDuringModalDismiss) || showPlacesSocialStudio
+    }
+
+    private func syncHomeBottomNavSuppression() {
+        suppressHomeBottomNav = shouldHidePlacesVisitedNavigationBar
     }
 
     private var placesShareTooManyAlertMessage: String {
@@ -563,6 +543,36 @@ struct PlacesVisitedView: View {
         .padding(.vertical, 8)
     }
 
+    private var isCompactHomeHeight: Bool { verticalSizeClass == .compact }
+
+    private var placesBottomChrome: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button {
+                    isSearchFocused = false
+                    showPlacesMap = true
+                } label: {
+                    Image(systemName: "map.fill")
+                        .font(.title2)
+                        .foregroundColor(.white)
+                        .frame(
+                            width: HomeChromeMetrics.homeMapActionSize(isCompactHeight: isCompactHomeHeight),
+                            height: HomeChromeMetrics.homeMapActionSize(isCompactHeight: isCompactHomeHeight)
+                        )
+                        .background(Color.blue)
+                        .clipShape(Capsule())
+                        .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, bottomBarHorizontalPadding)
+                .padding(.bottom, HomeChromeMetrics.homeSearchChromeMapGap)
+            }
+            placesSearchBar
+        }
+        .allowsHitTesting(true)
+    }
+
     private var placesSearchBar: some View {
         HStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
@@ -583,10 +593,10 @@ struct PlacesVisitedView: View {
             }
         }
         .padding(.horizontal, 16)
-        .frame(height: searchBarHeight)
+        .frame(height: HomeChromeMetrics.homeSearchBarHeight(isCompactHeight: isCompactHomeHeight))
         .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
         .padding(.horizontal, bottomBarHorizontalPadding)
-        .padding(.bottom, 6)
+        .padding(.bottom, HomeChromeMetrics.homeSearchBarOuterBottomPadding)
     }
 
     private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
@@ -722,6 +732,15 @@ struct PlaceVisitedCard: View {
     var onTap: (() -> Void)? = nil
     var onAddCategoryTap: (() -> Void)? = nil
 
+    private static let heroHeight: CGFloat = 108
+    private static let titleBlockHeight: CGFloat = 44
+    private static let categoryRowHeight: CGFloat = 28
+    private static let cardPadding: CGFloat = 12
+    /// Same on every card so 2-column rows stay aligned (hero + text + category are fixed).
+    private static var layoutHeight: CGFloat {
+        cardPadding * 2 + heroHeight + 10 + titleBlockHeight + 4 + categoryRowHeight
+    }
+
     @ViewBuilder
     private var addCategoryPillLabel: some View {
         HStack(spacing: 4) {
@@ -744,91 +763,103 @@ struct PlaceVisitedCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button { onTap?() } label: {
-                ZStack(alignment: .bottom) {
-                    Group {
-                        if let hero = place.heroPhoto {
-                            RecapPhotoThumbnail(photo: hero, cornerRadius: 14, showIcon: false, targetSize: CGSize(width: 900, height: 600))
-                        } else {
-                            RoundedRectangle(appChromeBaseRadius: 14)
-                                .fill(Color.secondary.opacity(0.15))
-                                .overlay {
-                                    Image(systemName: "photo")
-                                        .font(.title2)
-                                        .foregroundStyle(.secondary)
-                                }
-                        }
-                    }
+                heroThumbnail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
-                    .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 150)
-                .contentShape(Rectangle())
-                .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
-                .overlay(alignment: .topLeading) {
-                    Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.black.opacity(0.55))
-                        .clipShape(Capsule())
-                        .padding(10)
-                        .allowsHitTesting(false)
-                }
             }
             .buttonStyle(.plain)
+            .frame(minWidth: 0, maxWidth: .infinity)
+            .frame(height: Self.heroHeight)
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
+            .contentShape(Rectangle())
+            .overlay(alignment: .topLeading) {
+                Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.black.opacity(0.55))
+                    .clipShape(Capsule())
+                    .padding(10)
+                    .allowsHitTesting(false)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
-                if let onTap {
-                    Button(action: onTap) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(place.displayName)
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
+                titleBlock
+                    .frame(height: Self.titleBlockHeight, alignment: .topLeading)
 
-                            Text(place.cityDisplay ?? place.country)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Text(place.displayName)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    Text(place.cityDisplay ?? place.country)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                if let raw = place.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
-                    PlacePOICategoryBadge(rawCategory: raw)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else if let onAddCategoryTap {
-                    Button(action: onAddCategoryTap) {
-                        addCategoryPillLabel
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    addCategoryPillLabel
-                }
+                categoryRow
+                    .frame(height: Self.categoryRowHeight, alignment: .leading)
+                    .clipped()
             }
         }
-        .padding(12)
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .frame(height: Self.layoutHeight, alignment: .topLeading)
+        .padding(Self.cardPadding)
         .clipShape(RoundedRectangle(appChromeBaseRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        }
+    }
+
+    @ViewBuilder
+    private var titleBlock: some View {
+        let labels = VStack(alignment: .leading, spacing: 4) {
+            Text(place.displayName)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Text(place.cityDisplay ?? place.country)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+        if let onTap {
+            Button(action: onTap) {
+                labels
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            labels
+        }
+    }
+
+    @ViewBuilder
+    private var categoryRow: some View {
+        if let raw = place.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            PlacePOICategoryBadge(rawCategory: raw)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(1)
+        } else if let onAddCategoryTap {
+            Button(action: onAddCategoryTap) {
+                addCategoryPillLabel
+            }
+            .buttonStyle(.plain)
+        } else {
+            addCategoryPillLabel
+        }
+    }
+
+    @ViewBuilder
+    private var heroThumbnail: some View {
+        if let hero = place.heroPhoto {
+            RecapPhotoThumbnail(photo: hero, cornerRadius: 14, showIcon: false, targetSize: CGSize(width: 900, height: 600))
+        } else {
+            RoundedRectangle(appChromeBaseRadius: 14)
+                .fill(Color.secondary.opacity(0.15))
+                .overlay {
+                    Image(systemName: "photo")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                }
         }
     }
 }
@@ -844,6 +875,7 @@ private struct PlacesVisitedMapView: View {
     @Binding var searchText: String
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialScrollToStopIdForRecap: UUID?
+    @Binding var suppressHomeBottomNav: Bool
 
     @State private var mapPosition: MapCameraPosition = .automatic
     /// Kept in sync via `onMapCameraChange` for screen-space overlap detection when zooming stacked markers.
@@ -1325,33 +1357,22 @@ private struct PlacesVisitedMapView: View {
                                                 .padding(.top, 10)
                                                 .padding(.bottom, 6)
 
-                                            let pairs = stride(from: 0, to: monthGroup.places.count, by: 2).map {
-                                                Array(monthGroup.places[$0 ..< min($0 + 2, monthGroup.places.count)])
-                                            }
-                                            ForEach(pairs, id: \.first?.id) { pair in
-                                                HStack(alignment: .top, spacing: 12) {
-                                                    ForEach(Array(pair.enumerated()), id: \.element.id) { _, place in
-                                                        PlaceVisitedCard(
-                                                            place: place,
-                                                            onTap: {
-                                                                openCategoryPickerWhenPlaceModalOpens = false
-                                                                selectedPlaceForModal = place
-                                                            },
-                                                            onAddCategoryTap: {
-                                                                openCategoryPickerWhenPlaceModalOpens = true
-                                                                selectedPlaceForModal = place
-                                                            }
-                                                        )
-                                                        .frame(maxWidth: .infinity)
-                                                    }
-                                                    if pair.count == 1 {
-                                                        Color.clear
-                                                            .frame(maxWidth: .infinity)
-                                                            .allowsHitTesting(false)
-                                                    }
+                                            LazyVGrid(columns: PlacesVisitedPlaceGrid.columns, spacing: 12) {
+                                                ForEach(monthGroup.places) { place in
+                                                    PlaceVisitedCard(
+                                                        place: place,
+                                                        onTap: {
+                                                            openCategoryPickerWhenPlaceModalOpens = false
+                                                            selectedPlaceForModal = place
+                                                        },
+                                                        onAddCategoryTap: {
+                                                            openCategoryPickerWhenPlaceModalOpens = true
+                                                            selectedPlaceForModal = place
+                                                        }
+                                                    )
                                                 }
-                                                .padding(.bottom, 12)
                                             }
+                                            .padding(.bottom, 12)
                                         }
                                     }
                                 }
@@ -1493,6 +1514,13 @@ private struct PlacesVisitedMapView: View {
                 POIInfoSheet(feature: feature)
             }
         }
+        .onChange(of: selectedPlaceForModal?.id) { _, _ in syncMapHomeBottomNavSuppression() }
+        .onChange(of: revealNavDuringModalDismiss) { _, _ in syncMapHomeBottomNavSuppression() }
+        .onDisappear { suppressHomeBottomNav = false }
+    }
+
+    private func syncMapHomeBottomNavSuppression() {
+        suppressHomeBottomNav = selectedPlaceForModal != nil && !revealNavDuringModalDismiss
     }
 
     private func placesVisitedMapCategoryChip(raw: String, isSelected: Bool, action: @escaping () -> Void) -> some View {

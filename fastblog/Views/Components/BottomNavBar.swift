@@ -53,10 +53,15 @@ struct BottomNavBar: View {
             // Keep the content higher (more top air) while avoiding extra bottom lift
             // beyond the home indicator safe area.
             .padding(.top, 10)
-            .padding(.bottom, 2)
-            .frame(height: 62)
+            .padding(.bottom, 8)
+            .frame(height: HomeChromeMetrics.bottomNavBarRowHeight)
         }
-        .background(backgroundBlue)
+        .safeAreaPadding(.bottom, HomeChromeMetrics.bottomNavBarExtraBottomPadding)
+        .background {
+            backgroundBlue.ignoresSafeArea(edges: .bottom)
+        }
+        // Home tab content may use larger dynamic type; keep the tab bar height identical on every tab.
+        .dynamicTypeSize(.medium)
     }
 
     private enum NavIcon {
@@ -103,6 +108,8 @@ struct BottomNavBar: View {
 
                 Text(label)
                     .font(.caption2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .foregroundColor(.white)
                     .opacity(textOpacity)
 

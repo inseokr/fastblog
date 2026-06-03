@@ -2794,6 +2794,7 @@ struct CameraCaptureView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     /// When set, receives the summary message (e.g. "3 moments added to Trip") when user leaves with attached photos.
     var postDismissToast: ((String) -> Void)? = nil
     /// When set (ZStack overlay presentation), called instead of dismiss().
@@ -2806,6 +2807,8 @@ struct CameraCaptureView: View {
     // Bottom navigation (home redesign). When nil, camera behaves as an overlay.
     var onNavMyBlogs: (() -> Void)? = nil
     var onNavMyPlaces: (() -> Void)? = nil
+    /// Home camera in `ContentView`: immersive until the user taps the back chevron (parent owns the tab bar).
+    var homeBottomNavRevealed: Binding<Bool>? = nil
 
     @StateObject private var cameraController = CameraController()
 
@@ -2909,13 +2912,6 @@ struct CameraCaptureView: View {
     @State private var previewChromeHasMomentVideo = false
     @State private var showMomentVideoPreview = false
     @State private var previewChromeHasVoiceMemo = false
-    /// Home camera: back reveals bottom nav; immersive full-screen when false.
-    @State private var isHomeBottomNavRevealed = false
-    @State private var homeBottomNavAutoHideTask: Task<Void, Never>?
-
-    /// After revealing the bottom bar, return to immersive camera if the user stays on Camera.
-    private static let homeBottomNavAutoHideSeconds: UInt64 = 5
-
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
 
@@ -3025,7 +3021,7 @@ struct CameraCaptureView: View {
         // One-shot disk lookups for chrome (avoid `vibeFileURL` / `voiceMemoFileURL` inside View bodies —
         // SwiftUI evaluates those relentlessly during layout/animations).
         refreshPreviewChromeAttachmentFlags(for: moment)
-        isHomeBottomNavRevealed = false
+        homeBottomNavRevealed?.wrappedValue = false
 
         captionModeMomentId = moment.id
         captionModeFrozenImage = frozen
@@ -3342,17 +3338,17 @@ struct CameraCaptureView: View {
         previewDeviceSafeAreaInsets.top
     }
 
-    /// Bottom inset when the home bottom nav is hidden (immersive camera).
     private var cameraChromeSafeBottom: CGFloat {
         previewDeviceSafeAreaInsets.bottom
     }
 
+    private var isCompactHomeHeight: Bool { verticalSizeClass == .compact }
+
     /// Space above shutter + mode picker; keeps toasts low but clear of capture controls.
     private var cameraToastBottomInset: CGFloat {
-        let shutterArea: CGFloat = 152
-        let bottomNav: CGFloat = (showsBottomNavBar && isHomeBottomNavRevealed) ? 63 : 0
-        let safeBottom: CGFloat = (showsBottomNavBar && isHomeBottomNavRevealed) ? 0 : max(cameraChromeSafeBottom, 8)
-        return shutterArea + bottomNav + safeBottom + 4
+        let shutterArea = HomeChromeMetrics.cameraCaptureControlsBottomInset(isCompactHeight: isCompactHomeHeight)
+        let safeBottom: CGFloat = max(cameraChromeSafeBottom, 8)
+        return shutterArea + safeBottom + 4
     }
 
     /// Height of the bottom screen band where the system home / app-switcher swipe begins.
@@ -3422,7 +3418,7 @@ struct CameraCaptureView: View {
                     .padding(.bottom, 24)
             }
             shutterBar
-                .padding(.bottom, showsBottomNavBar && isHomeBottomNavRevealed ? 8 : max(cameraChromeSafeBottom, 8))
+                .padding(.bottom, showsBottomNavBar ? 8 : max(cameraChromeSafeBottom, 8))
         }
 
         // Zoom level indicator - appears while pinching, fades out (hidden when dial is open)
@@ -3495,11 +3491,11 @@ struct CameraCaptureView: View {
             .animation(.easeInOut(duration: 0.3), value: isVibeCaptureEnabled)
         }
 
-        // Top row: Back (immersive home camera) or Close (overlay) on the left; flip / flash / … on the right.
-        if showsBottomNavBar, !isHomeBottomNavRevealed, !isCaptionModeActive {
+        // Top row: Back reveals home nav (chevron hides until nav auto-dismisses or user picks a tab).
+        if let navRevealed = homeBottomNavRevealed, navRevealed.wrappedValue == false, !isCaptionModeActive {
             Button {
                 withAnimation(.easeInOut(duration: 0.25)) {
-                    isHomeBottomNavRevealed = true
+                    navRevealed.wrappedValue = true
                 }
             } label: {
                 Image(systemName: "chevron.left")
@@ -3593,24 +3589,6 @@ struct CameraCaptureView: View {
 
     private var showsBottomNavBar: Bool {
         onNavMyBlogs != nil || onNavMyPlaces != nil
-    }
-
-    private func scheduleHomeBottomNavAutoHide() {
-        guard showsBottomNavBar else { return }
-        homeBottomNavAutoHideTask?.cancel()
-        homeBottomNavAutoHideTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: Self.homeBottomNavAutoHideSeconds * 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            guard isHomeBottomNavRevealed, !isCaptionModeActive else { return }
-            withAnimation(.easeInOut(duration: 0.25)) {
-                isHomeBottomNavRevealed = false
-            }
-        }
-    }
-
-    private func cancelHomeBottomNavAutoHide() {
-        homeBottomNavAutoHideTask?.cancel()
-        homeBottomNavAutoHideTask = nil
     }
 
     // MARK: - Post-capture preview overlay
@@ -4410,7 +4388,9 @@ struct CameraCaptureView: View {
 
     /// Photo / Vibe / Reel segmented control under the shutter — single flat row, full width.
     private var captureModePicker: some View {
-        HStack(spacing: 0) {
+        let rowHeight: CGFloat = isCompactHomeHeight ? 40 : 44
+        let barHeight: CGFloat = isCompactHomeHeight ? 46 : 52
+        return HStack(spacing: 0) {
             ForEach(CameraCaptureMode.allCases) { mode in
                 Button {
                     if mode == .vibe, !hasSeenVibeTooltip {
@@ -4419,12 +4399,12 @@ struct CameraCaptureView: View {
                     setCaptureMode(mode)
                 } label: {
                     Text(mode.label)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: isCompactHomeHeight ? 13 : 14, weight: .semibold))
                         .foregroundColor(captureMode == mode ? .white : .white.opacity(0.5))
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 44)
+                        .frame(height: rowHeight)
                         .background {
                             if captureMode == mode {
                                 Capsule()
@@ -4439,7 +4419,7 @@ struct CameraCaptureView: View {
         }
         .padding(4)
         .frame(maxWidth: .infinity)
-        .frame(height: 52)
+        .frame(height: barHeight)
         .background(.ultraThinMaterial)
         .clipShape(Capsule())
         .disabled(cameraController.isRecordingMomentVideo)
@@ -4464,29 +4444,6 @@ struct CameraCaptureView: View {
                     .ignoresSafeArea()
             )
             .overlay(alignment: .bottom) { toastOverlay }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if showsBottomNavBar, isHomeBottomNavRevealed, !isCaptionModeActive {
-                    BottomNavBar(
-                        activeTab: .camera,
-                        onMyBlogs: {
-                            cancelHomeBottomNavAutoHide()
-                            isHomeBottomNavRevealed = false
-                            onNavMyBlogs?()
-                        },
-                        onCamera: {
-                            cancelHomeBottomNavAutoHide()
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                isHomeBottomNavRevealed = false
-                            }
-                        },
-                        onMyPlaces: {
-                            cancelHomeBottomNavAutoHide()
-                            isHomeBottomNavRevealed = false
-                            onNavMyPlaces?()
-                        }
-                    )
-                }
-            }
     }
 
     /// Lifecycle and core camera-state updates.
@@ -4604,18 +4561,6 @@ struct CameraCaptureView: View {
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
             }
-            .onChange(of: isHomeBottomNavRevealed) { _, revealed in
-                if revealed {
-                    scheduleHomeBottomNavAutoHide()
-                } else {
-                    cancelHomeBottomNavAutoHide()
-                }
-            }
-            .onChange(of: isCaptionModeActive) { _, inCaption in
-                if inCaption {
-                    cancelHomeBottomNavAutoHide()
-                }
-            }
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active {
                     isShowingCapturesGallery = false
@@ -4623,7 +4568,6 @@ struct CameraCaptureView: View {
                 }
             }
             .onDisappear {
-            cancelHomeBottomNavAutoHide()
             if photosCapturedThisSession > 0 {
                 var props: [String: Any] = [
                     "cameraSessionId": cameraSessionId.uuidString,
@@ -5285,7 +5229,7 @@ struct CameraCaptureView: View {
     }
 
     private var shutterBar: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: isCompactHomeHeight ? 6 : 10) {
             if cameraController.isRecordingMomentVideo {
                 reelRecordingIndicator
                     .transition(.opacity.combined(with: .move(edge: .bottom)))

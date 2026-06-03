@@ -8,6 +8,7 @@ import Photos
 import UIKit
 
 struct ContentView: View {
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @StateObject private var createdRecapStore = CreatedRecapBlogStore.shared
     @EnvironmentObject private var nearbyShare: TripNearbyShareSessionController
     @StateObject private var tripsViewModel: TripsViewModel
@@ -19,8 +20,11 @@ struct ContentView: View {
     /// Without this, .transition(.identity) removes the view immediately and Metal fires
     /// MTLDebugDevice notifyExternalReferencesNonZeroOnDealloc.
     @State private var tripsViewKeepMounted = false
-    @State private var showSeeAll = false
-    @State private var showPlacesVisited = false
+    @State private var homeTab: BottomNavTab = .camera
+    /// Immersive home camera hides the tab bar until the user taps the back chevron.
+    @State private var isHomeBottomNavRevealed = false
+    @State private var homeBottomNavAutoHideTask: Task<Void, Never>?
+    private static let homeBottomNavAutoHideSeconds: UInt64 = 4
     @State private var postCameraToastMessage: String?
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var initialDayIndexForRecap: Int?
@@ -39,6 +43,8 @@ struct ContentView: View {
     /// Day index to open when navigating to a blog via the new-moments popup.
     @AppStorage("blogify.justFinishedOnboarding") private var justFinishedOnboarding = false
     @State private var showSettingsFromNav = false
+    /// My Places place viewer / share studio — hides the shared home tab bar.
+    @State private var suppressHomeBottomNav = false
 
     // On-the-go new-moments banner (camera home)
     @State private var showNewMomentsBanner = false
@@ -48,10 +54,12 @@ struct ContentView: View {
     @State private var newMomentsBannerDragOffset: CGFloat = 0
     @State private var postCameraToastDragOffset: CGFloat = 0
 
-    /// Post-camera toast: sits just above the camera shutter controls.
-    private let cameraHomeBannerBottomInset: CGFloat = 156
-    /// New moments banner: sits near the bottom of the screen (above home indicator).
-    private let newMomentsBannerBottomInset: CGFloat = 32
+    /// Post-camera toast: sits just above the camera shutter controls (tab bar is outside `homeTabsLayer`).
+    private var cameraHomeBannerBottomInset: CGFloat {
+        HomeChromeMetrics.cameraCaptureControlsBottomInset(isCompactHeight: verticalSizeClass == .compact)
+    }
+    /// New moments banner: small lift from the bottom of the tab content area.
+    private var newMomentsBannerBottomInset: CGFloat { 32 }
 
     init() {
         _tripsViewModel = StateObject(wrappedValue: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared))
@@ -60,8 +68,6 @@ struct ContentView: View {
     var body: some View {
         rootContent
             .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
-            .animation(.easeInOut(duration: 0.25), value: showSeeAll)
-            .animation(.easeInOut(duration: 0.18), value: showPlacesVisited)
             .animation(.easeInOut(duration: 0.35), value: showTrips)
             .animation(.easeInOut(duration: 0.25), value: selectedCreatedRecap != nil)
             .animation(.easeInOut(duration: 0.3), value: postCameraToastMessage != nil)
@@ -171,8 +177,42 @@ struct ContentView: View {
     }
 
     private var rootContent: some View {
+        VStack(spacing: 0) {
+            homeTabsLayer
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if isHomeBottomNavVisible {
+                BottomNavBar(
+                    activeTab: homeTab,
+                    onMyBlogs: { selectHomeTab(.myBlogs) },
+                    onCamera: { selectHomeTab(.camera) },
+                    onMyPlaces: { selectHomeTab(.myPlaces) }
+                )
+            }
+        }
+        .onChange(of: homeTab) { _, newTab in
+            if newTab == .camera {
+                isHomeBottomNavRevealed = false
+            } else {
+                cancelHomeBottomNavAutoHide()
+            }
+            if newTab != .myPlaces {
+                suppressHomeBottomNav = false
+            }
+        }
+        .onChange(of: isHomeBottomNavRevealed) { _, revealed in
+            if revealed {
+                scheduleHomeBottomNavAutoHide()
+            } else {
+                cancelHomeBottomNavAutoHide()
+            }
+        }
+    }
+
+    /// Tab stacks and overlays — lives in the area above the shared bottom navigation bar.
+    private var homeTabsLayer: some View {
         ZStack {
-            // Camera is the base layer (always mounted).
+            // Home tabs stay mounted (opacity) so the shared bottom nav never tears down / re-renders.
             NavigationStack {
                 CameraCaptureView(
                     tripsViewModel: tripsViewModel,
@@ -185,78 +225,61 @@ struct ContentView: View {
                             selectedCreatedRecap = blog
                         }
                     },
-                    onNavMyBlogs: {
-                        withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = true }
-                    },
-                    onNavMyPlaces: {
-                        withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = true }
-                    }
+                    homeBottomNavRevealed: $isHomeBottomNavRevealed
                 )
                 .environmentObject(createdRecapStore)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black)
-            .zIndex(1)
+            .opacity(homeTab == .camera ? 1 : 0)
+            .allowsHitTesting(homeTab == .camera)
+            .zIndex(homeTab == .camera ? 1 : 0)
 
-            // My Blogs overlay (fade in/out). preferredColorScheme on container avoids color flash during dismiss.
-            if showSeeAll {
-                NavigationStack {
-                    MyBlogsProfileView(
-                        createdRecapStore: createdRecapStore,
-                        selectedCreatedRecap: $selectedCreatedRecap,
-                        initialDayIndexForRecap: $initialDayIndexForRecap,
-                        openRecapInEditMode: $openRecapInEditMode,
-                        openRecapPresentShareYourBlogSheet: $openRecapPresentShareYourBlogSheet,
-                        tripsViewModel: tripsViewModel,
-                        onDismissCover: nil,
-                        onShowSettings: {
-                            showSettingsFromNav = true
-                        },
-                        onNavCamera: {
-                            withAnimation(.easeInOut(duration: 0.25)) { showSeeAll = false }
-                        },
-                        onNavMyPlaces: {
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                showSeeAll = false
-                                showPlacesVisited = true
-                            }
-                        },
-                        onTapToBlog: handleTapToBlog
-                    )
-                    .environmentObject(createdRecapStore)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .tint(.primary)
-                .preferredColorScheme(.dark)
-                .transition(.opacity)
-                .zIndex(3)
+            NavigationStack {
+                MyBlogsProfileView(
+                    createdRecapStore: createdRecapStore,
+                    selectedCreatedRecap: $selectedCreatedRecap,
+                    initialDayIndexForRecap: $initialDayIndexForRecap,
+                    openRecapInEditMode: $openRecapInEditMode,
+                    openRecapPresentShareYourBlogSheet: $openRecapPresentShareYourBlogSheet,
+                    tripsViewModel: tripsViewModel,
+                    onDismissCover: nil,
+                    onShowSettings: {
+                        showSettingsFromNav = true
+                    },
+                    onNavCamera: {
+                        selectHomeTab(.camera)
+                    },
+                    onNavMyPlaces: {
+                        selectHomeTab(.myPlaces)
+                    },
+                    onTapToBlog: handleTapToBlog
+                )
+                .environmentObject(createdRecapStore)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .tint(.primary)
+            .preferredColorScheme(.dark)
+            .opacity(homeTab == .myBlogs ? 1 : 0)
+            .allowsHitTesting(homeTab == .myBlogs)
+            .zIndex(homeTab == .myBlogs ? 3 : 0)
 
-            // Places Visited overlay (fade in/out).
-            if showPlacesVisited {
-                NavigationStack {
-                    PlacesVisitedStandaloneView(
-                        selectedCreatedRecap: $selectedCreatedRecap,
-                        initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
-                        onDismiss: { withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = false } },
-                        onShowSettings: { showSettingsFromNav = true },
-                        onNavMyBlogs: {
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                showPlacesVisited = false
-                                showSeeAll = true
-                            }
-                        },
-                        onNavCamera: {
-                            withAnimation(.easeInOut(duration: 0.18)) { showPlacesVisited = false }
-                        }
-                    )
-                    .environmentObject(createdRecapStore)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .tint(.primary)
-                .transition(.opacity)
-                .zIndex(4)
+            NavigationStack {
+                PlacesVisitedStandaloneView(
+                    selectedCreatedRecap: $selectedCreatedRecap,
+                    initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
+                    suppressHomeBottomNav: $suppressHomeBottomNav,
+                    onDismiss: { selectHomeTab(.camera) },
+                    onShowSettings: { showSettingsFromNav = true }
+                )
+                .environmentObject(createdRecapStore)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .tint(.primary)
+            .preferredColorScheme(.dark)
+            .opacity(homeTab == .myPlaces ? 1 : 0)
+            .allowsHitTesting(homeTab == .myPlaces)
+            .zIndex(homeTab == .myPlaces ? 4 : 0)
 
             // Trips overlay — added when user taps "Tap to Blog"; opacity-only fade (no slide).
             // tripsViewKeepMounted extends the lifetime after dismissal so MapKit's CAMetalLayer
@@ -339,8 +362,46 @@ struct ContentView: View {
         }
     }
 
+    private var showsHomeChrome: Bool {
+        !showTrips && !pendingShowTripsWhenIdle && selectedCreatedRecap == nil && tripsViewModel.scanState == .idle
+    }
+
+    /// Tab bar: hidden on default camera, My Places place viewer, and share studio; optional on camera after back chevron.
+    private var isHomeBottomNavVisible: Bool {
+        showsHomeChrome && !suppressHomeBottomNav && (homeTab != .camera || isHomeBottomNavRevealed)
+    }
+
     private var isCameraHomeVisible: Bool {
-        !showSeeAll && !showTrips && !showPlacesVisited && selectedCreatedRecap == nil
+        homeTab == .camera && showsHomeChrome
+    }
+
+    private func selectHomeTab(_ tab: BottomNavTab) {
+        cancelHomeBottomNavAutoHide()
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            if tab == .camera {
+                isHomeBottomNavRevealed = false
+            }
+            homeTab = tab
+        }
+    }
+
+    private func scheduleHomeBottomNavAutoHide() {
+        cancelHomeBottomNavAutoHide()
+        homeBottomNavAutoHideTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: Self.homeBottomNavAutoHideSeconds * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            guard homeTab == .camera, isHomeBottomNavRevealed else { return }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                isHomeBottomNavRevealed = false
+            }
+        }
+    }
+
+    private func cancelHomeBottomNavAutoHide() {
+        homeBottomNavAutoHideTask?.cancel()
+        homeBottomNavAutoHideTask = nil
     }
 
     private func considerPresentingNewMomentsBannerOnCamera() {
