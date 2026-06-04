@@ -2197,6 +2197,110 @@ final class CreatedRecapBlogStore: ObservableObject {
         NotificationCenter.default.post(name: .tripDraftsDidChangeInStore, object: nil)
     }
 
+    /// After `splitBlog`, swaps Part 1 and Part 2 payloads so the editor at `keepId` shows Part 2. `lastSplitUndoInfo` ids are unchanged for `undoSplit`.
+    func focusSplitPart(keepPart: Int) {
+        guard keepPart == 2,
+              let info = lastSplitUndoInfo,
+              let part1Detail = blogDetailsBySourceId[info.keepId],
+              let part2Detail = blogDetailsBySourceId[info.newId],
+              let keepIdx = recents.firstIndex(where: { $0.sourceTripId == info.keepId }),
+              let newIdx = recents.firstIndex(where: { $0.sourceTripId == info.newId }) else {
+            return
+        }
+
+        let keepId = info.keepId
+        let newId = info.newId
+
+        blogDetailsBySourceId[keepId] = RecapBlogDetail(
+            id: keepId,
+            title: part2Detail.title,
+            days: part2Detail.days,
+            coverTheme: part2Detail.coverTheme,
+            selectedCoverPhotoIdentifier: part2Detail.selectedCoverPhotoIdentifier,
+            countryName: part2Detail.countryName,
+            blogKey: part1Detail.blogKey,
+            removedPlaceStops: part2Detail.removedPlaceStops,
+            tripNarrative: part2Detail.tripNarrative
+        )
+        blogDetailsBySourceId[newId] = RecapBlogDetail(
+            id: newId,
+            title: part1Detail.title,
+            days: part1Detail.days,
+            coverTheme: part1Detail.coverTheme,
+            selectedCoverPhotoIdentifier: part1Detail.selectedCoverPhotoIdentifier,
+            countryName: part1Detail.countryName,
+            blogKey: part2Detail.blogKey,
+            removedPlaceStops: part1Detail.removedPlaceStops,
+            tripNarrative: part1Detail.tripNarrative
+        )
+
+        let keepIdentity = recents[keepIdx]
+        let newIdentity = recents[newIdx]
+        var keepDisplay = keepIdentity
+        var newDisplay = newIdentity
+        swapSplitRecentDisplayFields(&keepDisplay, &newDisplay)
+        recents[keepIdx] = recentRow(display: keepDisplay, identity: keepIdentity)
+        recents[newIdx] = recentRow(display: newDisplay, identity: newIdentity)
+
+        if let trip1 = tripDraftsBySourceId[keepId], let trip2 = tripDraftsBySourceId[newId] {
+            var focusedTrip = trip2
+            focusedTrip.id = keepId
+            var otherTrip = trip1
+            otherTrip.id = newId
+            tripDraftsBySourceId[keepId] = focusedTrip
+            tripDraftsBySourceId[newId] = otherTrip
+        }
+
+        persistRecents()
+        persistBlogDetails()
+        persistTripDrafts()
+        needsRescan = true
+        NotificationCenter.default.post(name: .tripDraftsDidChangeInStore, object: nil)
+    }
+
+    private func swapSplitRecentDisplayFields(_ keep: inout CreatedRecapBlog, _ new: inout CreatedRecapBlog) {
+        swap(&keep.title, &new.title)
+        swap(&keep.coverImageName, &new.coverImageName)
+        swap(&keep.coverAssetIdentifier, &new.coverAssetIdentifier)
+        swap(&keep.totalPlaceVisitCount, &new.totalPlaceVisitCount)
+        swap(&keep.tripDurationDays, &new.tripDurationDays)
+        swap(&keep.selectedPhotoCount, &new.selectedPhotoCount)
+        swap(&keep.tripDateRangeText, &new.tripDateRangeText)
+        swap(&keep.lastEditedAt, &new.lastEditedAt)
+        swap(&keep.tripStartDate, &new.tripStartDate)
+        swap(&keep.tripEndDate, &new.tripEndDate)
+        swap(&keep.caption, &new.caption)
+    }
+
+    private func recentRow(display: CreatedRecapBlog, identity: CreatedRecapBlog) -> CreatedRecapBlog {
+        CreatedRecapBlog(
+            id: identity.id,
+            sourceTripId: identity.sourceTripId,
+            title: display.title,
+            createdAt: identity.createdAt,
+            coverImageName: display.coverImageName,
+            coverAssetIdentifier: display.coverAssetIdentifier,
+            selectedPhotoCount: display.selectedPhotoCount,
+            countryName: identity.countryName,
+            tripDateRangeText: display.tripDateRangeText,
+            lastEditedAt: display.lastEditedAt,
+            tripStartDate: display.tripStartDate,
+            tripEndDate: display.tripEndDate,
+            totalPlaceVisitCount: display.totalPlaceVisitCount,
+            tripDurationDays: display.tripDurationDays,
+            caption: display.caption,
+            blogKey: identity.blogKey,
+            ownerScope: identity.ownerScope,
+            ownerUserId: identity.ownerUserId,
+            cloudId: identity.cloudId,
+            cloudState: identity.cloudState,
+            syncStatus: identity.syncStatus,
+            lastAutosaveAt: identity.lastAutosaveAt,
+            hasCommittedRecapSave: identity.hasCommittedRecapSave,
+            hasCompletedInitialRecapExit: identity.hasCompletedInitialRecapExit
+        )
+    }
+
     /// Splits an unsaved trip draft into two, keeping one part for the current editor and preserving the other part as a new TripDraft.
     func splitUnsavedTrip(tripId: UUID, afterDayIndex: Int, keepPart: Int) {
         guard let trip = tripDraftsBySourceId[tripId],

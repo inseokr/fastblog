@@ -16,6 +16,11 @@ struct SplitBlogView: View {
         let dayIndex: Int
     }
 
+    /// Pushed destination: open the recap editor for a split part.
+    private struct EditAfterSplitRoute: Hashable {
+        let blogId: UUID
+    }
+
     let countryName: String
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Environment(\.dismiss) private var dismiss
@@ -26,6 +31,10 @@ struct SplitBlogView: View {
     @State private var showSplitAlert = false
     @State private var showUndoBanner = false
     @State private var dayPreviewRoute: DayPreviewRoute?
+    @State private var editAfterSplitRoute: EditAfterSplitRoute?
+    @State private var showContinueEditingAfterSplit = false
+    @State private var savedSplitPartPreviews: (part1: ContinueEditingAfterSplitPartInfo, part2: ContinueEditingAfterSplitPartInfo)?
+    @State private var didPickSplitEditorPart = false
 
     // MARK: - Splittable Blogs
 
@@ -120,10 +129,30 @@ struct SplitBlogView: View {
             )
             .environmentObject(TripNearbyShareSessionController.shared)
         }
+        .navigationDestination(item: $editAfterSplitRoute) { route in
+            RecapBlogPageView(
+                blogId: route.blogId,
+                initialTrip: createdRecapStore.tripDraft(for: route.blogId),
+                initialDayIndex: 0,
+                forceEditMode: true,
+                suppressPhotoGroupingTipOnAppear: true
+            )
+            .environmentObject(TripNearbyShareSessionController.shared)
+        }
         .sheet(isPresented: $showSplitAlert) {
             splitConfirmSheet
                 .presentationDetents([.height(220)])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showContinueEditingAfterSplit, onDismiss: handleContinueEditingSheetDismissed) {
+            if let previews = savedSplitPartPreviews {
+                ContinueEditingAfterSplitSheet(
+                    part1: previews.part1,
+                    part2: previews.part2,
+                    onSelectPart1: { openEditorAfterSplit(keepPart: 1) },
+                    onSelectPart2: { openEditorAfterSplit(keepPart: 2) }
+                )
+            }
         }
     }
 
@@ -361,17 +390,15 @@ struct SplitBlogView: View {
 
             VStack(spacing: 10) {
                 Button {
-                    guard let blog = selectedBlog, let splitIdx = selectedSplitIndex else { return }
+                    guard let splitIdx = selectedSplitIndex else { return }
                     showSplitAlert = false
+                    didPickSplitEditorPart = false
+                    savedSplitPartPreviews = Self.splitPartPreviews(from: loadedDays, afterDayIndex: splitIdx)
+                    guard let blog = selectedBlog else { return }
                     createdRecapStore.splitBlog(blogId: blog.sourceTripId, afterDayIndex: splitIdx)
                     let generator = UINotificationFeedbackGenerator()
                     generator.notificationOccurred(.success)
-                    withAnimation {
-                        selectedBlog = nil
-                        loadedDays = []
-                        dayPreviewRoute = nil
-                        showUndoBanner = true
-                    }
+                    showContinueEditingAfterSplit = true
                 } label: {
                     Text("Split")
                         .font(.body.weight(.semibold))
@@ -418,5 +445,120 @@ struct SplitBlogView: View {
         withAnimation {
             selectedBlog = blog
         }
+    }
+
+    private func openEditorAfterSplit(keepPart: Int) {
+        guard let info = createdRecapStore.lastSplitUndoInfo else { return }
+        didPickSplitEditorPart = true
+        showContinueEditingAfterSplit = false
+        savedSplitPartPreviews = nil
+        let targetBlogId = keepPart == 1 ? info.keepId : info.newId
+        editAfterSplitRoute = EditAfterSplitRoute(blogId: targetBlogId)
+        withAnimation {
+            selectedBlog = nil
+            loadedDays = []
+            selectedSplitIndex = nil
+            dayPreviewRoute = nil
+        }
+    }
+
+    private func handleContinueEditingSheetDismissed() {
+        savedSplitPartPreviews = nil
+        guard !didPickSplitEditorPart else {
+            didPickSplitEditorPart = false
+            return
+        }
+        withAnimation {
+            selectedBlog = nil
+            loadedDays = []
+            selectedSplitIndex = nil
+            dayPreviewRoute = nil
+            showUndoBanner = true
+        }
+    }
+
+    private static func splitPartPreviews(from days: [RecapBlogDay], afterDayIndex: Int) -> (part1: ContinueEditingAfterSplitPartInfo, part2: ContinueEditingAfterSplitPartInfo) {
+        let part1Days = Array(days[0...afterDayIndex])
+        let part2Days = Array(days[(afterDayIndex + 1)...])
+        return (
+            part1: partPreview(for: part1Days),
+            part2: partPreview(for: part2Days)
+        )
+    }
+
+    private static func partPreview(for days: [RecapBlogDay]) -> ContinueEditingAfterSplitPartInfo {
+        let start = days.first?.dateAlignedWithShortDateText
+        let end = days.last?.dateAlignedWithShortDateText
+        let dateRangeText = CreatedRecapBlogStore.formatDateRange(start: start, end: end) ?? "Unknown Date"
+        let cities = days
+            .flatMap(\.placeStops)
+            .compactMap { $0.placeSubtitle }
+            .filter { !$0.isEmpty }
+        var seen = Set<String>()
+        let citySummary = cities.filter { seen.insert($0).inserted }.joined(separator: ", ")
+        return ContinueEditingAfterSplitPartInfo(dateRangeText: dateRangeText, citySummary: citySummary)
+    }
+}
+
+// MARK: - Continue editing after split (shared with RecapBlogPageView)
+
+struct ContinueEditingAfterSplitPartInfo {
+    let dateRangeText: String
+    let citySummary: String
+}
+
+struct ContinueEditingAfterSplitSheet: View {
+    let part1: ContinueEditingAfterSplitPartInfo
+    let part2: ContinueEditingAfterSplitPartInfo
+    let onSelectPart1: () -> Void
+    let onSelectPart2: () -> Void
+
+    var body: some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 8) {
+                Text("Which part do you want to continue editing?")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 32)
+                    .padding(.horizontal, 24)
+            }
+
+            VStack(spacing: 16) {
+                partButton(title: "Part 1", info: part1, action: onSelectPart1)
+                partButton(title: "Part 2", info: part2, action: onSelectPart2)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+
+            Spacer(minLength: 0)
+        }
+        .presentationDetents([.fraction(0.45)])
+        .presentationDragIndicator(.visible)
+        .ignoresSafeArea(edges: .bottom)
+    }
+
+    private func partButton(title: String, info: ContinueEditingAfterSplitPartInfo, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                Text(info.dateRangeText)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                if !info.citySummary.isEmpty {
+                    Text(info.citySummary)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(Color(.secondarySystemBackground))
+            .appChromeCornerRadius(12)
+        }
+        .buttonStyle(.plain)
     }
 }

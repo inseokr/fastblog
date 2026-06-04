@@ -435,6 +435,9 @@ struct RecapBlogPageView: View {
     @State private var unsavedSplitPromptIndex: Int?
     @State private var showSplitUndoBanner = false
     @State private var splitUndoBannerDismissTask: Task<Void, Never>?
+    @State private var showContinueEditingAfterSplit = false
+    @State private var savedSplitPartPreviews: (part1: ContinueEditingAfterSplitPartInfo, part2: ContinueEditingAfterSplitPartInfo)?
+    @State private var didPickSavedSplitEditorPart = false
 
     // MARK: - Place Stop Merge / Split
     private struct SplitPlaceStopItem: Identifiable {
@@ -1448,6 +1451,26 @@ struct RecapBlogPageView: View {
             )) {
                 if let splitIdx = unsavedSplitPromptIndex {
                     unsavedSplitModal(splitIdx: splitIdx)
+                }
+            }
+            .sheet(isPresented: $showContinueEditingAfterSplit, onDismiss: handleSavedContinueEditingSheetDismissed) {
+                if let previews = savedSplitPartPreviews {
+                    ContinueEditingAfterSplitSheet(
+                        part1: previews.part1,
+                        part2: previews.part2,
+                        onSelectPart1: {
+                            didPickSavedSplitEditorPart = true
+                            showContinueEditingAfterSplit = false
+                            savedSplitPartPreviews = nil
+                            applySavedSplitEditorFocus(keepPart: 1)
+                        },
+                        onSelectPart2: {
+                            didPickSavedSplitEditorPart = true
+                            showContinueEditingAfterSplit = false
+                            savedSplitPartPreviews = nil
+                            applySavedSplitEditorFocus(keepPart: 2)
+                        }
+                    )
                 }
             }
             .sheet(isPresented: Binding(
@@ -3313,7 +3336,7 @@ struct RecapBlogPageView: View {
 
         VStack(spacing: 24) {
             VStack(spacing: 8) {
-                Text("Choose which part to keep")
+                Text("Which part do you want to continue editing?")
                     .font(.headline)
                     .fontWeight(.bold)
                     .padding(.top, 32)
@@ -6794,36 +6817,71 @@ Your blog remains private unless you choose to share it.
         createdRecapStore.splitUnsavedTrip(tripId: blogId, afterDayIndex: afterDayIndex, keepPart: keepPart)
     }
 
-    /// Splits a blog that has already been saved/created (Edit Mode).
+    /// Splits a blog that has already been saved/created (Edit Mode), then asks which part to continue editing.
     private func splitSavedBlog(afterDayIndex: Int) {
-        // We just call the store's split functionality on the current blogId and afterDayIndex.
+        didPickSavedSplitEditorPart = false
+        savedSplitPartPreviews = Self.splitPartPreviews(from: draft.days, afterDayIndex: afterDayIndex)
         AppAnalytics.track(.blogSplit(blogId: blogId.uuidString))
         createdRecapStore.splitBlog(blogId: blogId, afterDayIndex: afterDayIndex)
+        showContinueEditingAfterSplit = true
+    }
 
-        // Since the current view is for `blogId`, which is now Part 1, we should refresh `draft`
-        if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
-            draft = updated
-            if selectedDayIndex >= draft.days.count {
-                selectedDayIndex = max(0, draft.days.count - 1)
-            }
-            
-            splitUndoBannerDismissTask?.cancel()
-            withAnimation {
-                showSplitUndoBanner = true
-            }
-            splitUndoBannerDismissTask = Task {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    withAnimation {
-                        showSplitUndoBanner = false
-                    }
+    private func handleSavedContinueEditingSheetDismissed() {
+        savedSplitPartPreviews = nil
+        guard !didPickSavedSplitEditorPart else {
+            didPickSavedSplitEditorPart = false
+            return
+        }
+        applySavedSplitEditorFocus(keepPart: 1)
+    }
+
+    private func applySavedSplitEditorFocus(keepPart: Int) {
+        if keepPart == 2 {
+            createdRecapStore.focusSplitPart(keepPart: 2)
+        }
+        guard let updated = createdRecapStore.getBlogDetail(blogId: blogId) else { return }
+        draft = updated
+        selectedDayIndex = 0
+        draftSnapshot = draft
+
+        splitUndoBannerDismissTask?.cancel()
+        withAnimation {
+            showSplitUndoBanner = true
+        }
+        splitUndoBannerDismissTask = Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation {
+                    showSplitUndoBanner = false
                 }
             }
-
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.success)
         }
+
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+
+    private static func splitPartPreviews(from days: [RecapBlogDay], afterDayIndex: Int) -> (part1: ContinueEditingAfterSplitPartInfo, part2: ContinueEditingAfterSplitPartInfo) {
+        let part1Days = Array(days[0...afterDayIndex])
+        let part2Days = Array(days[(afterDayIndex + 1)...])
+        return (
+            part1: partPreview(for: part1Days),
+            part2: partPreview(for: part2Days)
+        )
+    }
+
+    private static func partPreview(for days: [RecapBlogDay]) -> ContinueEditingAfterSplitPartInfo {
+        let start = days.first?.dateAlignedWithShortDateText
+        let end = days.last?.dateAlignedWithShortDateText
+        let dateRangeText = CreatedRecapBlogStore.formatDateRange(start: start, end: end) ?? "Unknown Date"
+        let cities = days
+            .flatMap(\.placeStops)
+            .compactMap { $0.placeSubtitle }
+            .filter { !$0.isEmpty }
+        var seen = Set<String>()
+        let citySummary = cities.filter { seen.insert($0).inserted }.joined(separator: ", ")
+        return ContinueEditingAfterSplitPartInfo(dateRangeText: dateRangeText, citySummary: citySummary)
     }
 
     private func uploadBlogPhotos(openShareAfterSuccess: Bool = false) {
