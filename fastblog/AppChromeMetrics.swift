@@ -27,7 +27,7 @@ enum HomeChromeMetrics {
     /// Minimum tappable area in the navigation bar.
     static let settingsTapSide: CGFloat = 44
     /// Tab row below the hairline in `BottomNavBar`.
-    static let bottomNavBarRowHeight: CGFloat = 62
+    static let bottomNavBarRowHeight: CGFloat = 66
     /// Extra lift above the home-indicator band (matches legacy landing menu spacing).
     static let bottomNavBarExtraBottomPadding: CGFloat = 12
     /// Hairline + tab row + extra bottom padding — inset content height (home indicator is additional).

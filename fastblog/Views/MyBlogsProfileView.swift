@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - Page enum
 private enum MyBlogsPage: Equatable {
@@ -472,17 +473,20 @@ struct MyBlogsProfileView: View {
                     .font(.headline)
                     .foregroundColor(.white)
 
-                ScrollView(.horizontal, showsIndicators: false) {
+                LatestEditsHorizontalScroll(height: CreatedRecapCard.layoutHeight) {
                     HStack(spacing: 12) {
                         ForEach(Array(recents.prefix(8))) { recap in
-                            LatestEditsRecapCardButton(
-                                recap: recap,
-                                menuIndicatorKind: menuIndicators.kind(forSourceTripId: recap.sourceTripId)
-                            ) {
+                            Button {
                                 openRecapInEditMode = false
                                 openRecapPresentShareYourBlogSheet = false
                                 selectedCreatedRecap = recap
+                            } label: {
+                                CreatedRecapCard(
+                                    recap: recap,
+                                    menuIndicatorKind: menuIndicators.kind(forSourceTripId: recap.sourceTripId)
+                                )
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.bottom, 4)
@@ -650,6 +654,67 @@ struct MyBlogsProfileView: View {
         .padding(.vertical, 48)
     }
 
+}
+
+// MARK: - Latest Edits horizontal strip (nested in vertical scroll)
+
+/// UIKit horizontal scroller so sideways pans win over the outer SwiftUI vertical list.
+private struct LatestEditsHorizontalScroll<Content: View>: View {
+    let height: CGFloat
+    let content: Content
+
+    init(height: CGFloat, @ViewBuilder content: () -> Content) {
+        self.height = height
+        self.content = content()
+    }
+
+    var body: some View {
+        LatestEditsHorizontalScrollUIKit(content: content)
+            .frame(height: height)
+    }
+}
+
+private struct LatestEditsHorizontalScrollUIKit<Content: View>: UIViewRepresentable {
+    let content: Content
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.alwaysBounceVertical = false
+        scrollView.alwaysBounceHorizontal = true
+        scrollView.isDirectionalLockEnabled = true
+        scrollView.backgroundColor = .clear
+        scrollView.clipsToBounds = true
+
+        let host = UIHostingController(rootView: content)
+        host.view.backgroundColor = .clear
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(host.view)
+
+        NSLayoutConstraint.activate([
+            host.view.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            host.view.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            host.view.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            host.view.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            host.view.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
+        ])
+
+        context.coordinator.host = host
+        return scrollView
+    }
+
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        context.coordinator.host?.rootView = content
+    }
+
+    final class Coordinator {
+        var host: UIHostingController<Content>?
+    }
 }
 
 // MARK: - Recent Blog Card (horizontal scroll item)

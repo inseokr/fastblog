@@ -107,7 +107,7 @@ struct BottomNavBar: View {
                 }
 
                 Text(label)
-                    .font(.caption2)
+                    .font(.footnote)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .foregroundColor(.white)
