@@ -54,8 +54,7 @@ enum HomeChromeMetrics {
     }
 
     /// Bottom search field typography (My Blogs + My Places).
-    /// Subheadline fits the longest placeholder without UIKit auto-shrinking shorter strings to a larger size.
-    static let homeSearchFieldFont: Font = .subheadline
+    static let homeSearchFieldFont: Font = .body
     static let homeSearchPlaceholderColor = Color.white.opacity(0.7)
 }
 

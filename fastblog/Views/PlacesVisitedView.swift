@@ -258,6 +258,7 @@ struct PlacesVisitedView: View {
                 }
                 .scrollDismissesKeyboard(.immediately)
             }
+            .dynamicTypeSize(.large)
 
             // Full-screen place viewer (matches blog overlay, not a sheet).
             if let place = selectedPlaceForModal {
@@ -419,7 +420,6 @@ struct PlacesVisitedView: View {
         }
         .toolbar(shouldHidePlacesVisitedNavigationBar ? .hidden : .automatic, for: .navigationBar)
         .toolbarBackground(shouldHidePlacesVisitedNavigationBar ? .hidden : .automatic, for: .navigationBar)
-        .dynamicTypeSize(.large)
         .onChange(of: selectedYear) { _, _ in
             // If the user switches years, drop any category that doesn't exist for the new year.
             if let selectedCategory,
