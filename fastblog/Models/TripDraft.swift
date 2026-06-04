@@ -70,6 +70,16 @@ struct TripDraft: Identifiable, Equatable, Hashable, Codable, Sendable {
         return formatter.date(from: last.dateText)
     }
 
+    /// Latest photo timestamp in the trip. Used to pick the correct part when split trips share the same calendar day.
+    var latestPhotoTimestamp: Date? {
+        days.flatMap(\.photos).map(\.timestamp).max()
+    }
+
+    /// Effective end of the trip for matching new captures: latest photo time, else last day date.
+    var effectiveEndTimestamp: Date? {
+        latestPhotoTimestamp ?? latestDate
+    }
+
     /// City that has the most photos in this trip (from photo locationName). Fallback: parse "Trip To X" from title, else "New Place".
     var cityWithMostPhotosDisplayName: String {
         let allPhotos = days.flatMap(\.photos)
@@ -179,5 +189,30 @@ struct TripDraft: Identifiable, Equatable, Hashable, Codable, Sendable {
             return "\(startMonthStr) \(startDay) - \(endDay) \(yearStr)"
         }
         return "\(startMonthStr) \(startDay) - \(endMonthStr) \(endDay) \(endYear == startYear ? yearStr : String(endYear))"
+    }
+}
+
+/// Picks the best trip/blog target for a new capture among candidates with known effective end times.
+enum TripCaptureMatcher {
+    /// Among candidates whose last photo is within 24 h of `capture`, prefer the part whose last photo
+    /// is closest before (or at) the capture; if the capture is after every part, prefer the latest part.
+    static func bestMatch<T>(candidates: [(item: T, end: Date)], captureTimestamp: Date) -> T? {
+        let withinWindow = candidates.filter { captureTimestamp.timeIntervalSince($0.end) <= 86400 }
+        guard !withinWindow.isEmpty else { return nil }
+        let endedBeforeOrAtCapture = withinWindow.filter { $0.end <= captureTimestamp }
+        if let best = endedBeforeOrAtCapture.max(by: { $0.end < $1.end }) {
+            return best.item
+        }
+        return withinWindow.max(by: { $0.end < $1.end })?.item
+    }
+
+    /// Same chronological rule without the 24 h window (caller already filtered related trips).
+    static func bestRelatedMatch<T>(candidates: [(item: T, end: Date)], captureTimestamp: Date) -> T? {
+        guard !candidates.isEmpty else { return nil }
+        let endedBeforeOrAtCapture = candidates.filter { $0.end <= captureTimestamp }
+        if let best = endedBeforeOrAtCapture.max(by: { $0.end < $1.end }) {
+            return best.item
+        }
+        return candidates.max(by: { $0.end < $1.end })?.item
     }
 }

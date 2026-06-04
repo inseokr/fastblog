@@ -1860,6 +1860,59 @@ final class CreatedRecapBlogStore: ObservableObject {
             .trimmingCharacters(in: .whitespaces)
     }
 
+    /// Latest photo timestamp for a blog/draft, falling back to stored trip end date.
+    func effectiveEndTimestamp(forSourceTripId sourceTripId: UUID) -> Date? {
+        if let detail = blogDetailsBySourceId[sourceTripId] {
+            let photoTs = detail.days.flatMap(\.placeStops).flatMap(\.photos).map(\.timestamp).max()
+            if let photoTs { return photoTs }
+        }
+        if let draft = tripDraftsBySourceId[sourceTripId] {
+            return draft.effectiveEndTimestamp
+        }
+        return recents.first(where: { $0.sourceTripId == sourceTripId })?.tripEndDate
+    }
+
+    /// Best saved blog for an in-app capture when multiple trips match (e.g. split parts or same-day segments).
+    func bestMatchingBlog(forCapture captureTimestamp: Date) -> CreatedRecapBlog? {
+        if let activeId = OnTheGoTripStore.activeBlogId, AuthService.shared.isSignedIn,
+           !hasCreatedBlog(sourceTripId: activeId) {
+            OnTheGoTripStore.markTripAsEnded()
+        }
+
+        var pool = visibleRecents
+        if let activeId = OnTheGoTripStore.activeBlogId,
+           OnTheGoTripStore.isTripStillOngoing(),
+           hasCreatedBlog(sourceTripId: activeId),
+           !pool.contains(where: { $0.sourceTripId == activeId }),
+           let activeBlog = recents.first(where: { $0.sourceTripId == activeId }) {
+            pool.append(activeBlog)
+        }
+
+        var candidates: [(CreatedRecapBlog, Date)] = []
+        for blog in pool {
+            guard let end = effectiveEndTimestamp(forSourceTripId: blog.sourceTripId),
+                  captureTimestamp.timeIntervalSince(end) <= 86400 else { continue }
+            candidates.append((blog, end))
+        }
+
+        let splitBaseTitles = Set(
+            candidates
+                .filter { $0.0.title.contains("(Part ") }
+                .map { Self.titleByStrippingSplitPartSuffix($0.0.title) }
+        )
+        for blog in pool where splitBaseTitles.contains(Self.titleByStrippingSplitPartSuffix(blog.title)) {
+            guard !candidates.contains(where: { $0.0.sourceTripId == blog.sourceTripId }) else { continue }
+            guard let end = effectiveEndTimestamp(forSourceTripId: blog.sourceTripId),
+                  captureTimestamp.timeIntervalSince(end) <= 86400 else { continue }
+            candidates.append((blog, end))
+        }
+
+        return TripCaptureMatcher.bestMatch(
+            candidates: candidates.map { (item: $0.0, end: $0.1) },
+            captureTimestamp: captureTimestamp
+        )
+    }
+
     /// Merges two blogs into one. The `keepId` blog absorbs all days from `absorbId`.
     /// Both IDs are `sourceTripId` values.
     /// - Parameter mergedTitle: When set, updates the kept blog’s title in recaps, detail, and trip draft. Pass `nil` to leave the kept blog’s title unchanged.

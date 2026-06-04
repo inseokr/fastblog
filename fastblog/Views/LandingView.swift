@@ -704,23 +704,10 @@ struct LatestEditsRecapCardButton: View {
     var menuIndicatorKind: BlogMenuIndicatorStore.Kind? = nil
     let action: () -> Void
 
-    @State private var suppressTapForDrag = false
-
     var body: some View {
         CreatedRecapCard(recap: recap, menuIndicatorKind: menuIndicatorKind)
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        if hypot(value.translation.width, value.translation.height) > 10 {
-                            suppressTapForDrag = true
-                        }
-                    }
-                    .onEnded { _ in
-                        if !suppressTapForDrag { action() }
-                        suppressTapForDrag = false
-                    }
-            )
+            .onTapGesture(perform: action)
     }
 }
 

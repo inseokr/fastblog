@@ -245,15 +245,18 @@ final class TripsViewModel: ObservableObject {
 
     /// Returns a camera-created trip draft (coverImageName == "camera.fill") whose last photo
     /// is within 24 hours of the capture date. If the gap exceeds 24 hours, the capture starts a new trip.
+    /// When multiple drafts match (e.g. split parts on the same day), picks chronologically (latest part when continuing).
     func cameraTripDraftMatching(captureDate: Date) -> TripDraft? {
         let drafts = tripDrafts.filter { $0.coverImageName == "camera.fill" }
-        for draft in drafts {
-            guard let draftEnd = draft.latestDate else { continue }
-            // Negative means capture is before draft end (within the draft) — always match.
-            // Positive means capture is after draft end — only match within 24 hours.
-            if captureDate.timeIntervalSince(draftEnd) <= 86400 { return draft }
+        let candidates = drafts.compactMap { draft -> (TripDraft, Date)? in
+            guard let draftEnd = draft.effectiveEndTimestamp else { return nil }
+            guard captureDate.timeIntervalSince(draftEnd) <= 86400 else { return nil }
+            return (draft, draftEnd)
         }
-        return nil
+        return TripCaptureMatcher.bestMatch(
+            candidates: candidates.map { (item: $0.0, end: $0.1) },
+            captureTimestamp: captureDate
+        )
     }
 
     /// Appends photos to an existing camera trip draft. Merges into existing days or adds new days.
@@ -1420,20 +1423,24 @@ final class TripsViewModel: ObservableObject {
         BlogMenuIndicatorStore.shared.noteMomentsAdded(to: blog.sourceTripId)
     }
 
-    /// Picks the single "latest" blog (most likely current trip) by tripEndDate.
+    /// Picks the single "latest" blog (most likely current trip) by effective end timestamp.
     /// We only ever surface new moments for one blog; users can't be on multiple trips at once.
     private func latestBlog(_ blogs: [CreatedRecapBlog]) -> CreatedRecapBlog? {
         blogs.max(by: {
-            let dateA = $0.tripEndDate ?? $0.lastEditedAt ?? $0.createdAt
-            let dateB = $1.tripEndDate ?? $1.lastEditedAt ?? $1.createdAt
+            let dateA = createdRecapStore.effectiveEndTimestamp(forSourceTripId: $0.sourceTripId)
+                ?? $0.tripEndDate ?? $0.lastEditedAt ?? $0.createdAt
+            let dateB = createdRecapStore.effectiveEndTimestamp(forSourceTripId: $1.sourceTripId)
+                ?? $1.tripEndDate ?? $1.lastEditedAt ?? $1.createdAt
             return dateA < dateB
         })
     }
 
-    /// Returns true if `a` is strictly newer than `b` (by tripEndDate).
+    /// Returns true if `a` is strictly newer than `b` (by effective end timestamp).
     private func isBlogNewer(_ a: CreatedRecapBlog, than b: CreatedRecapBlog) -> Bool {
-        let dateA = a.tripEndDate ?? a.lastEditedAt ?? a.createdAt
-        let dateB = b.tripEndDate ?? b.lastEditedAt ?? b.createdAt
+        let dateA = createdRecapStore.effectiveEndTimestamp(forSourceTripId: a.sourceTripId)
+            ?? a.tripEndDate ?? a.lastEditedAt ?? a.createdAt
+        let dateB = createdRecapStore.effectiveEndTimestamp(forSourceTripId: b.sourceTripId)
+            ?? b.tripEndDate ?? b.lastEditedAt ?? b.createdAt
         return dateA > dateB
     }
 
@@ -1478,9 +1485,18 @@ final class TripsViewModel: ObservableObject {
             matches.append(blog)
         }
 
-        guard let best = matches.max(by: {
-            ($0.tripEndDate ?? .distantPast) < ($1.tripEndDate ?? .distantPast)
-        }) else {
+        let captureTs = trip.days.flatMap(\.photos).map(\.timestamp).max()
+            ?? trip.effectiveEndTimestamp
+            ?? tripStart
+        let withEnds = matches.compactMap { blog -> (CreatedRecapBlog, Date)? in
+            guard let end = createdRecapStore.effectiveEndTimestamp(forSourceTripId: blog.sourceTripId)
+                ?? blog.tripEndDate else { return nil }
+            return (blog, end)
+        }
+        guard let best = TripCaptureMatcher.bestRelatedMatch(
+            candidates: withEnds.map { (item: $0.0, end: $0.1) },
+            captureTimestamp: captureTs
+        ) else {
             #if DEBUG
             debugPrint("[Scan] findMatchingSavedBlog: no match found")
             #endif
@@ -1493,13 +1509,27 @@ final class TripsViewModel: ObservableObject {
         return best
     }
 
-    /// Among drafts related to `newTrip`, pick the one with the latest end date (e.g. Part 2 over Part 1 after a split).
+    /// Among drafts related to `newTrip`, pick the one whose last photo best fits the new photos chronologically.
     private func bestRelatedDraftIndex(for newTrip: TripDraft) -> Int? {
-        let related = tripDrafts.enumerated().compactMap { idx, draft -> (idx: Int, end: Date)? in
-            guard areTripsRelated(draft, newTrip), let end = draft.latestDate else { return nil }
-            return (idx, end)
+        let captureTs = newTrip.days.flatMap(\.photos).map(\.timestamp).max()
+            ?? newTrip.effectiveEndTimestamp
+            ?? newTrip.earliestDate
+        guard let captureTs else { return nil }
+
+        let related = tripDrafts.enumerated().compactMap { idx, draft -> (idx: Int, start: Date, end: Date)? in
+            guard areTripsRelated(draft, newTrip), let end = draft.effectiveEndTimestamp else { return nil }
+            let start = draft.days.flatMap(\.photos).map(\.timestamp).min() ?? end
+            return (idx, start, end)
         }
-        return related.max(by: { $0.end < $1.end })?.idx
+        guard !related.isEmpty else { return nil }
+
+        // When a trip is split into parts, the new moment may fall between Part 1's end and Part 2's
+        // end — causing the strict "end <= capture" filter to pick Part 1 even though the moment
+        // belongs in Part 2. Prefer the part whose date range contains the capture timestamp first,
+        // then fall back to the latest-end-before-capture rule.
+        let containing = related.filter { $0.start <= captureTs && captureTs <= $0.end }
+        let pool = containing.isEmpty ? related : containing
+        return pool.max(by: { $0.end < $1.end })?.idx
     }
 
     /// Replaces in-memory drafts with persisted split parts and drops stale pre-split parents.

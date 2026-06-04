@@ -65,6 +65,8 @@ struct MyBlogsProfileView: View {
     @State private var scrollOffset: CGFloat = 0
     /// Scroll offset for country page — used for swipe-down-to-dismiss when at top.
     @State private var countryScrollOffset: CGFloat = 0
+    /// While the user pans Latest Edits sideways, the outer vertical list must not scroll.
+    @State private var latestEditsLocksVerticalScroll = false
     /// Mirrors search field focus while on a country page (Manage → Done in `CountryBlogsView`).
     @State private var countrySearchBarFocused = false
 
@@ -412,6 +414,7 @@ struct MyBlogsProfileView: View {
                             .frame(maxWidth: .infinity)
                         }
                     }
+                    .allowsHitTesting(!latestEditsLocksVerticalScroll)
                 }
             }
             .background(GeometryReader { proxy in
@@ -423,6 +426,7 @@ struct MyBlogsProfileView: View {
         }
         .coordinateSpace(name: "MyBlogsScroll")
         .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in scrollOffset = value }
+        .scrollDisabled(latestEditsLocksVerticalScroll)
         .transition(.opacity)
     }
 
@@ -473,25 +477,26 @@ struct MyBlogsProfileView: View {
                     .font(.headline)
                     .foregroundColor(.white)
 
-                LatestEditsHorizontalScroll(height: CreatedRecapCard.layoutHeight) {
+                LatestEditsNestedHorizontalScroll(
+                    locksParentVerticalScroll: $latestEditsLocksVerticalScroll,
+                    height: CreatedRecapCard.layoutHeight
+                ) {
                     HStack(spacing: 12) {
                         ForEach(Array(recents.prefix(8))) { recap in
-                            Button {
+                            LatestEditsRecapCardButton(
+                                recap: recap,
+                                menuIndicatorKind: menuIndicators.kind(forSourceTripId: recap.sourceTripId)
+                            ) {
                                 openRecapInEditMode = false
                                 openRecapPresentShareYourBlogSheet = false
                                 selectedCreatedRecap = recap
-                            } label: {
-                                CreatedRecapCard(
-                                    recap: recap,
-                                    menuIndicatorKind: menuIndicators.kind(forSourceTripId: recap.sourceTripId)
-                                )
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.bottom, 4)
                 }
             }
+            .zIndex(1)
         }
     }
 
@@ -658,62 +663,38 @@ struct MyBlogsProfileView: View {
 
 // MARK: - Latest Edits horizontal strip (nested in vertical scroll)
 
-/// UIKit horizontal scroller so sideways pans win over the outer SwiftUI vertical list.
-private struct LatestEditsHorizontalScroll<Content: View>: View {
+/// Horizontal Latest Edits inside My Blogs' vertical `ScrollView`.
+/// Locks the parent scroll while the user pans sideways so country cards below don't steal the gesture.
+private struct LatestEditsNestedHorizontalScroll<Content: View>: View {
+    @Binding var locksParentVerticalScroll: Bool
     let height: CGFloat
-    let content: Content
-
-    init(height: CGFloat, @ViewBuilder content: () -> Content) {
-        self.height = height
-        self.content = content()
-    }
+    @ViewBuilder var content: () -> Content
 
     var body: some View {
-        LatestEditsHorizontalScrollUIKit(content: content)
-            .frame(height: height)
-    }
-}
-
-private struct LatestEditsHorizontalScrollUIKit<Content: View>: UIViewRepresentable {
-    let content: Content
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
+        ScrollView(.horizontal, showsIndicators: false) {
+            content()
+        }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .frame(height: height)
+        .clipped()
+        .contentShape(Rectangle())
+        .simultaneousGesture(horizontalDominanceDrag)
     }
 
-    func makeUIView(context: Context) -> UIScrollView {
-        let scrollView = UIScrollView()
-        scrollView.showsHorizontalScrollIndicator = false
-        scrollView.showsVerticalScrollIndicator = false
-        scrollView.alwaysBounceVertical = false
-        scrollView.alwaysBounceHorizontal = true
-        scrollView.isDirectionalLockEnabled = true
-        scrollView.backgroundColor = .clear
-        scrollView.clipsToBounds = true
-
-        let host = UIHostingController(rootView: content)
-        host.view.backgroundColor = .clear
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.addSubview(host.view)
-
-        NSLayoutConstraint.activate([
-            host.view.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
-            host.view.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
-            host.view.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
-            host.view.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
-            host.view.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
-        ])
-
-        context.coordinator.host = host
-        return scrollView
-    }
-
-    func updateUIView(_ scrollView: UIScrollView, context: Context) {
-        context.coordinator.host?.rootView = content
-    }
-
-    final class Coordinator {
-        var host: UIHostingController<Content>?
+    private var horizontalDominanceDrag: some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { value in
+                let dx = abs(value.translation.width)
+                let dy = abs(value.translation.height)
+                if dx > dy + 6, !locksParentVerticalScroll {
+                    locksParentVerticalScroll = true
+                }
+            }
+            .onEnded { _ in
+                if locksParentVerticalScroll {
+                    locksParentVerticalScroll = false
+                }
+            }
     }
 }
 

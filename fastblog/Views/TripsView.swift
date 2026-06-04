@@ -5636,17 +5636,13 @@ extension CameraCaptureView {
             sessionCapturesForDisplay.append(displayMoment)
             photosCapturedThisSession += 1
             injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: forcedId, momentId: displayMoment.id, vibeURL: vibeURL)
-        } else if let activeSourceTripId = activeBlogIdIfCapturedImageHandled(image, at: timestamp) {
-            sessionSourceTripId = activeSourceTripId
-            sessionCapturesForDisplay.append(displayMoment)
-            photosCapturedThisSession += 1
-            injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: activeSourceTripId, momentId: displayMoment.id, vibeURL: vibeURL)
-        } else if let matchedBlog = blogMatchingCaptureDate(timestamp) {
+        } else if let matchedBlog = createdRecapStore.bestMatchingBlog(forCapture: timestamp) {
             sessionSourceTripId = matchedBlog.sourceTripId
             sessionCapturesForDisplay.append(displayMoment)
             photosCapturedThisSession += 1
             injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: matchedBlog.sourceTripId, momentId: displayMoment.id, vibeURL: vibeURL)
-            if let endDate = matchedBlog.tripEndDate,
+            if let endDate = createdRecapStore.effectiveEndTimestamp(forSourceTripId: matchedBlog.sourceTripId)
+                ?? matchedBlog.tripEndDate,
                (Calendar.current.dateComponents([.day], from: endDate, to: Date()).day ?? Int.max) <= 14 {
                 OnTheGoTripStore.markTripAsActive(blogId: matchedBlog.sourceTripId, title: matchedBlog.title, tripEndDate: endDate, country: matchedBlog.countryName)
             }
@@ -5736,43 +5732,6 @@ extension CameraCaptureView {
         PHPhotoLibrary.shared().performChanges {
             _ = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: videoURL)
         }
-    }
-
-    /// Returns the active blog's sourceTripId if capture should be routed there; nil otherwise.
-    /// If the user removed that blog, we clear on-the-go state and return nil so the next capture starts a new blog (and shows "Blog has started" prompt).
-    private func activeBlogIdIfCapturedImageHandled(_ image: UIImage?, at timestamp: Date) -> UUID? {
-        guard image != nil else { return nil }
-        guard let activeSourceTripId = OnTheGoTripStore.activeBlogId,
-              OnTheGoTripStore.isTripStillOngoing() else {
-            return nil
-        }
-        // Only permanently clear the on-the-go state when the user is signed in and the blog
-        // genuinely no longer exists. While logged out, account blogs are hidden in visibleRecents
-        // even though they still exist on disk — clearing state here would lose the active blog
-        // association across logout/login cycles.
-        if AuthService.shared.isSignedIn {
-            if !createdRecapStore.hasCreatedBlog(sourceTripId: activeSourceTripId) {
-                OnTheGoTripStore.markTripAsEnded()
-                return nil
-            }
-        } else {
-            guard createdRecapStore.hasCreatedBlog(sourceTripId: activeSourceTripId) else {
-                return nil
-            }
-        }
-        return activeSourceTripId
-    }
-
-    /// Finds a created blog whose end date is within 24 hours of (or after) the capture timestamp.
-    /// If the capture is more than 24 hours past the blog's end, it is treated as a new trip.
-    private func blogMatchingCaptureDate(_ captureTimestamp: Date) -> CreatedRecapBlog? {
-        for blog in createdRecapStore.visibleRecents {
-            guard let blogEnd = blog.tripEndDate else { continue }
-            // Negative values mean capture is before blog end (within the trip) — always match.
-            // Positive values mean capture is after blog end — only match within 24 hours.
-            if captureTimestamp.timeIntervalSince(blogEnd) <= 86400 { return blog }
-        }
-        return nil
     }
 
     /// Injects an already-persisted app capture into the blog (no second save). Updates the moment's injectedPhotoId when done so removal from modal can remove from blog.
