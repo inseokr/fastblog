@@ -52,6 +52,11 @@ enum HomeChromeMetrics {
     static func cameraCaptureControlsBottomInset(isCompactHeight: Bool) -> CGFloat {
         isCompactHeight ? 138 : 156
     }
+
+    /// Bottom search field typography (My Blogs + My Places).
+    /// Subheadline fits the longest placeholder without UIKit auto-shrinking shorter strings to a larger size.
+    static let homeSearchFieldFont: Font = .subheadline
+    static let homeSearchPlaceholderColor = Color.white.opacity(0.7)
 }
 
 // MARK: - My Blogs / My Places bottom search + map (shared sizing)
@@ -77,7 +82,7 @@ struct HomeTabMapFloatingButton: View {
     }
 }
 
-/// Shared search row for My Blogs / My Places — body text + white field styling.
+/// Shared search row for My Blogs / My Places — subheadline text + white field styling.
 struct HomeTabSearchFieldRow<Trailing: View>: View {
     let placeholder: String
     @Binding var text: String
@@ -87,13 +92,25 @@ struct HomeTabSearchFieldRow<Trailing: View>: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
-                .font(.body)
-                .foregroundStyle(.white.opacity(0.7))
-            TextField(placeholder, text: $text)
-                .font(.body)
-                .foregroundStyle(.white)
-                .autocorrectionDisabled()
-                .focused(focus)
+                .font(HomeChromeMetrics.homeSearchFieldFont)
+                .foregroundStyle(HomeChromeMetrics.homeSearchPlaceholderColor)
+            ZStack(alignment: .leading) {
+                // Overlay placeholder — UITextField `prompt:` auto-shrinks long strings but not short ones,
+                // so "Search city or blog title" looked larger than "Search place, city, or country".
+                if text.isEmpty {
+                    Text(placeholder)
+                        .font(HomeChromeMetrics.homeSearchFieldFont)
+                        .foregroundStyle(HomeChromeMetrics.homeSearchPlaceholderColor)
+                        .lineLimit(1)
+                        .allowsHitTesting(false)
+                }
+                TextField("", text: $text)
+                    .font(HomeChromeMetrics.homeSearchFieldFont)
+                    .foregroundStyle(.white)
+                    .autocorrectionDisabled()
+                    .focused(focus)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             trailing()
         }
     }

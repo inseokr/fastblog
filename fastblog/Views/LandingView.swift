@@ -452,9 +452,7 @@ struct LandingView: View {
                     }
                     .padding(.bottom, 8)
                 }
-                .contentMargins(.horizontal, 20, for: .scrollContent)
                 .frame(height: CreatedRecapCard.layoutHeight)
-                .clipped()
                 .overlay(alignment: .trailing) {
                     if hasMoreLatestEdits {
                         LinearGradient(
@@ -700,28 +698,15 @@ struct CreatedRecapCard: View {
     }
 }
 
-/// Latest Edits card — opens the blog only when the touch wasn't a scroll drag.
+/// Latest Edits card — tappable inside a horizontal ScrollView.
 struct LatestEditsRecapCardButton: View {
     let recap: CreatedRecapBlog
     var menuIndicatorKind: BlogMenuIndicatorStore.Kind? = nil
     let action: () -> Void
 
-    @State private var suppressTapForDrag = false
-
     var body: some View {
         CreatedRecapCard(recap: recap, menuIndicatorKind: menuIndicatorKind)
-            .contentShape(RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        let distance = hypot(value.translation.width, value.translation.height)
-                        if distance > 10 { suppressTapForDrag = true }
-                    }
-                    .onEnded { _ in
-                        if !suppressTapForDrag { action() }
-                        suppressTapForDrag = false
-                    }
-            )
+            .onTapGesture(perform: action)
     }
 }
 

@@ -561,7 +561,7 @@ struct PlacesVisitedView: View {
                     searchText = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.body)
+                        .font(HomeChromeMetrics.homeSearchFieldFont)
                         .foregroundStyle(.white.opacity(0.5))
                 }
                 .buttonStyle(.plain)
@@ -1265,11 +1265,23 @@ private struct PlacesVisitedMapView: View {
                     // Search bar under header
                     HStack(spacing: 12) {
                         Image(systemName: "magnifyingglass")
+                            .font(HomeChromeMetrics.homeSearchFieldFont)
                             .foregroundColor(.white.opacity(0.7))
-                        TextField("Search place, city, or country", text: $searchText)
-                            .foregroundColor(.white)
-                            .autocorrectionDisabled()
-                            .focused($isSearchFocused)
+                        ZStack(alignment: .leading) {
+                            if searchText.isEmpty {
+                                Text("Search place, city, or country")
+                                    .font(HomeChromeMetrics.homeSearchFieldFont)
+                                    .foregroundStyle(HomeChromeMetrics.homeSearchPlaceholderColor)
+                                    .lineLimit(1)
+                                    .allowsHitTesting(false)
+                            }
+                            TextField("", text: $searchText)
+                                .font(HomeChromeMetrics.homeSearchFieldFont)
+                                .foregroundColor(.white)
+                                .autocorrectionDisabled()
+                                .focused($isSearchFocused)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                         if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Button {

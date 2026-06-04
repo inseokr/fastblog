@@ -2923,6 +2923,20 @@ struct CameraCaptureView: View {
 
     private var isReelCaptureMode: Bool { captureMode == .reel }
 
+    /// Mic / `AVAudioSession` only for Vibe ambient capture or Reel video — not plain Photo mode.
+    private var isCameraAudioCaptureEnabled: Bool { isVibeCaptureEnabled || isReelCaptureMode }
+
+    private func syncInAppCameraAudioSession() {
+        guard isCameraAudioCaptureEnabled else {
+            InAppCameraAudioSession.deactivateAfterCamera()
+            return
+        }
+        InAppCameraAudioSession.activateForCamera(forVideoRecording: isReelCaptureMode)
+        if isReelCaptureMode {
+            cameraController.prepareMomentVideoAudioCapture()
+        }
+    }
+
     private func migrateLegacyCaptureModeIfNeeded() {
         guard UserDefaults.standard.object(forKey: "bloggo.camera.captureMode") == nil else { return }
         if UserDefaults.standard.bool(forKey: "bloggo.camera.momentVideoEnabled") {
@@ -2945,11 +2959,8 @@ struct CameraCaptureView: View {
         } else {
             vibeRecorder.cancelAndDelete()
         }
-        InAppCameraAudioSession.activateForCamera(forVideoRecording: mode == .reel)
-        if mode == .reel {
-            cameraController.prepareMomentVideoAudioCapture()
-        }
         captureModeRaw = mode.rawValue
+        syncInAppCameraAudioSession()
     }
 
     private func thumbnailImage(fromVideoAt url: URL) -> UIImage? {
@@ -3076,6 +3087,7 @@ struct CameraCaptureView: View {
         previewVoiceMemoPlayer.stop()
         showMomentVideoPreview = false
         cameraController.startRunning()
+        syncInAppCameraAudioSession()
 
         previewChromeHasVibe = false
         previewChromeHasMomentVideo = false
@@ -4450,8 +4462,6 @@ struct CameraCaptureView: View {
     private var inAppCameraWithLifecycleHooks: some View {
         inAppCameraChromeRoot
             .onAppear {
-            // Pause music/podcasts from other apps so they don't clash with Vibe capture.
-            InAppCameraAudioSession.activateForCamera(forVideoRecording: isReelCaptureMode)
             // Fresh session each time camera is opened.
             cameraSessionId = UUID()
             sessionMoments = []
@@ -4465,9 +4475,7 @@ struct CameraCaptureView: View {
             pendingBlogStartedAlert = false
             lastCaptureWasVibe = false
             migrateLegacyCaptureModeIfNeeded()
-            if isReelCaptureMode {
-                cameraController.prepareMomentVideoAudioCapture()
-            }
+            syncInAppCameraAudioSession()
             if isVibeCaptureEnabled { vibeRecorder.start() }
             isCaptionModeActive = false
             captionModeMomentId = nil
@@ -4712,10 +4720,7 @@ struct CameraCaptureView: View {
             if show { nearHomeDoNotShowAgain = false }
             }
             .onChange(of: captureModeRaw) { _, _ in
-            InAppCameraAudioSession.activateForCamera(forVideoRecording: isReelCaptureMode)
-            if isReelCaptureMode {
-                cameraController.prepareMomentVideoAudioCapture()
-            }
+            syncInAppCameraAudioSession()
             if isVibeCaptureEnabled && !hasSeenVibeTooltip {
                 showVibeTooltip = true
             }
@@ -4778,7 +4783,7 @@ struct CameraCaptureView: View {
            let url = resolvedMomentVideoURL(for: moment) {
             MomentVideoFullScreenPlayer(url: url) {
                 showMomentVideoPreview = false
-                InAppCameraAudioSession.activateForCamera(forVideoRecording: isReelCaptureMode)
+                syncInAppCameraAudioSession()
             }
         }
     }

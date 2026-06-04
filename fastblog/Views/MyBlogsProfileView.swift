@@ -15,6 +15,8 @@ private enum MyBlogsPage: Equatable {
 
 private let cardSpacing: CGFloat = 16
 private let horizontalPadding: CGFloat = 20
+/// Gap between Latest Edits strip and country cards — keeps gestures from overlapping.
+private let latestEditsCountryGap: CGFloat = 28
 
 private struct MyBlogsScrollOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
@@ -62,8 +64,6 @@ struct MyBlogsProfileView: View {
     @State private var scrollOffset: CGFloat = 0
     /// Scroll offset for country page — used for swipe-down-to-dismiss when at top.
     @State private var countryScrollOffset: CGFloat = 0
-    /// While the user pans Latest Edits sideways, the outer vertical list must not scroll.
-    @State private var latestEditsLocksVerticalScroll = false
     /// Mirrors search field focus while on a country page (Manage → Done in `CountryBlogsView`).
     @State private var countrySearchBarFocused = false
 
@@ -386,7 +386,7 @@ struct MyBlogsProfileView: View {
                     tapToBlogBanner
                         .padding(.bottom, 10)
                     latestEditsSection
-                        .padding(.bottom, 6)
+                        .padding(.bottom, latestEditsCountryGap)
                 }
                 if false && !isSearchActive && !viewModel.unsavedTrips.isEmpty {
                     unsavedTripsSection
@@ -411,7 +411,6 @@ struct MyBlogsProfileView: View {
                             .frame(maxWidth: .infinity)
                         }
                     }
-                    .allowsHitTesting(!latestEditsLocksVerticalScroll)
                 }
             }
             .background(GeometryReader { proxy in
@@ -423,7 +422,6 @@ struct MyBlogsProfileView: View {
         }
         .coordinateSpace(name: "MyBlogsScroll")
         .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in scrollOffset = value }
-        .scrollDisabled(latestEditsLocksVerticalScroll)
         .transition(.opacity)
     }
 
@@ -474,27 +472,20 @@ struct MyBlogsProfileView: View {
                     .font(.headline)
                     .foregroundColor(.white)
 
-                LatestEditsNestedHorizontalScroll(
-                    locksParentVerticalScroll: $latestEditsLocksVerticalScroll,
-                    height: CreatedRecapCard.layoutHeight
-                ) {
+                ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(Array(recents.prefix(8))) { recap in
-                            Button {
+                            LatestEditsRecapCardButton(
+                                recap: recap,
+                                menuIndicatorKind: menuIndicators.kind(forSourceTripId: recap.sourceTripId)
+                            ) {
                                 openRecapInEditMode = false
                                 openRecapPresentShareYourBlogSheet = false
                                 selectedCreatedRecap = recap
-                            } label: {
-                                CreatedRecapCard(
-                                    recap: recap,
-                                    menuIndicatorKind: menuIndicators.kind(forSourceTripId: recap.sourceTripId)
-                                )
                             }
-                            .buttonStyle(.plain)
                         }
                     }
-                    .padding(.bottom, 8)
-                    .scrollTargetLayout()
+                    .padding(.bottom, 4)
                 }
             }
         }
@@ -521,7 +512,7 @@ struct MyBlogsProfileView: View {
             text: $sharedSearchText,
             focus: $isSearchFocused
         ) {
-            if isSearchActive {
+            if !sharedSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button {
                     sharedSearchText = ""
                     isSearchFocused = false
@@ -530,7 +521,7 @@ struct MyBlogsProfileView: View {
                     }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.body)
+                        .font(HomeChromeMetrics.homeSearchFieldFont)
                         .foregroundStyle(.white.opacity(0.5))
                 }
                 .buttonStyle(.plain)
@@ -659,41 +650,6 @@ struct MyBlogsProfileView: View {
         .padding(.vertical, 48)
     }
 
-}
-
-// MARK: - Latest Edits horizontal strip (nested in vertical scroll)
-
-/// Horizontal Latest Edits inside My Blogs' vertical `ScrollView`.
-/// Locks the parent scroll while the user pans sideways so country cards below don't steal the gesture.
-private struct LatestEditsNestedHorizontalScroll<Content: View>: View {
-    @Binding var locksParentVerticalScroll: Bool
-    let height: CGFloat
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            content()
-        }
-        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-        .frame(height: height)
-        .clipped()
-        .contentShape(Rectangle())
-        .simultaneousGesture(horizontalDominanceDrag)
-    }
-
-    private var horizontalDominanceDrag: some Gesture {
-        DragGesture(minimumDistance: 6)
-            .onChanged { value in
-                let dx = abs(value.translation.width)
-                let dy = abs(value.translation.height)
-                if dx > dy + 6 {
-                    locksParentVerticalScroll = true
-                }
-            }
-            .onEnded { _ in
-                locksParentVerticalScroll = false
-            }
-    }
 }
 
 // MARK: - Recent Blog Card (horizontal scroll item)
