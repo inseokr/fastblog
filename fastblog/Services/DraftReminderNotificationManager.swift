@@ -64,14 +64,7 @@ enum DraftReminderNotificationManager {
 
         case .notDetermined:
             UserDefaults.standard.removeObject(forKey: notificationsGrantedPreLoginKey)
-            print("[Push] Permission not determined — requesting authorization now")
-            // Permission not yet requested (or reset). Ask once more now that an account exists.
-            let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
-            print("[Push] Authorization prompt result — granted: \(granted)")
-            if granted {
-                print("[Push] Calling registerForRemoteNotifications() after prompt")
-                await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }
-            }
+            print("[Push] Permission not determined — deferring prompt until user opts in")
             return false
 
         default:

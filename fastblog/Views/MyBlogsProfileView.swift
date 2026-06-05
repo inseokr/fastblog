@@ -29,6 +29,7 @@ private struct MyBlogsScrollOffsetKey: PreferenceKey {
 struct MyBlogsProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialDayIndexForRecap: Int?
     /// Passed to `CountryBlogsView` for kebab "Edit Blog"; consumed by root `RecapBlogPageView` as `forceEditMode`.
@@ -272,6 +273,9 @@ struct MyBlogsProfileView: View {
             reportTopScrollState()
             let validIds = Set(createdRecapStore.visibleRecents.map(\.sourceTripId))
             menuIndicators.pruneInvalidBlogs(validSourceTripIds: validIds)
+        }
+        .onChange(of: photoAuth.status) { _, _ in
+            viewModel.loadUnsavedTrips()
         }
         .onChange(of: selectedCreatedRecap?.sourceTripId) { _, sourceTripId in
             if let sourceTripId {

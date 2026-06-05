@@ -247,7 +247,7 @@ struct NeighborhoodSearchView: View {
         }
         .navigationBarHidden(true)
         .onAppear {
-            locationManager.requestLocation()
+            locationManager.refreshAuthorizationStatus()
 
             searchHelper.onRegionSelected = { region, name in
                 if let name = name {
@@ -283,7 +283,7 @@ struct NeighborhoodSearchView: View {
                 span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
             )
         } else {
-            locationManager.requestLocation()
+            locationManager.requestLocationWhenUserInitiated()
         }
         showMap = true
     }

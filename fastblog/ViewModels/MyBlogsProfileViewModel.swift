@@ -8,6 +8,7 @@
 
 import Combine
 import Foundation
+import Photos
 import SwiftUI
 
 /// UI-facing section: one card per country with latest cover and last blog date.
@@ -73,8 +74,12 @@ final class MyBlogsProfileViewModel: ObservableObject {
 
     func loadUnsavedTrips() {
         guard !isScanning else { return }
+        guard PhotosAuthorizationManager.hasPhotoLibraryReadAccess else {
+            unsavedTrips = []
+            return
+        }
         isScanning = true
-        
+
         Task {
             // We pass an empty array of occupied ranges to get ALL detected trips in the last 90 days.
             // We then filter them ourselves using the strict matching service against the store.

@@ -157,20 +157,12 @@ struct fastblogApp: App {
                     if case .loggedIn(let userId) = newState {
                         createdRecapStore.importAnonymousDrafts(into: userId)
                         authStateManager.checkAndPromptImportIfNeeded()
-                        // Register any pending APNs token now that the user has an account.
-                        Task {
-                            let isDenied = await DraftReminderNotificationManager.handlePostLoginSetup()
-                            if isDenied { showPushPermissionPrompt = true }
-                        }
+                        Task { await DraftReminderNotificationManager.handlePostLoginSetup() }
                     }
                 }
-                // If the user was already logged in, finishing onboarding does not change authState — still register for push.
                 .onChange(of: hasCompletedOnboarding) { _, completed in
                     guard completed, authStateManager.isLoggedIn else { return }
-                    Task {
-                        let isDenied = await DraftReminderNotificationManager.handlePostLoginSetup()
-                        if isDenied { showPushPermissionPrompt = true }
-                    }
+                    Task { await DraftReminderNotificationManager.handlePostLoginSetup() }
                 }
                 .sheet(isPresented: $showPushPermissionPrompt) {
                     PushPermissionPromptView(isPresented: $showPushPermissionPrompt)
@@ -201,23 +193,11 @@ struct fastblogApp: App {
                 Group {
                     if !hasCompletedOnboarding {
                         OnboardingFlowView {
-                            // Refresh auth FIRST so photoAuth.isAuthorized is
-                            // already true when hasCompletedOnboarding triggers
-                            // the view transition to ContentView.
-                            photoAuth.refreshStatus()
                             hasCompletedOnboarding = true
                             justFinishedOnboarding = true
                         }
-                    } else if photoAuth.isAuthorized || hasSkippedPhotoPermission {
-                        ContentView()
                     } else {
-                        PhotosPermissionView(
-                            status: photoAuth.status,
-                            onOpenSettings: { openSettings() },
-                            onContinueWithoutScanning: {
-                                hasSkippedPhotoPermission = true
-                            }
-                        )
+                        ContentView()
                     }
                 }
                 .opacity(splashManager.phase == .splash ? 0 : 1)

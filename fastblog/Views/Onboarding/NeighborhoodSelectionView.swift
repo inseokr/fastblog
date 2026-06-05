@@ -91,7 +91,7 @@ struct NeighborhoodSelectionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .onAppear {
-            locationManager.requestLocation()
+            locationManager.refreshAuthorizationStatus()
             searchHelper.onRegionSelected = { region, name in
                 isFocused = false
                 searchHelper.suggestions = []
@@ -344,7 +344,7 @@ struct NeighborhoodSelectionView: View {
                     )
                 )
             } else {
-                locationManager.requestLocation()
+                locationManager.requestLocationWhenUserInitiated()
             }
         } label: {
             HStack(spacing: 16) {

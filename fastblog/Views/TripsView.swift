@@ -1716,10 +1716,25 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     /// True while recording the post-shutter moment video clip.
     @Published private(set) var isRecordingMomentVideo = false
 
+    private var hasStartedSessionSetup = false
+    private var pendingLocationCaptureCompletion: (() -> Void)?
+
     override init() {
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .denied, .restricted:
+            authorizationDenied = true
+        default:
+            break
+        }
+    }
+
+    /// Requests camera access and configures the session when the user opens the in-app camera.
+    func prepareSessionIfNeeded() {
+        guard !hasStartedSessionSetup else { return }
+        hasStartedSessionSetup = true
         configureSession()
     }
 
@@ -1974,6 +1989,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     }
 
     func startRunning() {
+        prepareSessionIfNeeded()
         sessionQueue.async {
             guard self.isConfigured else { return }
             if !self.session.isRunning {
@@ -1996,8 +2012,21 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         let status = locationManager.authorizationStatus
         if status == .authorizedWhenInUse || status == .authorizedAlways {
             locationManager.startUpdatingLocation()
-        } else if status == .notDetermined {
+        }
+    }
+
+    /// Requests location access when the user takes a photo, if not already granted.
+    func ensureLocationForCapture(completion: @escaping () -> Void) {
+        let status = locationManager.authorizationStatus
+        switch status {
+        case .authorizedWhenInUse, .authorizedAlways:
+            locationManager.startUpdatingLocation()
+            completion()
+        case .notDetermined:
+            pendingLocationCaptureCompletion = completion
             locationManager.requestWhenInUseAuthorization()
+        default:
+            completion()
         }
     }
 
@@ -2422,8 +2451,18 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
 extension CameraController: CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
+        let status = manager.authorizationStatus
+        if status == .authorizedWhenInUse || status == .authorizedAlways {
             manager.startUpdatingLocation()
+            if let pending = pendingLocationCaptureCompletion {
+                pendingLocationCaptureCompletion = nil
+                DispatchQueue.main.async { pending() }
+            }
+        } else if status == .denied || status == .restricted {
+            if let pending = pendingLocationCaptureCompletion {
+                pendingLocationCaptureCompletion = nil
+                DispatchQueue.main.async { pending() }
+            }
         }
     }
 
@@ -2809,6 +2848,8 @@ struct CameraCaptureView: View {
     var onNavMyPlaces: (() -> Void)? = nil
     /// Home camera in `ContentView`: immersive until the user taps the back chevron (parent owns the tab bar).
     var homeBottomNavRevealed: Binding<Bool>? = nil
+    /// When false, the camera session stays idle (avoids permission prompts on other tabs).
+    var isTabActive: Bool = true
 
     @StateObject private var cameraController = CameraController()
 
@@ -2953,8 +2994,9 @@ struct CameraCaptureView: View {
             cameraController.releaseMomentVideoCaptureConfiguration()
         }
         if mode == .vibe {
-            // Always record ambient audio in Vibe mode; preview playback stays manual-only.
-            vibeRecorder.start()
+            if hasSeenVibeTooltip {
+                vibeRecorder.start()
+            }
             AppAnalytics.track(.appInAppCameraVibeON)
         } else {
             vibeRecorder.cancelAndDelete()
@@ -4462,47 +4504,22 @@ struct CameraCaptureView: View {
     private var inAppCameraWithLifecycleHooks: some View {
         inAppCameraChromeRoot
             .onAppear {
-            // Fresh session each time camera is opened.
-            cameraSessionId = UUID()
-            sessionMoments = []
-            sessionCapturesForDisplay = []
-            photosCapturedThisSession = 0
-            attachedCountThisSession = 0
-            sessionTripTitle = nil
-            sessionSourceTripId = nil
-            sessionDraftTripId = nil
-            hasOfferedStartBlogThisSession = false
-            pendingBlogStartedAlert = false
-            lastCaptureWasVibe = false
-            migrateLegacyCaptureModeIfNeeded()
-            syncInAppCameraAudioSession()
-            if isVibeCaptureEnabled { vibeRecorder.start() }
-            isCaptionModeActive = false
-            captionModeMomentId = nil
-            captionModeFrozenImage = nil
-            captionModeWantsKeyboard = false
-            loadLatestGalleryThumbnail()
-            if cameraController.isConfigured {
-                cameraController.startRunning()
-                presentCameraTooltipIfNeeded()
+            guard isTabActive else { return }
+            activateCameraIfNeeded()
             }
-            // Kick off the waveform icon pulse loop
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
-                    vibePulse = true
-                }
-                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-                    addNotePulse = true
-                }
+            .onChange(of: isTabActive) { _, active in
+            if active {
+                activateCameraIfNeeded()
+            } else {
+                cameraController.stopRunning()
             }
             }
             .onChange(of: cameraController.isConfigured) { _, configured in
-            if configured {
-                cameraController.startRunning()
-                zoomBaseScale = cameraController.displayZoomFactor
-                if isVibeCaptureEnabled { vibeRecorder.start() }
-                presentCameraTooltipIfNeeded()
-            }
+            guard isTabActive, configured else { return }
+            cameraController.startRunning()
+            zoomBaseScale = cameraController.displayZoomFactor
+            if isVibeCaptureEnabled, hasSeenVibeTooltip { vibeRecorder.start() }
+            presentCameraTooltipIfNeeded()
             }
             .onChange(of: cameraController.position) { _, _ in
                 zoomBaseScale = cameraController.displayZoomFactor
@@ -4794,6 +4811,43 @@ struct CameraCaptureView: View {
     }
 
     @MainActor
+    private func activateCameraIfNeeded() {
+        cameraSessionId = UUID()
+        sessionMoments = []
+        sessionCapturesForDisplay = []
+        photosCapturedThisSession = 0
+        attachedCountThisSession = 0
+        sessionTripTitle = nil
+        sessionSourceTripId = nil
+        sessionDraftTripId = nil
+        hasOfferedStartBlogThisSession = false
+        pendingBlogStartedAlert = false
+        lastCaptureWasVibe = false
+        migrateLegacyCaptureModeIfNeeded()
+        syncInAppCameraAudioSession()
+        isCaptionModeActive = false
+        captionModeMomentId = nil
+        captionModeFrozenImage = nil
+        captionModeWantsKeyboard = false
+        loadLatestGalleryThumbnail()
+        cameraController.prepareSessionIfNeeded()
+        if cameraController.isConfigured {
+            cameraController.startRunning()
+            presentCameraTooltipIfNeeded()
+        }
+        if isVibeCaptureEnabled, hasSeenVibeTooltip {
+            vibeRecorder.start()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                vibePulse = true
+            }
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                addNotePulse = true
+            }
+        }
+    }
+
     private func presentCameraTooltipIfNeeded() {
         guard !hasSeenCameraTooltip, !showCameraTooltip, cameraController.isConfigured else { return }
         pendingCameraTooltipTask?.cancel()
@@ -5357,6 +5411,13 @@ struct CameraCaptureView: View {
     }
 
     private func performPhotoCapture() {
+        guard !cameraController.isRecordingMomentVideo else { return }
+        cameraController.ensureLocationForCapture {
+            executePhotoCapture()
+        }
+    }
+
+    private func executePhotoCapture() {
         guard !cameraController.isRecordingMomentVideo else { return }
         flashOpacity = 1
         withAnimation(.easeOut(duration: 0.2)) {

@@ -19,7 +19,13 @@ final class LocationManagerForOnboarding: NSObject, ObservableObject {
         manager.desiredAccuracy = kCLLocationAccuracyKilometer
     }
 
-    func requestLocation() {
+    /// Reads the current authorization status without prompting.
+    func refreshAuthorizationStatus() {
+        authorizationStatus = manager.authorizationStatus
+    }
+
+    /// Requests location permission only when the user taps "Use Current Location".
+    func requestLocationWhenUserInitiated() {
         let status = manager.authorizationStatus
         authorizationStatus = status
         if status == .authorizedWhenInUse || status == .authorizedAlways {

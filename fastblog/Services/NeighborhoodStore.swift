@@ -48,6 +48,11 @@ enum NeighborhoodStore {
         return CLLocation(latitude: lat, longitude: lon)
     }
 
+    /// True once the user has chosen a home reference point for trip scanning.
+    static var hasHomeConfigured: Bool {
+        getNeighborhoodCenter() != nil
+    }
+
     /// Saves the neighborhood center (e.g. from onboarding). Pass nil to clear. Next scan uses a new cache key so results are fresh.
     static func saveCenter(_ coordinate: CLLocationCoordinate2D?) {
         if let c = coordinate {

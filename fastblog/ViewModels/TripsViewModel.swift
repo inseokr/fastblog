@@ -828,6 +828,7 @@ final class TripsViewModel: ObservableObject {
         // `addCameraTripDraft` leaves drafts in memory — we still need a library scan on return
         // so camera-roll trips merge in without requiring an app restart.
         guard scanState == .idle else { return }
+        guard Self.shouldAutoScanOnAppear else { return }
         if createdRecapStore.isLoading {
             // Wait for store to load before scanning so occupiedDateRanges is accurate
             createdRecapStore.$isLoading
@@ -840,6 +841,18 @@ final class TripsViewModel: ObservableObject {
                 .store(in: &cancellables)
         } else {
             startDefaultScan()
+        }
+    }
+
+    /// Skip background scan when home isn't set, or when the user has no Bloggo captures and has not granted camera-roll access.
+    private static var shouldAutoScanOnAppear: Bool {
+        guard NeighborhoodStore.hasHomeConfigured else { return false }
+        if PhotosAuthorizationManager.hasBloggoGalleryPhotos { return true }
+        switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
+        case .authorized, .limited:
+            return true
+        default:
+            return false
         }
     }
 

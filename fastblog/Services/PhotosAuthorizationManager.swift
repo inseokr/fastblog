@@ -49,6 +49,36 @@ final class PhotosAuthorizationManager: ObservableObject {
         }
     }
 
+    /// True when reading the camera roll won't trigger the system permission sheet.
+    static var hasPhotoLibraryReadAccess: Bool {
+        switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
+        case .authorized, .limited:
+            return true
+        case .notDetermined, .denied, .restricted:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    /// True when the user has saved in-app camera captures in Bloggo's gallery.
+    static var hasBloggoGalleryPhotos: Bool {
+        !AppCapturePhotoService.shared.allCaptureIds().isEmpty
+    }
+
+    /// Trip scan from the camera roll needs a library prompt when there are no Bloggo captures and no library access yet.
+    var needsPhotoLibraryPromptForScan: Bool {
+        guard !Self.hasBloggoGalleryPhotos else { return false }
+        switch status {
+        case .authorized, .limited:
+            return false
+        case .notDetermined, .denied, .restricted:
+            return true
+        @unknown default:
+            return true
+        }
+    }
+
     /// User-facing label for the current photo library authorization status.
     var statusDisplayString: String {
         switch status {

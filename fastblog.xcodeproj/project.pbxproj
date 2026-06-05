@@ -220,6 +220,9 @@
 		BB00030C /* BlogVideoPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00030D /* BlogVideoPreviewView.swift */; };
 		BB000310 /* CinematicTravelSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000311 /* CinematicTravelSegment.swift */; };
 		BB000312 /* MomentVideoFullScreenPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000313 /* MomentVideoFullScreenPlayer.swift */; };
+		BB000314 /* PostOnboardingWelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000315 /* PostOnboardingWelcomeView.swift */; };
+		BB000316 /* ScanPhotoAccessSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000317 /* ScanPhotoAccessSheet.swift */; };
+		BB000318 /* TripScanSetupFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000319 /* TripScanSetupFlowView.swift */; };
 		BB000340 /* BlogCarouselExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000341 /* BlogCarouselExportService.swift */; };
 		BB000343 /* MomentVideoPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000342 /* MomentVideoPreferences.swift */; };
 		BB000345 /* BlogReelAutoplayCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000344 /* BlogReelAutoplayCoordinator.swift */; };
@@ -496,6 +499,9 @@
 		BB00030D /* BlogVideoPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoPreviewView.swift; path = StoryBook/BlogVideoPreviewView.swift; sourceTree = "<group>"; };
 		BB000311 /* CinematicTravelSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicTravelSegment.swift; sourceTree = "<group>"; };
 		BB000313 /* MomentVideoFullScreenPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoFullScreenPlayer.swift; sourceTree = "<group>"; };
+		BB000315 /* PostOnboardingWelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostOnboardingWelcomeView.swift; sourceTree = "<group>"; };
+		BB000317 /* ScanPhotoAccessSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanPhotoAccessSheet.swift; sourceTree = "<group>"; };
+		BB000319 /* TripScanSetupFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripScanSetupFlowView.swift; sourceTree = "<group>"; };
 		BB000341 /* BlogCarouselExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogCarouselExportService.swift; sourceTree = "<group>"; };
 		BB000342 /* MomentVideoPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoPreferences.swift; sourceTree = "<group>"; };
 		BB000344 /* BlogReelAutoplayCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogReelAutoplayCoordinator.swift; sourceTree = "<group>"; };
@@ -819,6 +825,9 @@
 				BB00017B /* OnboardingState.swift */,
 				BB00017D /* SplashView.swift */,
 				3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */,
+				BB000315 /* PostOnboardingWelcomeView.swift */,
+				BB000317 /* ScanPhotoAccessSheet.swift */,
+				BB000319 /* TripScanSetupFlowView.swift */,
 				BB000308 /* TripDistanceFromHomeOnboardingView.swift */,
 			);
 			path = Onboarding;
@@ -1192,6 +1201,9 @@
 				BB0001C0 /* PlaceSearchViewModel.swift in Sources */,
 				BB000306 /* AtmosphericWaveformView.swift in Sources */,
 				BB000312 /* MomentVideoFullScreenPlayer.swift in Sources */,
+				BB000314 /* PostOnboardingWelcomeView.swift in Sources */,
+				BB000316 /* ScanPhotoAccessSheet.swift in Sources */,
+				BB000318 /* TripScanSetupFlowView.swift in Sources */,
 				BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */,
 				BB0001C4 /* UndoOverlayView.swift in Sources */,
 				BB0003E3 /* UndoToastView.swift in Sources */,

@@ -20,7 +20,7 @@ struct ContentView: View {
     /// Without this, .transition(.identity) removes the view immediately and Metal fires
     /// MTLDebugDevice notifyExternalReferencesNonZeroOnDealloc.
     @State private var tripsViewKeepMounted = false
-    @State private var homeTab: BottomNavTab = .camera
+    @State private var homeTab: BottomNavTab = .myBlogs
     /// Immersive home camera hides the tab bar until the user taps the back chevron.
     @State private var isHomeBottomNavRevealed = false
     @State private var homeBottomNavAutoHideTask: Task<Void, Never>?
@@ -42,6 +42,14 @@ struct ContentView: View {
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     /// Day index to open when navigating to a blog via the new-moments popup.
     @AppStorage("blogify.justFinishedOnboarding") private var justFinishedOnboarding = false
+    @AppStorage("bloggo.hasSeenCameraTooltip") private var hasSeenCameraTooltip = false
+    @State private var showPostOnboardingWelcome = false
+    @State private var showTripScanSetupFlow = false
+    @State private var showScanPhotoAccessSheet = false
+    /// Why home setup is showing — photo access is requested only for `.findPastTrips`.
+    @State private var tripScanSetupIntent: TripScanSetupIntent?
+    @State private var pendingFindPastTripsScan = false
+    @State private var findPastTripsScanWorkItem: DispatchWorkItem?
     @State private var showSettingsFromNav = false
     /// My Places place viewer / share studio — hides the shared home tab bar.
     @State private var suppressHomeBottomNav = false
@@ -93,6 +101,56 @@ struct ContentView: View {
                 Text("Your shared photos did not change. Add more location photos, or proceed with the current selection.")
             }
             .environmentObject(createdRecapStore)
+            .sheet(isPresented: $showScanPhotoAccessSheet) {
+                ScanPhotoAccessSheet(
+                    photoAuth: photoAuth,
+                    onGranted: {
+                        showScanPhotoAccessSheet = false
+                        finishFindPastTripsScan()
+                    },
+                    onUseCamera: {
+                        showScanPhotoAccessSheet = false
+                        cancelPendingFindPastTripsScan()
+                        hasSeenCameraTooltip = true
+                        selectHomeTab(.camera)
+                        isHomeBottomNavRevealed = true
+                    },
+                    onDismiss: {
+                        showScanPhotoAccessSheet = false
+                        cancelPendingFindPastTripsScan()
+                    }
+                )
+            }
+            .fullScreenCover(isPresented: $showTripScanSetupFlow) {
+                TripScanSetupFlowView(
+                    onComplete: {
+                        let intent = tripScanSetupIntent
+                        showTripScanSetupFlow = false
+                        tripScanSetupIntent = nil
+                        scheduleTripScanContinuation(for: intent)
+                    },
+                    onCancel: {
+                        showTripScanSetupFlow = false
+                        tripScanSetupIntent = nil
+                        cancelPendingFindPastTripsScan()
+                    }
+                )
+            }
+            .fullScreenCover(isPresented: $showPostOnboardingWelcome) {
+                PostOnboardingWelcomeView(
+                    onCaptureMoments: {
+                        cancelPendingFindPastTripsScan()
+                        showPostOnboardingWelcome = false
+                        hasSeenCameraTooltip = true
+                        selectHomeTab(.camera)
+                        isHomeBottomNavRevealed = true
+                    },
+                    onFindPastTrips: {
+                        showPostOnboardingWelcome = false
+                        scheduleFindPastTripsScan()
+                    }
+                )
+            }
             .sheet(isPresented: $showSettingsFromNav) {
                 SettingsView()
                     .environmentObject(AuthService.shared)
@@ -155,12 +213,8 @@ struct ContentView: View {
             .onAppear {
                 if justFinishedOnboarding {
                     justFinishedOnboarding = false
-                    if tripsViewModel.tripDrafts.isEmpty {
-                        tripsViewModel.startDefaultScan()
-                        pendingShowTripsWhenIdle = true
-                    } else {
-                        showTrips = true
-                    }
+                    showPostOnboardingWelcome = true
+                    isHomeBottomNavRevealed = true
                 }
                 considerPresentingNewMomentsBannerOnCamera()
             }
@@ -225,7 +279,8 @@ struct ContentView: View {
                             selectedCreatedRecap = blog
                         }
                     },
-                    homeBottomNavRevealed: $isHomeBottomNavRevealed
+                    homeBottomNavRevealed: $isHomeBottomNavRevealed,
+                    isTabActive: homeTab == .camera
                 )
                 .environmentObject(createdRecapStore)
             }
@@ -549,12 +604,103 @@ struct ContentView: View {
 
     // MARK: - Landing CTA handling
 
+    private enum TripScanSetupIntent {
+        case findPastTrips
+        case tapToBlog
+    }
+
+    private func scheduleFindPastTripsScan() {
+        cancelPendingFindPastTripsScan()
+        pendingFindPastTripsScan = true
+        let work = DispatchWorkItem {
+            beginFindPastTripsScanIfStillPending()
+        }
+        findPastTripsScanWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    private func cancelPendingFindPastTripsScan() {
+        findPastTripsScanWorkItem?.cancel()
+        findPastTripsScanWorkItem = nil
+        pendingFindPastTripsScan = false
+        showScanPhotoAccessSheet = false
+    }
+
+    private func beginFindPastTripsScanIfStillPending() {
+        guard pendingFindPastTripsScan else { return }
+        if !NeighborhoodStore.hasHomeConfigured {
+            tripScanSetupIntent = .findPastTrips
+            showTripScanSetupFlow = true
+            return
+        }
+        continueFindPastTripsScanAfterHomeSetup()
+    }
+
+    private func scheduleTripScanContinuation(for intent: TripScanSetupIntent?) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            switch intent {
+            case .findPastTrips:
+                continueFindPastTripsScanAfterHomeSetup()
+            case .tapToBlog:
+                startTapToBlogScanWithoutPhotoPrompt()
+            case nil:
+                break
+            }
+        }
+    }
+
+    private func continueFindPastTripsScanAfterHomeSetup() {
+        guard pendingFindPastTripsScan else { return }
+        presentPhotoAccessGateIfNeededForFindPastTrips()
+    }
+
     private func handleTapToBlog() {
+        cancelPendingFindPastTripsScan()
+        if !NeighborhoodStore.hasHomeConfigured {
+            tripScanSetupIntent = .tapToBlog
+            showTripScanSetupFlow = true
+            return
+        }
+        startTapToBlogScanWithoutPhotoPrompt()
+    }
+
+    /// Tap to Blog scans in-app captures and any library access already granted — never prompts for photos.
+    private func startTapToBlogScanWithoutPhotoPrompt() {
+        tripsViewModel.startDefaultScan()
+        pendingShowTripsWhenIdle = true
+    }
+
+    private func finishFindPastTripsScan() {
+        guard pendingFindPastTripsScan else { return }
+        pendingFindPastTripsScan = false
+        proceedWithTripScanAfterPhotoAccess()
+    }
+
+    /// Photo access is requested only on the Find Past Trips path.
+    private func presentPhotoAccessGateIfNeededForFindPastTrips() {
+        guard pendingFindPastTripsScan else { return }
+
+        if PhotosAuthorizationManager.hasBloggoGalleryPhotos {
+            finishFindPastTripsScan()
+            return
+        }
+
+        photoAuth.refreshStatus()
+        switch photoAuth.status {
+        case .authorized, .limited:
+            finishFindPastTripsScan()
+        case .notDetermined, .denied, .restricted:
+            showScanPhotoAccessSheet = true
+        @unknown default:
+            cancelPendingFindPastTripsScan()
+        }
+    }
+
+    private func proceedWithTripScanAfterPhotoAccess() {
         // Limited access: first open the iOS photo picker, then run a full scan and show loading → Trips.
         if photoAuth.status == .limited {
             presentLimitedLibraryPickerFromLanding()
         } else {
-            // Full access or not determined: keep existing flow.
             tripsViewModel.startDefaultScan()
             pendingShowTripsWhenIdle = true
         }

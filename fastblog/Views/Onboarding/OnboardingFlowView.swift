@@ -3,23 +3,16 @@
 //  Capper
 //
 
-import Photos
 import SwiftUI
 
 enum OnboardingStep {
     case splash
     case cameraRollToBlog
     case problemStatement
-    case neighborhoodIntro
-    case neighborhood
-    case photoPermissionOnboarding
-    case tripDistanceFromHome
-    case photoPermissionDenied
 }
 
 struct OnboardingFlowView: View {
     @State private var step: OnboardingStep = .splash
-    @StateObject private var photoAuth = PhotosAuthorizationManager()
     var onComplete: () -> Void
 
     @ViewBuilder
@@ -35,79 +28,10 @@ struct OnboardingFlowView: View {
                 }
             } else if step == .problemStatement {
                 ProblemStatementView {
-                    step = .neighborhoodIntro
+                    onComplete()
                 }
-            } else if step == .neighborhoodIntro {
-                NeighborhoodExplainerView {
-                    step = .neighborhood
-                }
-            } else if step == .neighborhood {
-                NeighborhoodSelectionView(
-                    onSelect: {
-                        step = .photoPermissionOnboarding
-                    },
-                    onBack: {
-                        step = .neighborhoodIntro
-                    }
-                )
-            } else if step == .photoPermissionOnboarding {
-                PhotoPermissionOnboardingView(
-                    photoAuth: photoAuth,
-                    onResult: { resultStatus in
-                        if resultStatus == .authorized {
-                            step = .tripDistanceFromHome
-                        } else if resultStatus == .limited {
-                            OnboardingStore.hasCompletedOnboarding = true
-                            onComplete()
-                        } else if resultStatus == .denied || resultStatus == .restricted {
-                            step = .photoPermissionDenied
-                        }
-                    },
-                    onBack: {
-                        step = .neighborhood
-                    }
-                )
-            } else if step == .tripDistanceFromHome {
-                TripDistanceFromHomeOnboardingView(
-                    onContinue: {
-                        OnboardingStore.hasCompletedOnboarding = true
-                        onComplete()
-                    },
-                    onBack: {
-                        step = .photoPermissionOnboarding
-                    }
-                )
-            } else {
-                PhotosPermissionView(
-                    status: photoAuth.status,
-                    onOpenSettings: { openSettings() },
-                    onContinueWithoutScanning: {
-                        OnboardingStore.hasCompletedOnboarding = true
-                        onComplete()
-                    }
-                )
             }
         }
-        /// Only the denied screen needs status observation: returning from Settings does not call `onResult`.
-        /// Avoid handling `.limited` / `.authorized` here while on the permission step — `onResult` already does, and
-        /// duplicating would invoke `onComplete()` twice.
-        .onChange(of: photoAuth.status) { _, newStatus in
-            guard step == .photoPermissionDenied else { return }
-            switch newStatus {
-            case .authorized:
-                step = .tripDistanceFromHome
-            case .limited:
-                OnboardingStore.hasCompletedOnboarding = true
-                onComplete()
-            default:
-                break
-            }
-        }
-    }
-
-    private func openSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-        UIApplication.shared.open(url)
     }
 }
 
