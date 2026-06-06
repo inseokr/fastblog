@@ -3410,10 +3410,10 @@ struct CameraCaptureView: View {
         max(cameraChromeSafeBottom, 34) + 32
     }
 
-    /// Pull-up on the preview opens Bloggo Gallery; ignore drags that match the system home swipe.
-    private func shouldOpenCapturesGalleryFromCameraDrag(_ value: DragGesture.Value) -> Bool {
+    /// Vertical pull on the preview (up/down) for home nav or overlay gallery/dismiss; ignore drags that match the system home swipe.
+    private func shouldHandleCameraVerticalPullGesture(_ value: DragGesture.Value) -> Bool {
         guard scenePhase == .active else { return false }
-        guard value.translation.height < -50 else { return false }
+        guard abs(value.translation.height) > 50 else { return false }
         guard abs(value.translation.height) > abs(value.translation.width) else { return false }
         let bandTopY = UIScreen.main.bounds.maxY - systemHomeGestureExclusionHeight
         return value.startLocation.y < bandTopY
@@ -3421,21 +3421,34 @@ struct CameraCaptureView: View {
 
     private func handleInAppCameraPullGestureEnded(_ value: DragGesture.Value) {
         guard !isCaptionModeActive else { return }
-        if shouldOpenCapturesGalleryFromCameraDrag(value) {
-            isShowingCapturesGallery = true
+        guard shouldHandleCameraVerticalPullGesture(value) else { return }
+
+        if value.translation.height < 0 {
+            if let navRevealed = homeBottomNavRevealed {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    navRevealed.wrappedValue = true
+                }
+            } else {
+                isShowingCapturesGallery = true
+            }
             return
         }
-        if value.translation.height > 50 {
-            // Home camera: no swipe-down dismiss.
-            guard !showsBottomNavBar else { return }
-            // Overlay camera: swipe-down dismiss is allowed only before any photo is captured.
-            let hasCapturedPhotos =
-                photosCapturedThisSession > 0
-                || !sessionCapturesForDisplay.isEmpty
-                || !sessionMoments.isEmpty
-            guard !hasCapturedPhotos else { return }
-            closeCamera()
+
+        if let navRevealed = homeBottomNavRevealed {
+            guard navRevealed.wrappedValue else { return }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                navRevealed.wrappedValue = false
+            }
+            return
         }
+
+        // Overlay camera: swipe-down dismiss is allowed only before any photo is captured.
+        let hasCapturedPhotos =
+            photosCapturedThisSession > 0
+            || !sessionCapturesForDisplay.isEmpty
+            || !sessionMoments.isEmpty
+        guard !hasCapturedPhotos else { return }
+        closeCamera()
     }
 
     @ViewBuilder

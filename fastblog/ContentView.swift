@@ -20,7 +20,7 @@ struct ContentView: View {
     /// Without this, .transition(.identity) removes the view immediately and Metal fires
     /// MTLDebugDevice notifyExternalReferencesNonZeroOnDealloc.
     @State private var tripsViewKeepMounted = false
-    @State private var homeTab: BottomNavTab = .myBlogs
+    @State private var homeTab: BottomNavTab = .camera
     /// Immersive home camera hides the tab bar until the user taps the back chevron.
     @State private var isHomeBottomNavRevealed = false
     @State private var homeBottomNavAutoHideTask: Task<Void, Never>?
@@ -213,8 +213,14 @@ struct ContentView: View {
             .onAppear {
                 if justFinishedOnboarding {
                     justFinishedOnboarding = false
+                    // Onboarding exit keeps the original My Blogs + tab bar landing; cold starts use `.camera` default.
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        homeTab = .myBlogs
+                        isHomeBottomNavRevealed = true
+                    }
                     showPostOnboardingWelcome = true
-                    isHomeBottomNavRevealed = true
                 }
                 considerPresentingNewMomentsBannerOnCamera()
             }

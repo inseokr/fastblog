@@ -85,7 +85,7 @@ struct ScanPhotoAccessSheet: View {
                         Button {
                             requestPhotoAccess()
                         } label: {
-                            Text(isRequesting ? "Requesting…" : "Allow Photo Access")
+                            Text(isRequesting ? "Requesting…" : "Find My Trips")
                                 .font(.headline)
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
