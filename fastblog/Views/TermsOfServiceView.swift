@@ -36,7 +36,7 @@ struct TermsOfServiceView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 8)
 
-                    Text("Last Updated: May 7, 2026")
+                    Text("Last Updated: June 5, 2026")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -44,7 +44,7 @@ struct TermsOfServiceView: View {
 
                 Group {
                     sectionTitle("1. Acceptance of Terms")
-                    bodyText("The Bloggo mobile application and the features and services available through it (the \"App,\" and our \"Services\") are provided to you by LinkedSpaces LLC (\"LinkedSpaces,\" \"we,\" \"us\") subject to these Terms of Service, including the policies described in our Privacy Policy (together, the \"Terms\"). By downloading, accessing, or using the App, whether as a guest or with a registered account, you agree to follow and be bound by the Terms. We may update the Terms from time to time. The current Terms are available within the App. We and our third party service providers may change features, services, related to the App without notice. Bloggo is a travel journaling app; your blog content and photos stay on your device and are not stored on or synced through our servers. We collect account and limited technical information as described in the Privacy Policy, not your blog manuscripts or photo library.")
+                    bodyText("The Bloggo mobile application and the features and services available through it (the \"App,\" and our \"Services\") are provided to you by LinkedSpaces LLC (\"LinkedSpaces,\" \"we,\" \"us\") subject to these Terms of Service, including the policies described in our Privacy Policy (together, the \"Terms\"). By downloading, accessing, or using the App, whether as a guest or with a registered account, you agree to follow and be bound by the Terms. We may update the Terms from time to time. The current Terms are available within the App. We and our third party service providers may change features, services, related to the App without notice. Bloggo is a travel journaling app; your blog content, photos, and Reel clips stay on your device and are not stored on or synced through our servers. We collect account and limited technical information as described in the Privacy Policy, not your blog manuscripts, Reel clips, or photo library.")
                     bodyText("Certain parts of the Terms may be clarified by additional notices we show in the App.")
                     bodyText("Bloggo is offered on the Apple App Store with a 4+ age rating. That rating describes the general suitability of the Bloggo app for a wide audience when used as designed. Registering for a Bloggo account is separate: it involves providing personal information and using our authentication and account services. You must be at least 13 years old to create an account (or the minimum age required in your jurisdiction for you to consent to our collection and use of your personal information online, if that age is higher). If you are under that age, you must not register; you may use Bloggo only as a guest, within the limits described in these Terms. Parents and guardians are responsible for deciding whether guest use is appropriate for minors in their care. If you do not agree with the Terms, do not use the App.")
                     bodyText("BY CONTINUING TO USE THE APP, YOU INDICATE YOUR AGREEMENT TO THE TERMS AND ANY REVISIONS WE POST.")
@@ -56,6 +56,7 @@ struct TermsOfServiceView: View {
                     bodyText("Bloggo is a travel journaling app that helps you create, edit, and share beautifully formatted blog posts from your travel experiences. Our service includes:")
                     bullet("Blog generation with AI on your device: automatically create blog posts from your travel photos.")
                     bullet("Blog drafts: save and manage multiple blog drafts locally on your device.")
+                    bullet("Reel capture: record short moment videos in the in-app camera and attach them to blog stops; clips are stored on your device.")
                     bullet("PDF export: export any blog as a polished PDF (including storybook-style layouts where available) to share however you choose.")
                     bullet("Video export: create a video version of your blog on your device and save or share it using your device's share options.")
                     bullet("Carousel and social tooling: tools such as Carousel Studio help you compose images or carousels for third-party apps; sharing those outputs is governed by the platform you use.")
@@ -94,7 +95,7 @@ struct TermsOfServiceView: View {
 
                 Group {
                     sectionTitle("6. Content Policy")
-                    bodyText("You retain full ownership of the content you create in Bloggo. Your blogs and photos are stored locally on your device and are never uploaded to our servers as part of normal app operation.")
+                    bodyText("You retain full ownership of the content you create in Bloggo. Your blogs, photos, and Reel clips are stored locally on your device and are never uploaded to our servers as part of normal app operation.")
                     bodyText("Regardless of how content is shared or exported, you agree not to create or distribute content that:")
                     bullet("Is illegal, harmful, or violates the rights of others.")
                     bullet("Contains spam, malware, or deliberately deceptive information.")

@@ -36,13 +36,13 @@
 	<key>KakaoNativeAppKey</key>
 	<string>$(KAKAO_NATIVE_APP_KEY)</string>
 	<key>NSCameraUsageDescription</key>
-	<string>We use your camera so you can capture moments and add them to your blog.</string>
+	<string>We use your camera to capture photos and short Reel clips for your travel blog. All captures stay on your device.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>We record a short audio Vibe clip alongside your photo so you can relive the sounds of the moment.</string>
+	<string>We use the microphone to record Vibe audio clips and to capture sound with Reel videos so you can relive the moment.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Bloggo reads your photo library to find travel photos and automatically organize them into trip blogs on your device.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>We save your in-app camera photos to your photo library so they can appear in your travel blogs.</string>
+	<string>We save your in-app camera photos and exported videos to your photo library when you choose to, so they can appear in your travel blogs or Photos.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>We add location to your captured photos so they appear correctly on the map and in your travel blogs.</string>
 	<key>NSLocalNetworkUsageDescription</key>
