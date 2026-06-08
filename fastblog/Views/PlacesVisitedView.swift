@@ -285,7 +285,7 @@ struct PlacesVisitedView: View {
                 .transition(.asymmetric(insertion: .opacity, removal: .identity))
                 .zIndex(200)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea()
+                .ignoresSafeArea(.container)
             }
         }
         .modifier(PlacesVisitedBottomChromeInset(isHidden: shouldHidePlacesVisitedNavigationBar) {
@@ -1394,7 +1394,7 @@ private struct PlacesVisitedMapView: View {
                 .transition(.asymmetric(insertion: .opacity, removal: .identity))
                 .zIndex(200)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea()
+                .ignoresSafeArea(.container)
             }
 
             if !isSearchActive {
