@@ -45,6 +45,9 @@ struct TripSharePhotoEntryV1: Codable, Equatable, Sendable {
     /// SHA256 hex of JPEG bytes (integrity + dedup signal for receivers).
     var contentSha256Hex: String
     var byteCount: Int
+    /// Optional moment reel sent as `bloggo-reel-<order>.mov`.
+    var reelContentSha256Hex: String?
+    var reelByteCount: Int?
 }
 
 // MARK: - Export
@@ -57,9 +60,10 @@ enum TripShareExportError: Error {
 enum TripShareExporter {
     /// Builds manifest + JPEG data for every photo in the trip (library + bloggo-capture assets).
     @MainActor
-    static func makePayload(from trip: TripDraft) async throws -> (manifest: TripShareManifestV1, images: [Data]) {
+    static func makePayload(from trip: TripDraft) async throws -> (manifest: TripShareManifestV1, images: [Data], reelsByOrder: [Int: Data]) {
         var entries: [TripSharePhotoEntryV1] = []
         var images: [Data] = []
+        var reelsByOrder: [Int: Data] = [:]
         var order = 0
 
         for day in trip.days {
@@ -79,6 +83,23 @@ enum TripShareExporter {
                 }
                 let digest = SHA256.hash(data: jpeg)
                 let hex = digest.map { String(format: "%02x", $0) }.joined()
+
+                var reelHex: String?
+                var reelByteCount: Int?
+                if let lid = photo.localIdentifier {
+                    let recapPhoto = RecapPhoto(
+                        timestamp: photo.timestamp,
+                        location: photo.location,
+                        imageName: photo.imageName,
+                        localIdentifier: lid
+                    )
+                    if let reelData = MomentVideoTransfer.loadMomentVideoData(for: recapPhoto) {
+                        reelsByOrder[order] = reelData
+                        reelHex = MomentVideoTransfer.sha256Hex(of: reelData)
+                        reelByteCount = reelData.count
+                    }
+                }
+
                 entries.append(
                     TripSharePhotoEntryV1(
                         order: order,
@@ -96,7 +117,9 @@ enum TripShareExporter {
                         caption: photo.caption,
                         imageName: photo.imageName,
                         contentSha256Hex: hex,
-                        byteCount: jpeg.count
+                        byteCount: jpeg.count,
+                        reelContentSha256Hex: reelHex,
+                        reelByteCount: reelByteCount
                     )
                 )
                 images.append(jpeg)
@@ -115,7 +138,7 @@ enum TripShareExporter {
             draftCreatedAgoText: trip.draftCreatedAgoText,
             photos: entries
         )
-        return (manifest, images)
+        return (manifest, images, reelsByOrder)
     }
 }
 
@@ -130,7 +153,11 @@ enum TripShareImportError: Error {
 
 enum TripShareImporter {
     /// Validates JPEG list against manifest and builds a new `TripDraft` with fresh identities (bloggo-capture ids).
-    static func makeTripDraft(manifest: TripShareManifestV1, images: [Data]) throws -> TripDraft {
+    static func makeTripDraft(
+        manifest: TripShareManifestV1,
+        images: [Data],
+        reelsByOrder: [Int: Data] = [:]
+    ) throws -> TripDraft {
         guard manifest.schemaVersion == TripShareNearbyConfig.schemaVersion else {
             throw TripShareImportError.schemaUnsupported(manifest.schemaVersion)
         }
@@ -147,6 +174,13 @@ enum TripShareImporter {
             guard hex == entry.contentSha256Hex, data.count == entry.byteCount else {
                 throw TripShareImportError.hashMismatch(order: entry.order)
             }
+            if let reelHex = entry.reelContentSha256Hex, let reelCount = entry.reelByteCount {
+                guard let reelData = reelsByOrder[entry.order],
+                      reelData.count == reelCount,
+                      MomentVideoTransfer.sha256Hex(of: reelData) == reelHex else {
+                    throw TripShareImportError.hashMismatch(order: entry.order)
+                }
+            }
         }
 
         var dayBuckets: [String: (dayIndex: Int, dateText: String, countryCode: String?, countryName: String?, cityName: String?, photos: [MockPhoto])] = [:]
@@ -162,11 +196,22 @@ enum TripShareImporter {
             }
             let location = coord.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
             guard let uiImage = UIImage(data: data) else { continue }
+            let reelTempURL: URL? = {
+                guard let reelData = reelsByOrder[entry.order] else { return nil }
+                let temp = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("bloggo-trip-reel-\(entry.order)-\(UUID().uuidString).mov")
+                try? reelData.write(to: temp)
+                return temp
+            }()
+            defer {
+                if let reelTempURL { try? FileManager.default.removeItem(at: reelTempURL) }
+            }
             let captureId = try AppCapturePhotoService.shared.saveSharedImport(
                 image: uiImage,
                 timestamp: timestamp,
                 location: location,
-                caption: entry.caption
+                caption: entry.caption,
+                momentVideoSourceURL: reelTempURL
             )
             let localId = AppCapturePhotoService.identifier(for: captureId)
             let photo = MockPhoto(
@@ -376,15 +421,19 @@ struct TripShareRecapPhotoEntryV1: Codable, Equatable, Sendable {
     /// SHA256 hex of JPEG bytes.
     var contentSha256Hex: String
     var byteCount: Int
+    /// Optional moment reel sent as `bloggo-reel-<order>.mov`.
+    var reelContentSha256Hex: String?
+    var reelByteCount: Int?
 }
 
 enum TripShareRecapExporter {
     /// Builds manifest + JPEG data for included photos only (used to preserve visible captions/stories without requiring cloud-only images).
     @MainActor
-    static func makePayload(from detail: RecapBlogDetail) async throws -> (manifest: TripShareRecapManifestV1, images: [Data]) {
+    static func makePayload(from detail: RecapBlogDetail) async throws -> (manifest: TripShareRecapManifestV1, images: [Data], reelsByOrder: [Int: Data]) {
         var days: [TripShareRecapDayV1] = []
         var photos: [TripShareRecapPhotoEntryV1] = []
         var images: [Data] = []
+        var reelsByOrder: [Int: Data] = [:]
 
         var coverPhotoOrder: Int? = nil
 
@@ -424,6 +473,14 @@ enum TripShareRecapExporter {
                     let digest = SHA256.hash(data: jpeg)
                     let hex = digest.map { String(format: "%02x", $0) }.joined()
 
+                    var reelHex: String?
+                    var reelByteCount: Int?
+                    if let reelData = MomentVideoTransfer.loadMomentVideoData(for: photo) {
+                        reelsByOrder[order] = reelData
+                        reelHex = MomentVideoTransfer.sha256Hex(of: reelData)
+                        reelByteCount = reelData.count
+                    }
+
                     if let coverId = detail.selectedCoverPhotoIdentifier,
                        coverId == lid,
                        coverPhotoOrder == nil {
@@ -443,7 +500,9 @@ enum TripShareRecapExporter {
                             caption: photo.caption,
                             captionIsManual: photo.captionIsManual,
                             contentSha256Hex: hex,
-                            byteCount: jpeg.count
+                            byteCount: jpeg.count,
+                            reelContentSha256Hex: reelHex,
+                            reelByteCount: reelByteCount
                         )
                     )
                     images.append(jpeg)
@@ -481,13 +540,17 @@ enum TripShareRecapExporter {
             days: days,
             photos: photos
         )
-        return (manifest, images)
+        return (manifest, images, reelsByOrder)
     }
 }
 
 enum TripShareRecapImporter {
     /// Decodes manifest + JPEG resources into a new `RecapBlogDetail` with **new local capture assets**.
-    static func makeRecapBlogDetail(manifest: TripShareRecapManifestV1, images: [Data]) throws -> RecapBlogDetail {
+    static func makeRecapBlogDetail(
+        manifest: TripShareRecapManifestV1,
+        images: [Data],
+        reelsByOrder: [Int: Data] = [:]
+    ) throws -> RecapBlogDetail {
         guard manifest.schemaVersion == TripShareNearbyConfig.schemaVersion else {
             throw TripShareRecapImportError.schemaUnsupported(manifest.schemaVersion)
         }
@@ -503,6 +566,13 @@ enum TripShareRecapImporter {
             let hex = digest.map { String(format: "%02x", $0) }.joined()
             guard hex == entry.contentSha256Hex, data.count == entry.byteCount else {
                 throw TripShareRecapImportError.hashMismatch(order: entry.order)
+            }
+            if let reelHex = entry.reelContentSha256Hex, let reelCount = entry.reelByteCount {
+                guard let reelData = reelsByOrder[entry.order],
+                      reelData.count == reelCount,
+                      MomentVideoTransfer.sha256Hex(of: reelData) == reelHex else {
+                    throw TripShareRecapImportError.hashMismatch(order: entry.order)
+                }
             }
         }
 
@@ -521,12 +591,23 @@ enum TripShareRecapImporter {
                 }
                 return nil
             }()
+            let reelTempURL: URL? = {
+                guard let reelData = reelsByOrder[entry.order] else { return nil }
+                let temp = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("bloggo-recap-reel-\(entry.order)-\(UUID().uuidString).mov")
+                try? reelData.write(to: temp)
+                return temp
+            }()
+            defer {
+                if let reelTempURL { try? FileManager.default.removeItem(at: reelTempURL) }
+            }
 
             let captureId = try AppCapturePhotoService.shared.saveSharedImport(
                 image: uiImage,
                 timestamp: timestamp,
                 location: location,
-                caption: entry.caption
+                caption: entry.caption,
+                momentVideoSourceURL: reelTempURL
             )
             let localIdentifier = AppCapturePhotoService.identifier(for: captureId)
             localIdByOrder[entry.order] = localIdentifier

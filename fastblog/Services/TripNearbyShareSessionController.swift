@@ -69,7 +69,13 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
     private var activeRole: ActiveRole = .none
     private var codeFilter: String = ""
 
-    private var hostExport: (manifestJSON: Data, photoURLs: [URL], tempRoot: URL)?
+    private struct HostExportPayload {
+        var manifestJSON: Data
+        var resourceQueue: [(name: String, url: URL)]
+        var tempRoot: URL
+    }
+
+    private var hostExport: HostExportPayload?
     private var hostSendingIndex: Int = 0
     private var hostRemotePeer: MCPeerID?
     private var hostGuestAcceptedManifest: Bool = false
@@ -79,7 +85,9 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
 
     private var guestManifestDecoded: TripShareRecapManifestV1?
     /// Photo index from resource name → copied temp file (order matches manifest `photos`).
-    private var guestReceivedByOrder: [Int: URL] = [:]
+    private var guestReceivedPhotosByOrder: [Int: URL] = [:]
+    /// Reel index from resource name → copied temp `.mov` file.
+    private var guestReceivedReelsByOrder: [Int: URL] = [:]
     private var guestAcceptedManifest: Bool = false
     private var guestInvitedPeers: Set<ObjectIdentifier> = []
 
@@ -123,12 +131,12 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
 
         Task {
             do {
-                let (manifest, images) = try await TripShareRecapExporter.makePayload(from: recapDetail)
+                let (manifest, images, reelsByOrder) = try await TripShareRecapExporter.makePayload(from: recapDetail)
                 let json = try JSONEncoder().encode(manifest)
-                let (root, urls) = try Self.writeJPEGsToTemp(images: images)
+                let (root, resourceQueue) = try Self.writeResourcesToTemp(images: images, reelsByOrder: reelsByOrder)
                 await MainActor.run {
-                    self.hostExport = (manifestJSON: json, photoURLs: urls, tempRoot: root)
-                    self.logDebug("Host payload prepared: \(manifest.photos.count) manifest photos, \(urls.count) JPEG files.")
+                    self.hostExport = HostExportPayload(manifestJSON: json, resourceQueue: resourceQueue, tempRoot: root)
+                    self.logDebug("Host payload prepared: \(manifest.photos.count) manifest photos, \(resourceQueue.count) resource files (\(reelsByOrder.count) reels).")
                     self.beginAdvertising()
                 }
             } catch {
@@ -183,7 +191,8 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
         guard verifyRuntimeNearbyConfiguration() else { return }
         sessionCode = codeFilter
         guestManifestDecoded = nil
-        guestReceivedByOrder = [:]
+        guestReceivedPhotosByOrder = [:]
+        guestReceivedReelsByOrder = [:]
         guestAcceptedManifest = false
         guestInvitedPeers = []
         browser?.stopBrowsingForPeers()
@@ -213,7 +222,8 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
         hostRemotePeer = nil
         hostGuestAcceptedManifest = false
         guestManifestDecoded = nil
-        guestReceivedByOrder = [:]
+        guestReceivedPhotosByOrder = [:]
+        guestReceivedReelsByOrder = [:]
         guestAcceptedManifest = false
         guestInvitedPeers = []
         receiveURLForQR = nil
@@ -255,17 +265,22 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
         return c.url!
     }
 
-    private static func writeJPEGsToTemp(images: [Data]) throws -> (URL, [URL]) {
+    private static func writeResourcesToTemp(images: [Data], reelsByOrder: [Int: Data]) throws -> (URL, [(name: String, url: URL)]) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("bloggo_trip_share_\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        var urls: [URL] = []
+        var queue: [(name: String, url: URL)] = []
         for (i, data) in images.enumerated() {
-            let url = root.appendingPathComponent("bloggo-photo-\(i).jpg")
-            try data.write(to: url)
-            urls.append(url)
+            let photoURL = root.appendingPathComponent("bloggo-photo-\(i).jpg")
+            try data.write(to: photoURL)
+            queue.append(("bloggo-photo-\(i).jpg", photoURL))
+            if let reelData = reelsByOrder[i] {
+                let reelURL = root.appendingPathComponent("bloggo-reel-\(i).mov")
+                try reelData.write(to: reelURL)
+                queue.append(("bloggo-reel-\(i).mov", reelURL))
+            }
         }
-        return (root, urls)
+        return (root, queue)
     }
 
     private static func deviceDisplayName() -> String {
@@ -290,22 +305,21 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
 
     private func sendNextPhotoResource(to peer: MCPeerID) {
         guard let exp = hostExport else { return }
-        guard hostSendingIndex < exp.photoURLs.count else {
+        guard hostSendingIndex < exp.resourceQueue.count else {
             logDebug("All resources sent to \(peer.displayName).")
             phase = .succeeded
             teardown(resetRole: false)
             activeRole = .none
             return
         }
-        let url = exp.photoURLs[hostSendingIndex]
-        let name = "bloggo-photo-\(hostSendingIndex).jpg"
-        phase = .transferring(current: hostSendingIndex + 1, total: exp.photoURLs.count)
-        logDebug("Sending resource \(name) to \(peer.displayName).")
-        session.sendResource(at: url, withName: name, toPeer: peer) { [weak self] err in
+        let resource = exp.resourceQueue[hostSendingIndex]
+        phase = .transferring(current: hostSendingIndex + 1, total: exp.resourceQueue.count)
+        logDebug("Sending resource \(resource.name) to \(peer.displayName).")
+        session.sendResource(at: resource.url, withName: resource.name, toPeer: peer) { [weak self] err in
             Task { @MainActor in
                 guard let self else { return }
                 if let err {
-                    self.logDebug("Resource send failed (\(name)): \(err.localizedDescription)")
+                    self.logDebug("Resource send failed (\(resource.name)): \(err.localizedDescription)")
                     self.phase = .failed(err.localizedDescription)
                     self.teardown(resetRole: true)
                     return
@@ -318,8 +332,11 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
 
     private func finalizeGuestImport() {
         guard let manifest = guestManifestDecoded else { return }
-        guard guestReceivedByOrder.count == manifest.photos.count else {
-            logDebug("Finalize failed: received \(guestReceivedByOrder.count) of \(manifest.photos.count).")
+        let expectedResources = Self.expectedResourceCount(for: manifest)
+        let receivedCount = guestReceivedPhotosByOrder.count + guestReceivedReelsByOrder.count
+        guard guestReceivedPhotosByOrder.count == manifest.photos.count,
+              receivedCount == expectedResources else {
+            logDebug("Finalize failed: \(guestReceivedPhotosByOrder.count) photos, \(guestReceivedReelsByOrder.count) reels of \(manifest.photos.count) photos / \(expectedResources) total resources.")
             phase = .failed("Incomplete transfer.")
             teardown(resetRole: true)
             return
@@ -328,16 +345,28 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
             var datas: [Data] = []
             datas.reserveCapacity(manifest.photos.count)
             for i in 0..<manifest.photos.count {
-                guard let url = guestReceivedByOrder[i] else {
+                guard let url = guestReceivedPhotosByOrder[i] else {
                     throw TripShareRecapImportError.photoCountMismatch
                 }
                 datas.append(try Data(contentsOf: url))
             }
-            recentlyImportedCaptureIds = try CreatedRecapBlogStore.shared.importNearbySharedRecapBlog(manifest: manifest, images: datas)
-            for url in guestReceivedByOrder.values {
+            var reelsByOrder: [Int: Data] = [:]
+            for (order, url) in guestReceivedReelsByOrder {
+                reelsByOrder[order] = try Data(contentsOf: url)
+            }
+            recentlyImportedCaptureIds = try CreatedRecapBlogStore.shared.importNearbySharedRecapBlog(
+                manifest: manifest,
+                images: datas,
+                reelsByOrder: reelsByOrder
+            )
+            for url in guestReceivedPhotosByOrder.values {
                 try? FileManager.default.removeItem(at: url)
             }
-            guestReceivedByOrder = [:]
+            for url in guestReceivedReelsByOrder.values {
+                try? FileManager.default.removeItem(at: url)
+            }
+            guestReceivedPhotosByOrder = [:]
+            guestReceivedReelsByOrder = [:]
             phase = .succeeded
             logDebug("Guest import succeeded for trip '\(manifest.tripTitle)'.")
             teardown(resetRole: false)
@@ -365,29 +394,29 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
         // We intentionally load images on the main actor to avoid Swift 6 'Sendable' / concurrency violations
         // with UIImage. Users trigger this manually after import completes.
         let service = AppCapturePhotoService.shared
-        var imagesAndMeta: [(image: UIImage, meta: AppCapturePhotoService.CaptureInfo?)] = []
-        imagesAndMeta.reserveCapacity(ids.count)
+        var payloads: [AppCapturePhotoService.PhotosExportPayload] = []
+        payloads.reserveCapacity(ids.count)
 
         for id in ids {
-            if let image = service.loadImage(identifier: id) {
-                imagesAndMeta.append((image: image, meta: service.metadata(identifier: id)))
+            guard let uuid = AppCapturePhotoService.uuid(from: id) else { continue }
+            if let payload = service.preferredPhotosExport(captureId: uuid) {
+                payloads.append(payload)
             }
         }
 
-        guard !imagesAndMeta.isEmpty else {
+        guard !payloads.isEmpty else {
             gallerySaveStatus = .failed("Could not load imported photos to save.")
             return
         }
 
-        let saveCount = imagesAndMeta.count
+        let saveCount = payloads.count
         PHPhotoLibrary.shared().performChanges({
-            for item in imagesAndMeta {
-                let creation = PHAssetChangeRequest.creationRequestForAsset(from: item.image)
-                if let meta = item.meta {
-                    creation.creationDate = meta.timestamp
-                    if let loc = meta.location {
-                        creation.location = CLLocation(latitude: loc.latitude, longitude: loc.longitude)
-                    }
+            for payload in payloads {
+                switch payload {
+                case .image(let image):
+                    _ = PHAssetChangeRequest.creationRequestForAsset(from: image)
+                case .video(let url):
+                    _ = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
                 }
             }
         }, completionHandler: { success, error in
@@ -405,6 +434,16 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
         guard name.hasPrefix("bloggo-photo-"), name.hasSuffix(".jpg") else { return nil }
         let mid = name.dropFirst("bloggo-photo-".count).dropLast(".jpg".count)
         return Int(mid)
+    }
+
+    private static func reelOrder(fromResourceName name: String) -> Int? {
+        guard name.hasPrefix("bloggo-reel-"), name.hasSuffix(".mov") else { return nil }
+        let mid = name.dropFirst("bloggo-reel-".count).dropLast(".mov".count)
+        return Int(mid)
+    }
+
+    private static func expectedResourceCount(for manifest: TripShareRecapManifestV1) -> Int {
+        manifest.photos.count + manifest.photos.filter { $0.reelByteCount != nil }.count
     }
 
     private nonisolated static func jsonDecoder() -> JSONDecoder {
@@ -554,27 +593,48 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
                 return
             }
             guard let localURL else { return }
-            guard let order = Self.photoOrder(fromResourceName: resourceName) else { return }
-            let dest = FileManager.default.temporaryDirectory
-                .appendingPathComponent("bloggo_in_\(order)_\(UUID().uuidString).jpg")
-            do {
-                if FileManager.default.fileExists(atPath: dest.path) {
-                    try FileManager.default.removeItem(at: dest)
-                }
-                try FileManager.default.copyItem(at: localURL, to: dest)
-                self.guestReceivedByOrder[order] = dest
-                self.logDebug("Received resource \(resourceName) (\(self.guestReceivedByOrder.count) total).")
-                if let m = self.guestManifestDecoded {
-                    let n = self.guestReceivedByOrder.count
-                    self.phase = .transferring(current: n, total: m.photos.count)
-                    if n >= m.photos.count {
-                        self.finalizeGuestImport()
+            if let order = Self.photoOrder(fromResourceName: resourceName) {
+                let dest = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("bloggo_in_photo_\(order)_\(UUID().uuidString).jpg")
+                do {
+                    if FileManager.default.fileExists(atPath: dest.path) {
+                        try FileManager.default.removeItem(at: dest)
                     }
+                    try FileManager.default.copyItem(at: localURL, to: dest)
+                    self.guestReceivedPhotosByOrder[order] = dest
+                } catch {
+                    self.logDebug("Failed to persist received resource \(resourceName): \(error.localizedDescription)")
+                    self.phase = .failed("Could not save a received photo.")
+                    self.teardown(resetRole: true)
+                    return
                 }
-            } catch {
-                self.logDebug("Failed to persist received resource \(resourceName): \(error.localizedDescription)")
-                self.phase = .failed("Could not save a received photo.")
-                self.teardown(resetRole: true)
+            } else if let order = Self.reelOrder(fromResourceName: resourceName) {
+                let dest = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("bloggo_in_reel_\(order)_\(UUID().uuidString).mov")
+                do {
+                    if FileManager.default.fileExists(atPath: dest.path) {
+                        try FileManager.default.removeItem(at: dest)
+                    }
+                    try FileManager.default.copyItem(at: localURL, to: dest)
+                    self.guestReceivedReelsByOrder[order] = dest
+                } catch {
+                    self.logDebug("Failed to persist received reel \(resourceName): \(error.localizedDescription)")
+                    self.phase = .failed("Could not save a received reel.")
+                    self.teardown(resetRole: true)
+                    return
+                }
+            } else {
+                return
+            }
+            self.logDebug("Received resource \(resourceName) (\(self.guestReceivedPhotosByOrder.count) photos, \(self.guestReceivedReelsByOrder.count) reels).")
+            if let m = self.guestManifestDecoded {
+                let n = self.guestReceivedPhotosByOrder.count + self.guestReceivedReelsByOrder.count
+                let total = Self.expectedResourceCount(for: m)
+                self.phase = .transferring(current: n, total: total)
+                if self.guestReceivedPhotosByOrder.count == m.photos.count,
+                   n >= total {
+                    self.finalizeGuestImport()
+                }
             }
         }
     }

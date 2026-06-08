@@ -2951,7 +2951,7 @@ struct CameraCaptureView: View {
     /// (those checks were stacking every layout pass and could freeze UI for seconds).
     @State private var previewChromeHasVibe = false
     @State private var previewChromeHasMomentVideo = false
-    @State private var showMomentVideoPreview = false
+    @State private var momentVideoPreviewURL: URL?
     @State private var previewChromeHasVoiceMemo = false
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
@@ -3127,7 +3127,7 @@ struct CameraCaptureView: View {
         previewCaptionFocused = false
         previewVibePlayer.stop()
         previewVoiceMemoPlayer.stop()
-        showMomentVideoPreview = false
+        momentVideoPreviewURL = nil
         cameraController.startRunning()
         syncInAppCameraAudioSession()
 
@@ -3766,11 +3766,11 @@ struct CameraCaptureView: View {
                 if previewChromeHasMomentVideo || cameraController.isRecordingMomentVideo,
                    let moment = captionModeResolvedMoment {
                     Button {
-                        guard resolvedMomentVideoURL(for: moment) != nil else { return }
+                        guard let url = resolvedMomentVideoURL(for: moment) else { return }
                         previewVibePlayer.stop()
                         previewVoiceMemoPlayer.stop()
                         InAppCameraAudioSession.deactivateForReelPlayback()
-                        showMomentVideoPreview = true
+                        momentVideoPreviewURL = url
                     } label: {
                         Image(systemName: cameraController.isRecordingMomentVideo ? "video.fill" : "play.fill")
                             .font(.system(size: 16, weight: .semibold))
@@ -4802,20 +4802,22 @@ struct CameraCaptureView: View {
             } message: {
                 Text("This removes only the vibe audio and keeps the photo.")
             }
-            .fullScreenCover(isPresented: $showMomentVideoPreview) {
-                momentVideoPreviewSheet
+            .fullScreenCover(isPresented: Binding(
+                get: { momentVideoPreviewURL != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        momentVideoPreviewURL = nil
+                        syncInAppCameraAudioSession()
+                    }
+                }
+            )) {
+                if let url = momentVideoPreviewURL {
+                    MomentVideoFullScreenPlayer(url: url) {
+                        momentVideoPreviewURL = nil
+                        syncInAppCameraAudioSession()
+                    }
+                }
             }
-    }
-
-    @ViewBuilder
-    private var momentVideoPreviewSheet: some View {
-        if let moment = captionModeResolvedMoment,
-           let url = resolvedMomentVideoURL(for: moment) {
-            MomentVideoFullScreenPlayer(url: url) {
-                showMomentVideoPreview = false
-                syncInAppCameraAudioSession()
-            }
-        }
     }
 
     var body: some View {

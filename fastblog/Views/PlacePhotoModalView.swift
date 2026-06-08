@@ -172,7 +172,7 @@ struct PlacePhotoModalView: View {
     // Vibe
     @StateObject private var vibePlayer = VibePlayer()
     @State private var isVibeEnabled: Bool = false
-    @State private var showMomentVideoPlayer = false
+    /// When non-nil, presents full-screen moment-video playback.
     @State private var momentVideoPlaybackURL: URL?
     /// Drives the cyan dot pulse on the top-center “Playing Vibe” pill (same rhythm as camera “Capturing Vibe”).
     @State private var playingVibePulse: Bool = false
@@ -770,7 +770,6 @@ struct PlacePhotoModalView: View {
                     isVibeEnabled = false
                     guard let url = currentMomentVideoURL else { return }
                     momentVideoPlaybackURL = url
-                    showMomentVideoPlayer = true
                 }
             )
             .ignoresSafeArea(.all, edges: presentation.isSheet ? [] : .top)
@@ -820,12 +819,12 @@ struct PlacePhotoModalView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: downloadToast != nil)
-        .fullScreenCover(isPresented: $showMomentVideoPlayer, onDismiss: {
-            momentVideoPlaybackURL = nil
-        }) {
+        .fullScreenCover(isPresented: Binding(
+            get: { momentVideoPlaybackURL != nil },
+            set: { if !$0 { momentVideoPlaybackURL = nil } }
+        )) {
             if let url = momentVideoPlaybackURL {
                 MomentVideoFullScreenPlayer(url: url) {
-                    showMomentVideoPlayer = false
                     momentVideoPlaybackURL = nil
                 }
             }

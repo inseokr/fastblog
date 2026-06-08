@@ -2,7 +2,7 @@
 //  BlogBackupService.swift
 //  fastblog
 //
-//  Portable ZIP backup: full RecapBlogDetail JSON + JPEGs keyed by RecapPhoto.id.
+//  Portable ZIP backup: full RecapBlogDetail JSON + JPEGs (+ optional moment reels) keyed by RecapPhoto.id.
 //
 
 import CoreLocation
@@ -26,7 +26,7 @@ enum BlogBackupFormat {
     static let mediaDirectory = "media"
     static let blogsDirectory = "blogs"
     /// Rough cap for total uncompressed payload while reading a user-provided archive.
-    static let maxUncompressedBytes: Int64 = 500 * 1024 * 1024
+    static let maxUncompressedBytes: Int64 = 1_000 * 1024 * 1024
 }
 
 // MARK: - Manifest & optional recap snapshot
@@ -46,6 +46,10 @@ struct BlogBackupAssetEntryV1: Codable, Equatable, Sendable {
     var relativePath: String
     var contentSha256Hex: String
     var byteCount: Int
+    /// Optional moment reel companion file, e.g. `media/UUID.mov`
+    var reelRelativePath: String?
+    var reelContentSha256Hex: String?
+    var reelByteCount: Int?
 }
 
 /// Optional metadata to restore list-card fields after import.
@@ -180,12 +184,28 @@ enum BlogBackupService {
             let rel = "\(BlogBackupFormat.mediaDirectory)/\(photo.id.uuidString).jpg"
             let fileURL = work.appendingPathComponent(rel)
             try data.write(to: fileURL, options: .atomic)
+
+            var reelRelativePath: String?
+            var reelContentSha256Hex: String?
+            var reelByteCount: Int?
+            if let reelData = MomentVideoTransfer.loadMomentVideoData(for: photo) {
+                let reelRel = "\(BlogBackupFormat.mediaDirectory)/\(photo.id.uuidString).mov"
+                let reelFileURL = work.appendingPathComponent(reelRel)
+                try reelData.write(to: reelFileURL, options: .atomic)
+                reelRelativePath = reelRel
+                reelContentSha256Hex = MomentVideoTransfer.sha256Hex(of: reelData)
+                reelByteCount = reelData.count
+            }
+
             assets.append(
                 BlogBackupAssetEntryV1(
                     photoId: photo.id,
                     relativePath: rel,
                     contentSha256Hex: hex,
-                    byteCount: data.count
+                    byteCount: data.count,
+                    reelRelativePath: reelRelativePath,
+                    reelContentSha256Hex: reelContentSha256Hex,
+                    reelByteCount: reelByteCount
                 )
             )
             if photoCount > 0 {
@@ -317,8 +337,29 @@ enum BlogBackupService {
             let rel = "\(BlogBackupFormat.mediaDirectory)/\(photo.id.uuidString).jpg"
             let fileURL = folder.appendingPathComponent(rel)
             try data.write(to: fileURL, options: .atomic)
+
+            var reelRelativePath: String?
+            var reelContentSha256Hex: String?
+            var reelByteCount: Int?
+            if let reelData = MomentVideoTransfer.loadMomentVideoData(for: photo) {
+                let reelRel = "\(BlogBackupFormat.mediaDirectory)/\(photo.id.uuidString).mov"
+                let reelFileURL = folder.appendingPathComponent(reelRel)
+                try reelData.write(to: reelFileURL, options: .atomic)
+                reelRelativePath = reelRel
+                reelContentSha256Hex = MomentVideoTransfer.sha256Hex(of: reelData)
+                reelByteCount = reelData.count
+            }
+
             assets.append(
-                BlogBackupAssetEntryV1(photoId: photo.id, relativePath: rel, contentSha256Hex: hex, byteCount: data.count)
+                BlogBackupAssetEntryV1(
+                    photoId: photo.id,
+                    relativePath: rel,
+                    contentSha256Hex: hex,
+                    byteCount: data.count,
+                    reelRelativePath: reelRelativePath,
+                    reelContentSha256Hex: reelContentSha256Hex,
+                    reelByteCount: reelByteCount
+                )
             )
             if photoCount > 0 {
                 report(0.78 * Double(index + 1) / Double(photoCount))
@@ -466,6 +507,17 @@ enum BlogBackupService {
                ) {
                 usedLibraryLocalIds.insert(libId)
                 localIdByPhotoId[asset.photoId] = libId
+                // Photo-library matches are stills only; restore embedded reel to a new app capture when present.
+                if let captureId = try restoreEmbeddedReelIfNeeded(
+                    asset: asset,
+                    folder: folder,
+                    imageData: try? Data(contentsOf: folder.appendingPathComponent(asset.relativePath)),
+                    timestamp: timestamp,
+                    location: location,
+                    caption: caption
+                ) {
+                    localIdByPhotoId[asset.photoId] = AppCapturePhotoService.identifier(for: captureId)
+                }
                 await push(0.06 + 0.84 * Double(idx + 1) / Double(assetDenom))
                 continue
             }
@@ -482,11 +534,13 @@ enum BlogBackupService {
             guard hex == asset.contentSha256Hex else { throw BlogBackupError.hashMismatch(photoId: asset.photoId) }
             guard let uiImage = UIImage(data: data) else { throw BlogBackupError.hashMismatch(photoId: asset.photoId) }
 
+            let reelSourceURL = reelFileURL(in: folder, asset: asset)
             let captureId = try AppCapturePhotoService.shared.saveSharedImport(
                 image: uiImage,
                 timestamp: timestamp,
                 location: location,
-                caption: caption
+                caption: caption,
+                momentVideoSourceURL: reelSourceURL
             )
             localIdByPhotoId[asset.photoId] = AppCapturePhotoService.identifier(for: captureId)
             await push(0.06 + 0.84 * Double(idx + 1) / Double(assetDenom))
@@ -694,6 +748,42 @@ enum BlogBackupService {
         }
 
         return nil
+    }
+
+    /// Returns a verified on-disk reel file URL from the backup folder, or nil when absent/invalid.
+    private static func reelFileURL(in folder: URL, asset: BlogBackupAssetEntryV1) -> URL? {
+        guard let rel = asset.reelRelativePath,
+              let expectedHex = asset.reelContentSha256Hex,
+              let expectedCount = asset.reelByteCount,
+              !rel.contains("..") else { return nil }
+        let url = folder.appendingPathComponent(rel)
+        guard FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              data.count == expectedCount,
+              MomentVideoTransfer.sha256Hex(of: data) == expectedHex else { return nil }
+        return url
+    }
+
+    /// When a photo-library match succeeds but the backup also embeds a reel, import as app capture so playback works.
+    private static func restoreEmbeddedReelIfNeeded(
+        asset: BlogBackupAssetEntryV1,
+        folder: URL,
+        imageData: Data?,
+        timestamp: Date,
+        location: CLLocation?,
+        caption: String?
+    ) throws -> UUID? {
+        guard asset.reelRelativePath != nil,
+              let reelURL = reelFileURL(in: folder, asset: asset),
+              let imageData,
+              let uiImage = UIImage(data: imageData) else { return nil }
+        return try AppCapturePhotoService.shared.saveSharedImport(
+            image: uiImage,
+            timestamp: timestamp,
+            location: location,
+            caption: caption,
+            momentVideoSourceURL: reelURL
+        )
     }
 
     private static func loadJPEGDataForBackup(photo: RecapPhoto) async -> Data? {

@@ -43,63 +43,46 @@ struct MomentVideoFullScreenPlayer: View {
                 Spacer()
             }
         }
-        .onAppear(perform: startPlayback)
+        .task(id: url) {
+            startPlayback()
+        }
         .onDisappear(perform: stopPlayback)
     }
 
     private func startPlayback() {
-        print("[ReelPlay] ═══ startPlayback ═══")
-        print("[ReelPlay] file: \(url.lastPathComponent)  exists=\(FileManager.default.fileExists(atPath: url.path))")
+        stopPlayback()
 
-        // Diagnose the audio session BEFORE we touch it
-        let avs = AVAudioSession.sharedInstance()
-        print("[ReelPlay] audioSession BEFORE: category=\(avs.category.rawValue) mode=\(avs.mode.rawValue) outputVol=\(avs.outputVolume)")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            print("[ReelPlay] file missing: \(url.path)")
+            return
+        }
 
         configureAudioSessionForMomentVideoPlayback()
-
-        // Diagnose AFTER our setup
-        print("[ReelPlay] audioSession AFTER:  category=\(avs.category.rawValue) mode=\(avs.mode.rawValue) outputVol=\(avs.outputVolume)")
-        print("[ReelPlay] audioSession outputRoutes: \(avs.currentRoute.outputs.map { "\($0.portType.rawValue):\($0.portName)" })")
-
-        // Check the actual asset tracks synchronously via URLAsset
-        Task {
-            let asset = AVURLAsset(url: url)
-            let videoTracks = (try? await asset.loadTracks(withMediaType: .video))?.count ?? -1
-            let audioTracks = (try? await asset.loadTracks(withMediaType: .audio))?.count ?? -1
-            print("[ReelPlay] asset tracks: video=\(videoTracks) audio=\(audioTracks)")
-        }
 
         let item = AVPlayerItem(url: url)
         let p = AVPlayer(playerItem: item)
         p.isMuted = false
         p.volume = 1.0
         item.audioMix = nil
+        player = p
 
-        print("[ReelPlay] player isMuted=\(p.isMuted) volume=\(p.volume)")
-
-        // Observe item status to catch load errors
         itemObserver = item.publisher(for: \.status)
             .receive(on: DispatchQueue.main)
             .sink { status in
                 switch status {
                 case .readyToPlay:
-                    print("[ReelPlay] item status=readyToPlay  tracks=\(item.tracks.map { "\($0.assetTrack?.mediaType.rawValue ?? "?")" })")
                     p.play()
-                    print("[ReelPlay] play() called after readyToPlay, rate=\(p.rate)")
                 case .failed:
-                    print("[ReelPlay] item status=FAILED error=\(item.error?.localizedDescription ?? "nil")")
+                    print("[ReelPlay] item failed: \(item.error?.localizedDescription ?? "unknown")")
                 case .unknown:
-                    print("[ReelPlay] item status=unknown")
+                    break
                 @unknown default:
                     break
                 }
             }
 
-        player = p
-
         if item.status == .readyToPlay {
             p.play()
-            print("[ReelPlay] play() called (already readyToPlay), rate=\(p.rate)")
         }
     }
 
@@ -146,24 +129,22 @@ private struct FillVideoPlayerView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: FillPlayerUIView, context: Context) {
-        uiView.playerLayer.player = player
+        if uiView.playerLayer.player !== player {
+            uiView.playerLayer.player = player
+        }
     }
 }
 
 private final class FillPlayerUIView: UIView {
-    let playerLayer = AVPlayerLayer()
+    override class var layerClass: AnyClass { AVPlayerLayer.self }
+
+    var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 
     init(player: AVPlayer) {
         super.init(frame: .zero)
         playerLayer.player = player
         playerLayer.videoGravity = .resizeAspectFill
-        layer.addSublayer(playerLayer)
     }
 
     required init?(coder: NSCoder) { fatalError() }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        playerLayer.frame = bounds
-    }
 }

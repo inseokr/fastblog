@@ -124,7 +124,8 @@ final class AppCapturePhotoService {
         image: UIImage,
         timestamp: Date,
         location: CLLocation?,
-        caption: String?
+        caption: String?,
+        momentVideoSourceURL: URL? = nil
     ) throws -> UUID {
         let uuid = UUID()
         let folder = try captureURL(for: uuid)
@@ -156,6 +157,10 @@ final class AppCapturePhotoService {
         let metaData = try JSONEncoder().encode(meta)
         let metaURL = folder.appendingPathComponent("meta.json")
         try metaData.write(to: metaURL)
+
+        if let momentVideoSourceURL {
+            try saveMomentVideo(captureId: uuid, from: momentVideoSourceURL)
+        }
 
         return uuid
     }

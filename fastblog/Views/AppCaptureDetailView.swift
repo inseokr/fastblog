@@ -43,8 +43,7 @@ struct AppCaptureDetailView: View {
     // MARK: - Voice memo (separate player so it can play simultaneously with vibe is undesirable;
     // we explicitly stop vibe when starting voice memo playback and vice-versa).
     @StateObject private var voiceMemoPlayer = VibePlayer()
-    @State private var showMomentVideoPlayer = false
-    /// Pinned when opening the player so delete / pager changes cannot invalidate the URL mid-playback.
+    /// When non-nil, presents full-screen moment-video playback.
     @State private var momentVideoPlaybackURL: URL?
     @State private var downloadToast: String?
 
@@ -220,17 +219,14 @@ struct AppCaptureDetailView: View {
                 )
             }
         }
-        .fullScreenCover(isPresented: $showMomentVideoPlayer, onDismiss: {
-            momentVideoPlaybackURL = nil
-        }) {
+        .fullScreenCover(isPresented: Binding(
+            get: { momentVideoPlaybackURL != nil },
+            set: { if !$0 { momentVideoPlaybackURL = nil } }
+        )) {
             if let url = momentVideoPlaybackURL {
                 MomentVideoFullScreenPlayer(url: url) {
-                    showMomentVideoPlayer = false
                     momentVideoPlaybackURL = nil
                 }
-            } else {
-                Color.black.ignoresSafeArea()
-                    .onAppear { showMomentVideoPlayer = false }
             }
         }
     }
@@ -241,7 +237,6 @@ struct AppCaptureDetailView: View {
         voiceMemoPlayer.stop()
         isVibeEnabled = false
         momentVideoPlaybackURL = url
-        showMomentVideoPlayer = true
     }
 
     // MARK: - Current item helper
@@ -283,7 +278,6 @@ struct AppCaptureDetailView: View {
             }
             vibePlayer.stop()
             voiceMemoPlayer.stop()
-            showMomentVideoPlayer = false
             momentVideoPlaybackURL = nil
             if isVibeEnabled, let url = items[safe: newIdx]?.localVibeURL {
                 vibePlayer.play(url: url)
@@ -805,7 +799,6 @@ struct AppCaptureDetailView: View {
     private func deleteCurrentPhoto() {
         guard let item = currentItem else { return }
 
-        showMomentVideoPlayer = false
         momentVideoPlaybackURL = nil
         vibePlayer.stop()
         voiceMemoPlayer.stop()

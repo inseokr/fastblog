@@ -235,6 +235,7 @@
 		BB0003C5 /* AppChromeMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003C4 /* AppChromeMetrics.swift */; };
 		BB0003D1 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = AA000063 /* ZIPFoundation */; };
 		BB0003D3 /* BlogBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003D2 /* BlogBackupService.swift */; };
+		BB0003D5 /* MomentVideoTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003D4 /* MomentVideoTransfer.swift */; };
 		BB0003E1 /* GoogleSearchEmbeddedWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E0 /* GoogleSearchEmbeddedWebView.swift */; };
 		BB0003E3 /* UndoToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E2 /* UndoToastView.swift */; };
 		BB0003E5 /* TransportModePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E4 /* TransportModePickerSheet.swift */; };
@@ -513,6 +514,7 @@
 		BB0003C0 /* SplitPlaceStopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPlaceStopView.swift; sourceTree = "<group>"; };
 		BB0003C4 /* AppChromeMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppChromeMetrics.swift; sourceTree = "<group>"; };
 		BB0003D2 /* BlogBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogBackupService.swift; sourceTree = "<group>"; };
+		BB0003D4 /* MomentVideoTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoTransfer.swift; sourceTree = "<group>"; };
 		BB0003E0 /* GoogleSearchEmbeddedWebView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleSearchEmbeddedWebView.swift; sourceTree = "<group>"; };
 		BB0003E2 /* UndoToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoToastView.swift; sourceTree = "<group>"; };
 		BB0003E4 /* TransportModePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportModePickerSheet.swift; sourceTree = "<group>"; };
@@ -846,6 +848,7 @@
 				BB00017F /* CreatedRecapBlogStore.swift */,
 				BB00F009 /* PlacesShareDraftBuilder.swift */,
 				BB0003D2 /* BlogBackupService.swift */,
+				BB0003D4 /* MomentVideoTransfer.swift */,
 				BB000404 /* BlogDropService.swift */,
 				BB000251 /* AppCapturePhotoService.swift */,
 				BB000261 /* VibeRecorder.swift */,
@@ -1149,6 +1152,7 @@
 				BB00017E /* SplashView.swift in Sources */,
 				BB000180 /* CreatedRecapBlogStore.swift in Sources */,
 				BB0003D3 /* BlogBackupService.swift in Sources */,
+				BB0003D5 /* MomentVideoTransfer.swift in Sources */,
 				BB000405 /* BlogDropService.swift in Sources */,
 				BB000182 /* DayToTripGrouper.swift in Sources */,
 				BB000184 /* GeoDistanceHelper.swift in Sources */,

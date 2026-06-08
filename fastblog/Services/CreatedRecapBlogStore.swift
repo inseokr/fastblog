@@ -455,8 +455,8 @@ final class CreatedRecapBlogStore: ObservableObject {
     // MARK: - Public API
 
     /// Materializes a trip received via nearby share (new identities + bloggo-capture assets) and adds it like a new blog draft.
-    func importNearbySharedTrip(manifest: TripShareManifestV1, images: [Data]) throws {
-        let trip = try TripShareImporter.makeTripDraft(manifest: manifest, images: images)
+    func importNearbySharedTrip(manifest: TripShareManifestV1, images: [Data], reelsByOrder: [Int: Data] = [:]) throws {
+        let trip = try TripShareImporter.makeTripDraft(manifest: manifest, images: images, reelsByOrder: reelsByOrder)
         addCreatedBlog(trip: trip)
     }
 
@@ -471,8 +471,16 @@ final class CreatedRecapBlogStore: ObservableObject {
     /// Materializes a recap blog received via nearby share (preserves captions and stories) and adds it like a new blog.
     /// - Note: We create the `CreatedRecapBlog` entry using a derived `TripDraft`, then overwrite the stored `RecapBlogDetail`
     ///   so the imported detail (captions/stories/place notes) is preserved exactly.
-    func importNearbySharedRecapBlog(manifest: TripShareRecapManifestV1, images: [Data]) throws -> [String] {
-        let importedDetail = try TripShareRecapImporter.makeRecapBlogDetail(manifest: manifest, images: images)
+    func importNearbySharedRecapBlog(
+        manifest: TripShareRecapManifestV1,
+        images: [Data],
+        reelsByOrder: [Int: Data] = [:]
+    ) throws -> [String] {
+        let importedDetail = try TripShareRecapImporter.makeRecapBlogDetail(
+            manifest: manifest,
+            images: images,
+            reelsByOrder: reelsByOrder
+        )
         guard let trip = TripShareBlogDraftBuilder.tripDraft(from: importedDetail) else {
             // Should not happen: importer always sets local identifiers for exported photos.
             throw TripShareRecapExportError.noExportableIncludedPhotos
