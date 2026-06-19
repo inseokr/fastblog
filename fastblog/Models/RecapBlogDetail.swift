@@ -85,7 +85,7 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
                     if let cloud = photo.cloudURL, !cloud.isEmpty { return false }
                     guard let lid = photo.localIdentifier, !lid.isEmpty else { return true }
                     if lid.hasPrefix(AppCapturePhotoService.prefix) {
-                        return AppCapturePhotoService.shared.loadImage(identifier: lid) == nil
+                        return !AppCapturePhotoService.shared.imageExists(identifier: lid)
                     }
                     return !existingLibraryIds.contains(lid)
                 }
@@ -534,7 +534,7 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
         if let cloud = cloudURL, !cloud.isEmpty { return true }
         guard let lid = localIdentifier, !lid.isEmpty else { return false }
         if lid.hasPrefix(AppCapturePhotoService.prefix) {
-            return AppCapturePhotoService.shared.loadImage(identifier: lid) != nil
+            return AppCapturePhotoService.shared.imageExists(identifier: lid)
         }
         return PHAsset.fetchAssets(withLocalIdentifiers: [lid], options: nil).firstObject != nil
     }

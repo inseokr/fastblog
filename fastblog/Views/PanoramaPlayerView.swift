@@ -1214,17 +1214,20 @@ struct PanoramaPlayerView: View {
                     }
                 }
 
-                // Close gallery and return to slideshow playback.
-                Button(action: resumePlaybackFromGalleryCover) {
-                    Text("Close")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 36)
-                        .background(Capsule().fill(Color.black.opacity(0.5)))
+                HStack(alignment: .center, spacing: 10) {
+                    Button(action: resumePlaybackFromGalleryCover) {
+                        Text("Close")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: 36)
+                            .background(Capsule().fill(Color.black.opacity(0.5)))
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
-                .padding(.leading, 20)
+                .padding(.horizontal, 20)
                 .padding(.top, SlideshowGalleryLayout.chromeTopPadding())
                     }
                 }

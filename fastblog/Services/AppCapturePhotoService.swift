@@ -8,6 +8,7 @@
 
 import CoreLocation
 import Foundation
+import ImageIO
 import Photos
 import UIKit
 
@@ -167,10 +168,26 @@ final class AppCapturePhotoService {
 
     // MARK: - Load image
 
-    func loadImage(captureId: UUID) -> UIImage? {
+    private func imageFileURL(for captureId: UUID) -> URL? {
         guard let folder = try? captureURL(for: captureId) else { return nil }
-        let imageURL = folder.appendingPathComponent("image.jpg")
-        guard let data = try? Data(contentsOf: imageURL) else { return nil }
+        return folder.appendingPathComponent("image.jpg")
+    }
+
+    /// True when `image.jpg` exists on disk — does not decode pixels (safe for filters / validation).
+    func imageExists(captureId: UUID) -> Bool {
+        guard let imageURL = imageFileURL(for: captureId) else { return false }
+        return FileManager.default.fileExists(atPath: imageURL.path)
+    }
+
+    /// Convenience: parse identifier and check on-disk image without decoding.
+    func imageExists(identifier: String) -> Bool {
+        guard let uuid = Self.uuid(from: identifier) else { return false }
+        return imageExists(captureId: uuid)
+    }
+
+    func loadImage(captureId: UUID) -> UIImage? {
+        guard let imageURL = imageFileURL(for: captureId),
+              let data = try? Data(contentsOf: imageURL) else { return nil }
         return UIImage(data: data)
     }
 
@@ -178,6 +195,29 @@ final class AppCapturePhotoService {
     func loadImage(identifier: String) -> UIImage? {
         guard let uuid = Self.uuid(from: identifier) else { return nil }
         return loadImage(captureId: uuid)
+    }
+
+    /// Downsampled decode for grids / modals — avoids loading full-resolution JPEG into memory.
+    func loadThumbnail(captureId: UUID, maxPixelSize: CGFloat) -> UIImage? {
+        guard maxPixelSize > 0,
+              let imageURL = imageFileURL(for: captureId),
+              FileManager.default.fileExists(atPath: imageURL.path) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+        guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
+    }
+
+    func loadThumbnail(identifier: String, maxPixelSize: CGFloat) -> UIImage? {
+        guard let uuid = Self.uuid(from: identifier) else { return nil }
+        return loadThumbnail(captureId: uuid, maxPixelSize: maxPixelSize)
     }
 
     // MARK: - Load metadata

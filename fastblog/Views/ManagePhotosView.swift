@@ -63,7 +63,7 @@ struct ManagePhotosView: View {
             return false
         }
         if lid.hasPrefix(AppCapturePhotoService.prefix) {
-            return AppCapturePhotoService.shared.loadImage(identifier: lid) != nil
+            return AppCapturePhotoService.shared.imageExists(identifier: lid)
         }
         return existingPhotoLibraryAssetIds.contains(lid) || provisionalLibraryAssetIds.contains(lid)
     }

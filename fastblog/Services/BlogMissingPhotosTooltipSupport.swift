@@ -69,7 +69,7 @@ enum BlogMissingPhotosEvaluator {
             return false
         }
         if lid.hasPrefix(AppCapturePhotoService.prefix) {
-            return AppCapturePhotoService.shared.loadImage(identifier: lid) != nil
+            return AppCapturePhotoService.shared.imageExists(identifier: lid)
         }
         let fetch = PHAsset.fetchAssets(withLocalIdentifiers: [lid], options: nil)
         return fetch.firstObject != nil

@@ -154,14 +154,14 @@ struct SlideshowBundledTrackPickerSheet: View {
                     } label: {
                         HStack(spacing: 12) {
                             selectionIndicator(isOn: selectedFilename == nil)
-                            Text("No background music")
+                            Text("Remove song")
                                 .foregroundStyle(.primary)
                             Spacer()
                         }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("No background music")
+                    .accessibilityLabel("Remove song")
                     .accessibilityAddTraits(selectedFilename == nil ? .isSelected : [])
                 } footer: {
                     if tracks.isEmpty {
@@ -171,7 +171,7 @@ struct SlideshowBundledTrackPickerSheet: View {
                 }
 
                 if !tracks.isEmpty {
-                    Section("Music") {
+                    Section("Import song") {
                         ForEach(tracks) { track in
                             HStack(spacing: 10) {
                                 Button {
@@ -219,7 +219,7 @@ struct SlideshowBundledTrackPickerSheet: View {
                     }
                 }
             }
-            .navigationTitle("Slideshow music")
+            .navigationTitle("Background music")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

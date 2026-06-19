@@ -6685,7 +6685,7 @@ Your blog remains private unless you choose to share it.
 
         stop.photos.sort { $0.timestamp < $1.timestamp }
         draft.days[dayIdx].placeStops[stopIdx] = stop
-        persistRecapBlogDetail()
+        await syncStopLocationAndGeocodeIfNeeded(dayId: dayId, stopId: stopId)
 
         // Refine timestamp/location in the background for any photos whose PHAsset wasn't immediately available.
         guard !pendingRefinement.isEmpty else { return }
@@ -6704,8 +6704,94 @@ Your blog remains private unless you choose to share it.
                 draft.days[dIdx].placeStops[sIdx].photos[pIdx].location =
                     PlaceLibraryPhotoImport.resolvedCoordinate(asset: asset, stop: refinedStop)
             }
-            persistRecapBlogDetail()
+            await syncStopLocationAndGeocodeIfNeeded(dayId: dayId, stopId: stopId)
         }
+    }
+
+    /// Points cover at an included library photo when the stored cover id is missing from the blog.
+    private func syncCoverPhotoToIncludedPhotosIfNeeded() {
+        let included = draft.days
+            .flatMap(\.placeStops)
+            .flatMap(\.photos)
+            .filter(\.isIncluded)
+        let includedIds = Set(included.compactMap(\.localIdentifier))
+        if let cover = draft.selectedCoverPhotoIdentifier, includedIds.contains(cover) {
+            return
+        }
+        draft.selectedCoverPhotoIdentifier = included.compactMap(\.localIdentifier).first
+    }
+
+    /// Sets the trip day date from the earliest included photo timestamp (library EXIF), not "today".
+    private func alignDayDateFromIncludedPhotos(dayId: UUID) {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }) else { return }
+        let included = draft.days[dayIdx].placeStops.flatMap(\.photos).filter(\.isIncluded)
+        guard let earliest = included.map(\.timestamp).min() else { return }
+
+        let tz = draft.days[dayIdx].placeStops
+            .compactMap(\.timeZoneIdentifier)
+            .compactMap(TimeZone.init(identifier:))
+            .first ?? .current
+        let key = TripCalendarDayKey.from(date: earliest, timeZone: tz)
+        guard let canonical = TripCalendarDayKey.canonicalDate(from: key) else { return }
+        draft.days[dayIdx].date = canonical
+    }
+
+    private func finalizePhotoImportToDay(dayId: UUID) {
+        alignDayDateFromIncludedPhotos(dayId: dayId)
+        syncCoverPhotoToIncludedPhotosIfNeeded()
+        persistRecapBlogDetail()
+    }
+
+    /// Copies photo GPS onto the stop when missing, then reverse-geocodes placeholder place names.
+    @MainActor
+    private func syncStopLocationAndGeocodeIfNeeded(dayId: UUID, stopId: UUID) async {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+
+        var stop = draft.days[dayIdx].placeStops[stopIdx]
+        if stop.representativeLocation == nil {
+            stop.representativeLocation = stop.photos.compactMap(\.location).first
+            draft.days[dayIdx].placeStops[stopIdx].representativeLocation = stop.representativeLocation
+        }
+        guard let coord = stop.representativeLocation else {
+            finalizePhotoImportToDay(dayId: dayId)
+            return
+        }
+
+        let shouldGeocode = !stop.placeTitleIsManual
+            && PlacePlaceholderNaming.isResolvablePlaceholder(stop.placeTitle)
+        guard shouldGeocode else {
+            finalizePhotoImportToDay(dayId: dayId)
+            return
+        }
+
+        let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+        let place = await GeocodingService.shared.place(for: loc)
+        let (resolvedTitle, resolvedCategory) = await GeocodingService.shared.resolvePlaceLabel(
+            areaName: place.areaName,
+            coordinate: loc.coordinate
+        )
+
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+        var updated = draft.days[dayIdx].placeStops[stopIdx]
+        guard !updated.placeTitleIsManual,
+              PlacePlaceholderNaming.isResolvablePlaceholder(updated.placeTitle) else {
+            finalizePhotoImportToDay(dayId: dayId)
+            return
+        }
+
+        updated.placeTitle = resolvedTitle
+        updated.placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+        if let cat = resolvedCategory, updated.placeCategory == nil {
+            updated.placeCategory = cat
+        }
+        if updated.timeZoneIdentifier == nil,
+           let tz = await GeocodingService.shared.timeZone(for: loc) {
+            updated.timeZoneIdentifier = tz.identifier
+        }
+        draft.days[dayIdx].placeStops[stopIdx] = updated
+        finalizePhotoImportToDay(dayId: dayId)
     }
 
     private func importBloggoPhotosIntoStop(captureIds: [UUID], dayId: UUID, stopId: UUID) {
@@ -6733,7 +6819,7 @@ Your blog remains private unless you choose to share it.
 
         stop.photos.sort { $0.timestamp < $1.timestamp }
         draft.days[dayIdx].placeStops[stopIdx] = stop
-        persistRecapBlogDetail()
+        Task { await syncStopLocationAndGeocodeIfNeeded(dayId: dayId, stopId: stopId) }
     }
 
     /// True if every included photo already has a cloud URL.

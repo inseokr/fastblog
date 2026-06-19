@@ -179,7 +179,8 @@ final class ImageLoader {
         }
 
         if assetIdentifier.hasPrefix(AppCapturePhotoService.prefix) {
-            let image = AppCapturePhotoService.shared.loadImage(identifier: assetIdentifier)
+            let maxPixel = max(targetSize.width, targetSize.height)
+            let image = AppCapturePhotoService.shared.loadThumbnail(identifier: assetIdentifier, maxPixelSize: maxPixel)
             if let image { cache.setObject(image, forKey: key) }
             return image
         }
@@ -221,7 +222,8 @@ final class ImageLoader {
         }
 
         if assetIdentifier.hasPrefix(AppCapturePhotoService.prefix) {
-            let image = AppCapturePhotoService.shared.loadImage(identifier: assetIdentifier)
+            let maxPixel = max(targetSize.width, targetSize.height)
+            let image = AppCapturePhotoService.shared.loadThumbnail(identifier: assetIdentifier, maxPixelSize: maxPixel)
             if let image { cache.setObject(image, forKey: key) }
             return image
         }

@@ -2937,7 +2937,11 @@ final class CreatedRecapBlogStore: ObservableObject {
 
         for stopIdx in result.days[dayIndex].placeStops.indices {
             applySavedAppCapturePlaceMetadata(to: &result.days[dayIndex].placeStops[stopIdx])
-            let stop = result.days[dayIndex].placeStops[stopIdx]
+            var stop = result.days[dayIndex].placeStops[stopIdx]
+            if stop.representativeLocation == nil {
+                stop.representativeLocation = stop.photos.compactMap(\.location).first
+                result.days[dayIndex].placeStops[stopIdx].representativeLocation = stop.representativeLocation
+            }
             if Task.isCancelled { return result }
             if let coord = stop.representativeLocation {
                 let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
@@ -3044,7 +3048,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                 .compactMap(\.localIdentifier)
                 .first { id in
                     id.hasPrefix(AppCapturePhotoService.prefix)
-                        && AppCapturePhotoService.shared.loadImage(identifier: id) != nil
+                        && AppCapturePhotoService.shared.imageExists(identifier: id)
                 }
             if let fallbackId {
                 detail.selectedCoverPhotoIdentifier = fallbackId

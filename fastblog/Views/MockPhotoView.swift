@@ -68,7 +68,10 @@ struct AssetPhotoView: View {
                     image = nil
                     displayedIdentifier = nil
                 }
-                let loaded = AppCapturePhotoService.shared.loadImage(identifier: assetIdentifier)
+                let loaded = await ImageLoader.shared.loadThumbnail(
+                    assetIdentifier: assetIdentifier,
+                    targetSize: targetSize
+                )
                 if !Task.isCancelled {
                     image = loaded
                     displayedIdentifier = loaded != nil ? assetIdentifier : nil
