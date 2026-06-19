@@ -2951,7 +2951,7 @@ struct CameraCaptureView: View {
     /// (those checks were stacking every layout pass and could freeze UI for seconds).
     @State private var previewChromeHasVibe = false
     @State private var previewChromeHasMomentVideo = false
-    @State private var momentVideoPreviewURL: URL?
+    @State private var showMomentVideoTrimSheet = false
     @State private var previewChromeHasVoiceMemo = false
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
@@ -3127,7 +3127,7 @@ struct CameraCaptureView: View {
         previewCaptionFocused = false
         previewVibePlayer.stop()
         previewVoiceMemoPlayer.stop()
-        momentVideoPreviewURL = nil
+        showMomentVideoTrimSheet = false
         cameraController.startRunning()
         syncInAppCameraAudioSession()
 
@@ -3766,13 +3766,9 @@ struct CameraCaptureView: View {
                 if previewChromeHasMomentVideo || cameraController.isRecordingMomentVideo,
                    let moment = captionModeResolvedMoment {
                     Button {
-                        guard let url = resolvedMomentVideoURL(for: moment) else { return }
-                        previewVibePlayer.stop()
-                        previewVoiceMemoPlayer.stop()
-                        InAppCameraAudioSession.deactivateForReelPlayback()
-                        momentVideoPreviewURL = url
+                        presentMomentVideoTrim(for: moment)
                     } label: {
-                        Image(systemName: cameraController.isRecordingMomentVideo ? "video.fill" : "play.fill")
+                        Image(systemName: cameraController.isRecordingMomentVideo ? "video.fill" : "slider.horizontal.3")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(width: 44, height: 44)
@@ -3784,7 +3780,7 @@ struct CameraCaptureView: View {
                     .buttonStyle(.plain)
                     .disabled(cameraController.isRecordingMomentVideo && resolvedMomentVideoURL(for: moment) == nil)
                     .accessibilityLabel(
-                        cameraController.isRecordingMomentVideo ? "Recording video clip" : "Play video clip"
+                        cameraController.isRecordingMomentVideo ? "Recording video clip" : "Trim video clip"
                     )
                 }
 
@@ -3861,7 +3857,10 @@ struct CameraCaptureView: View {
             if let lid = moment.localIdentifier,
                let captureId = AppCapturePhotoService.uuid(from: lid) {
                 try? AppCapturePhotoService.shared.saveMomentVideo(captureId: captureId, from: videoURL)
-                try? FileManager.default.removeItem(at: videoURL)
+                if let persisted = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId),
+                   videoURL.path != persisted.path {
+                    try? FileManager.default.removeItem(at: videoURL)
+                }
                 moment.momentVideoURL = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId)
             } else {
                 moment.momentVideoURL = videoURL
@@ -3883,6 +3882,91 @@ struct CameraCaptureView: View {
         }
         if previewChromeHasMomentVideo {
             lastCaptureHasMomentVideo = true
+        }
+    }
+
+    private var previewMomentVideoChipLabel: String {
+        guard let moment = captionModeResolvedMoment,
+              let url = resolvedMomentVideoURL(for: moment) else {
+            return "Video clip · tap to trim"
+        }
+        let seconds = AVURLAsset(url: url).duration.seconds
+        guard seconds.isFinite, seconds > 0 else {
+            return "Video clip · tap to trim"
+        }
+        return "\(MomentVideoTrimmer.formattedDuration(seconds)) clip · tap to trim"
+    }
+
+    private func presentMomentVideoTrim(for moment: CapturedMoment) {
+        guard resolvedMomentVideoURL(for: moment) != nil else { return }
+        previewVibePlayer.stop()
+        previewVoiceMemoPlayer.stop()
+        InAppCameraAudioSession.deactivateForReelPlayback()
+        showMomentVideoTrimSheet = true
+    }
+
+    private func applyTrimmedMomentVideo(_ trimmedURL: URL) {
+        guard let moment = captionModeResolvedMoment,
+              let currentURL = resolvedMomentVideoURL(for: moment) else { return }
+        if trimmedURL.path == currentURL.path {
+            syncInAppCameraAudioSession()
+            return
+        }
+        attachMomentVideo(trimmedURL, toMomentId: moment.id)
+        updatePreviewImageFromTrimmedVideo(trimmedURL, momentId: moment.id)
+        syncInAppCameraAudioSession()
+    }
+
+    private func removeMomentVideoForCurrentPreview() {
+        guard let moment = captionModeResolvedMoment else { return }
+        removeMomentVideo(for: moment)
+        syncInAppCameraAudioSession()
+    }
+
+    private func removeMomentVideo(for moment: CapturedMoment) {
+        if let lid = moment.localIdentifier,
+           let captureId = AppCapturePhotoService.uuid(from: lid) {
+            AppCapturePhotoService.shared.deleteMomentVideo(captureId: captureId)
+        } else if let url = moment.momentVideoURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+
+        func clear(into moment: inout CapturedMoment) {
+            moment.momentVideoURL = nil
+        }
+
+        if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == moment.id }) {
+            clear(into: &sessionCapturesForDisplay[idx])
+        }
+        if let idx = sessionMoments.firstIndex(where: { $0.id == moment.id }) {
+            clear(into: &sessionMoments[idx])
+        }
+
+        if captionModeMomentId == moment.id {
+            previewChromeHasMomentVideo = false
+            lastCaptureHasMomentVideo = false
+        }
+    }
+
+    private func updatePreviewImageFromTrimmedVideo(_ videoURL: URL, momentId: UUID) {
+        guard let image = thumbnailImage(fromVideoAt: videoURL) else { return }
+
+        func apply(into moment: inout CapturedMoment) {
+            moment.previewImage = image
+            if let lid = moment.localIdentifier,
+               let captureId = AppCapturePhotoService.uuid(from: lid) {
+                try? AppCapturePhotoService.shared.replaceCaptureImage(captureId: captureId, image: image)
+            }
+        }
+
+        if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) {
+            apply(into: &sessionCapturesForDisplay[idx])
+        }
+        if let idx = sessionMoments.firstIndex(where: { $0.id == momentId }) {
+            apply(into: &sessionMoments[idx])
+        }
+        if captionModeMomentId == momentId {
+            captionModeFrozenImage = image
         }
     }
 
@@ -4020,18 +4104,24 @@ struct CameraCaptureView: View {
                                 .accessibilityLabel(previewVoiceMemoPlayer.isPlaying ? "Pause voice memo" : "Play voice memo")
                             }
                             if previewChromeHasMomentVideo {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "video.fill")
-                                        .font(.system(size: 10, weight: .semibold))
-                                    Text("5s video clip attached")
-                                        .font(.system(size: 11, weight: .medium))
+                                Button {
+                                    guard let moment = captionModeResolvedMoment else { return }
+                                    presentMomentVideoTrim(for: moment)
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "video.fill")
+                                            .font(.system(size: 10, weight: .semibold))
+                                        Text(previewMomentVideoChipLabel)
+                                            .font(.system(size: 11, weight: .medium))
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color.orange.opacity(0.92), in: Capsule())
+                                    .shadow(color: .black.opacity(0.22), radius: 2, y: 1)
                                 }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(Color.orange.opacity(0.92), in: Capsule())
-                                .shadow(color: .black.opacity(0.22), radius: 2, y: 1)
-                                .accessibilityLabel("Short video clip attached to this moment")
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Trim short video clip")
                             }
                         }
                     }
@@ -4802,20 +4892,21 @@ struct CameraCaptureView: View {
             } message: {
                 Text("This removes only the vibe audio and keeps the photo.")
             }
-            .fullScreenCover(isPresented: Binding(
-                get: { momentVideoPreviewURL != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        momentVideoPreviewURL = nil
-                        syncInAppCameraAudioSession()
-                    }
-                }
-            )) {
-                if let url = momentVideoPreviewURL {
-                    MomentVideoFullScreenPlayer(url: url) {
-                        momentVideoPreviewURL = nil
-                        syncInAppCameraAudioSession()
-                    }
+            .fullScreenCover(isPresented: $showMomentVideoTrimSheet) {
+                if let moment = captionModeResolvedMoment,
+                   let url = resolvedMomentVideoURL(for: moment) {
+                    MomentVideoTrimSheet(
+                        sourceURL: url,
+                        onApply: { trimmedURL in
+                            applyTrimmedMomentVideo(trimmedURL)
+                        },
+                        onRemove: {
+                            removeMomentVideoForCurrentPreview()
+                        },
+                        onCancel: {
+                            syncInAppCameraAudioSession()
+                        }
+                    )
                 }
             }
     }

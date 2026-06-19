@@ -436,6 +436,20 @@ final class AppCapturePhotoService {
         return url
     }
 
+    /// Replaces the still image for an existing capture (e.g. after trimming a reel thumbnail).
+    func replaceCaptureImage(captureId: UUID, image: UIImage) throws {
+        guard let imageURL = imageFileURL(for: captureId) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        guard let jpegData = image.jpegData(compressionQuality: 0.92) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try jpegData.write(to: imageURL)
+        Task { @MainActor in
+            ImageLoader.shared.invalidateThumbnailCache(for: Self.identifier(for: captureId))
+        }
+    }
+
     /// Removes only the moment video for a capture (keeps the photo, vibe, and voice memo).
     func deleteMomentVideo(captureId: UUID) {
         guard let url = try? momentVideoPath(for: captureId) else { return }

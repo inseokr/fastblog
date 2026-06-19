@@ -47,6 +47,7 @@ enum AnalyticsEventType {
     case appInAppCameraPhotoTaken
     case appInAppCameraVibePhotoTaken
     case appInAppCameraReelSaved(duration: Int, stopMode: String)
+    case appInAppCameraReelTrimmed(originalDuration: Int, trimmedDuration: Int, trimmedFromStart: Int, trimmedFromEnd: Int)
     case appInAppCameraVibeON
     case appInAppCameraCaption
     case appInAppCameraPreviewSave
@@ -90,6 +91,7 @@ enum AnalyticsEventType {
         case .appInAppCameraPhotoTaken:         return "App-InAppCamera-PhotoTaken"
         case .appInAppCameraVibePhotoTaken:     return "App-InAppCamera-VibePhoto-Taken"
         case .appInAppCameraReelSaved:          return "App-InAppCamera-Reel-Saved"
+        case .appInAppCameraReelTrimmed:        return "App-InAppCamera-Reel-Trimmed"
         case .appInAppCameraVibeON:             return "App-InAppCamera-VibeON"
         case .appInAppCameraCaption:            return "App-InAppCamera-Caption"
         case .appInAppCameraPreviewSave:        return "App-InAppCamera-Preview-Save"
@@ -103,6 +105,7 @@ enum AnalyticsEventType {
         switch self {
         case .blogScan, .appOpen, .appInAppCameraOpen,
              .appInAppCameraPhotoTaken, .appInAppCameraVibePhotoTaken, .appInAppCameraReelSaved,
+             .appInAppCameraReelTrimmed,
              .appInAppCameraVibeON, .appInAppCameraCaption,
              .appInAppCameraPreviewSave, .appInAppCameraPreviewDiscard,
              .appInAppCameraVoiceMemoSave, .appInAppCameraVoiceMemoPlay:
@@ -147,6 +150,13 @@ enum AnalyticsEventType {
         switch self {
         case .appInAppCameraReelSaved(let duration, let stopMode):
             return ["duration": "\(duration)", "stopMode": stopMode]
+        case .appInAppCameraReelTrimmed(let originalDuration, let trimmedDuration, let trimmedFromStart, let trimmedFromEnd):
+            return [
+                "originalDuration": "\(originalDuration)",
+                "trimmedDuration": "\(trimmedDuration)",
+                "trimmedFromStart": "\(trimmedFromStart)",
+                "trimmedFromEnd": "\(trimmedFromEnd)"
+            ]
         default:
             return [:]
         }
