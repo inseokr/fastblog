@@ -48,6 +48,7 @@ enum AnalyticsEventType {
     case appInAppCameraVibePhotoTaken
     case appInAppCameraReelSaved(duration: Int, stopMode: String)
     case appInAppCameraReelTrimmed(originalDuration: Int, trimmedDuration: Int, trimmedFromStart: Int, trimmedFromEnd: Int)
+    case appInAppCameraReelNoiseReduced(duration: Int)
     case appInAppCameraVibeON
     case appInAppCameraCaption
     case appInAppCameraPreviewSave
@@ -92,6 +93,7 @@ enum AnalyticsEventType {
         case .appInAppCameraVibePhotoTaken:     return "App-InAppCamera-VibePhoto-Taken"
         case .appInAppCameraReelSaved:          return "App-InAppCamera-Reel-Saved"
         case .appInAppCameraReelTrimmed:        return "App-InAppCamera-Reel-Trimmed"
+        case .appInAppCameraReelNoiseReduced:   return "App-InAppCamera-Reel-NoiseReduced"
         case .appInAppCameraVibeON:             return "App-InAppCamera-VibeON"
         case .appInAppCameraCaption:            return "App-InAppCamera-Caption"
         case .appInAppCameraPreviewSave:        return "App-InAppCamera-Preview-Save"
@@ -106,6 +108,7 @@ enum AnalyticsEventType {
         case .blogScan, .appOpen, .appInAppCameraOpen,
              .appInAppCameraPhotoTaken, .appInAppCameraVibePhotoTaken, .appInAppCameraReelSaved,
              .appInAppCameraReelTrimmed,
+             .appInAppCameraReelNoiseReduced,
              .appInAppCameraVibeON, .appInAppCameraCaption,
              .appInAppCameraPreviewSave, .appInAppCameraPreviewDiscard,
              .appInAppCameraVoiceMemoSave, .appInAppCameraVoiceMemoPlay:
@@ -157,6 +160,8 @@ enum AnalyticsEventType {
                 "trimmedFromStart": "\(trimmedFromStart)",
                 "trimmedFromEnd": "\(trimmedFromEnd)"
             ]
+        case .appInAppCameraReelNoiseReduced(let duration):
+            return ["duration": "\(duration)"]
         default:
             return [:]
         }

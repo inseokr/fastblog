@@ -30,16 +30,24 @@ enum MomentVideoTrimmer {
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 120, height: 120)
-        generator.requestedTimeToleranceBefore = CMTime(seconds: 0.05, preferredTimescale: timescale)
-        generator.requestedTimeToleranceAfter = CMTime(seconds: 0.05, preferredTimescale: timescale)
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
 
         let count = max(frameCount, 1)
+        let lastSampleSeconds = max(0, totalSeconds - 0.04)
         var images: [UIImage] = []
         images.reserveCapacity(count)
 
         for index in 0..<count {
-            let fraction = count == 1 ? 0.5 : Double(index) / Double(count - 1)
-            let time = CMTime(seconds: totalSeconds * fraction, preferredTimescale: timescale)
+            let seconds: Double
+            if count == 1 {
+                seconds = lastSampleSeconds * 0.5
+            } else if index == count - 1 {
+                seconds = lastSampleSeconds
+            } else {
+                seconds = lastSampleSeconds * (Double(index) / Double(count - 1))
+            }
+            let time = CMTime(seconds: seconds, preferredTimescale: timescale)
             guard let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) else { continue }
             images.append(UIImage(cgImage: cgImage))
         }
