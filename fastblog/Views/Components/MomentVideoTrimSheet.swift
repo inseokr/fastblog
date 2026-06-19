@@ -116,15 +116,9 @@ struct MomentVideoTrimSheet: View {
             await loadAsset()
         }
         .onChange(of: startSeconds) { _, _ in
-            if activeDragHandle != .end {
-                updateScrubPreview(focus: .start)
-            }
             scheduleCleanPreviewIfNeeded()
         }
         .onChange(of: endSeconds) { _, _ in
-            if activeDragHandle != .start {
-                updateScrubPreview(focus: .end)
-            }
             scheduleCleanPreviewIfNeeded()
         }
         .onChange(of: reduceBackgroundNoise) { _, _ in
@@ -295,6 +289,7 @@ struct MomentVideoTrimSheet: View {
             }
             .onEnded { _ in
                 activeDragHandle = nil
+                playLoopingTrimRange()
             }
     }
 
@@ -321,9 +316,11 @@ struct MomentVideoTrimSheet: View {
         HStack(spacing: 10) {
             nudgeButton(title: "Trim start", systemImage: "arrow.right.to.line") {
                 startSeconds = clampedStart(startSeconds + MomentVideoTrimmer.nudgeStep)
+                playLoopingTrimRange()
             }
             nudgeButton(title: "Trim end", systemImage: "arrow.left.to.line") {
                 endSeconds = clampedEnd(endSeconds - MomentVideoTrimmer.nudgeStep)
+                playLoopingTrimRange()
             }
         }
     }
