@@ -229,17 +229,7 @@
 		BB000347 /* InlineMomentReelMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000346 /* InlineMomentReelMedia.swift */; };
 		BB000348 /* MomentVideoTrimmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000349 /* MomentVideoTrimmer.swift */; };
 		BB000350 /* MomentVideoTrimSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000351 /* MomentVideoTrimSheet.swift */; };
-		BB000352 /* MomentVideoAudioCleaner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000353 /* MomentVideoAudioCleaner.swift */; };
-		BB000355 /* denoise.c in Sources */ = {isa = PBXBuildFile; fileRef = BB000356 /* denoise.c */; };
-		BB000357 /* rnn.c in Sources */ = {isa = PBXBuildFile; fileRef = BB000358 /* rnn.c */; };
-		BB000359 /* pitch.c in Sources */ = {isa = PBXBuildFile; fileRef = BB00035A /* pitch.c */; };
-		BB00035B /* kiss_fft.c in Sources */ = {isa = PBXBuildFile; fileRef = BB00035C /* kiss_fft.c */; };
-		BB00035D /* celt_lpc.c in Sources */ = {isa = PBXBuildFile; fileRef = BB00035E /* celt_lpc.c */; };
-		BB00035F /* nnet.c in Sources */ = {isa = PBXBuildFile; fileRef = BB000360 /* nnet.c */; };
-		BB000361 /* nnet_default.c in Sources */ = {isa = PBXBuildFile; fileRef = BB000362 /* nnet_default.c */; };
-		BB000363 /* parse_lpcnet_weights.c in Sources */ = {isa = PBXBuildFile; fileRef = BB000364 /* parse_lpcnet_weights.c */; };
-		BB000365 /* rnnoise_data.c in Sources */ = {isa = PBXBuildFile; fileRef = BB000366 /* rnnoise_data.c */; };
-		BB000367 /* rnnoise_tables.c in Sources */ = {isa = PBXBuildFile; fileRef = BB000368 /* rnnoise_tables.c */; };
+		BB000352 /* MomentVideoVolumeAdjuster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000353 /* MomentVideoVolumeAdjuster.swift */; };
 		BB0003A1 /* PDFExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003A2 /* PDFExportOptionsSheet.swift */; };
 		BB0003B1 /* VisitedCitiesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B0 /* VisitedCitiesService.swift */; };
 		BB0003B3 /* VisitedCitiesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B2 /* VisitedCitiesSheet.swift */; };
@@ -522,18 +512,7 @@
 		BB000346 /* InlineMomentReelMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineMomentReelMedia.swift; sourceTree = "<group>"; };
 		BB000349 /* MomentVideoTrimmer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoTrimmer.swift; sourceTree = "<group>"; };
 		BB000351 /* MomentVideoTrimSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoTrimSheet.swift; sourceTree = "<group>"; };
-		BB000353 /* MomentVideoAudioCleaner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoAudioCleaner.swift; sourceTree = "<group>"; };
-		BB000354 /* fastblog-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "fastblog-Bridging-Header.h"; sourceTree = "<group>"; };
-		BB000356 /* denoise.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = denoise.c; sourceTree = "<group>"; };
-		BB000358 /* rnn.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = rnn.c; sourceTree = "<group>"; };
-		BB00035A /* pitch.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = pitch.c; sourceTree = "<group>"; };
-		BB00035C /* kiss_fft.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kiss_fft.c; sourceTree = "<group>"; };
-		BB00035E /* celt_lpc.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = celt_lpc.c; sourceTree = "<group>"; };
-		BB000360 /* nnet.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = nnet.c; sourceTree = "<group>"; };
-		BB000362 /* nnet_default.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = nnet_default.c; sourceTree = "<group>"; };
-		BB000364 /* parse_lpcnet_weights.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = parse_lpcnet_weights.c; sourceTree = "<group>"; };
-		BB000366 /* rnnoise_data.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = rnnoise_data.c; sourceTree = "<group>"; };
-		BB000368 /* rnnoise_tables.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = rnnoise_tables.c; sourceTree = "<group>"; };
+		BB000353 /* MomentVideoVolumeAdjuster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoVolumeAdjuster.swift; sourceTree = "<group>"; };
 		BB0003A2 /* PDFExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFExportOptionsSheet.swift; sourceTree = "<group>"; };
 		BB0003B0 /* VisitedCitiesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesService.swift; sourceTree = "<group>"; };
 		BB0003B2 /* VisitedCitiesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesSheet.swift; sourceTree = "<group>"; };
@@ -589,32 +568,6 @@
 		TS00R03 /* TripNearbyShareSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareSessionController.swift; sourceTree = "<group>"; };
 		TS00R04 /* TripNearbyShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareViews.swift; sourceTree = "<group>"; };
 		TS00R05 /* TripNearbyShareHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareHaptics.swift; sourceTree = "<group>"; };
-		BB000369 /* RNNoise */ = {
-			isa = PBXGroup;
-			children = (
-				BB000356 /* denoise.c */,
-				BB000358 /* rnn.c */,
-				BB00035A /* pitch.c */,
-				BB00035C /* kiss_fft.c */,
-				BB00035E /* celt_lpc.c */,
-				BB000360 /* nnet.c */,
-				BB000362 /* nnet_default.c */,
-				BB000364 /* parse_lpcnet_weights.c */,
-				BB000366 /* rnnoise_data.c */,
-				BB000368 /* rnnoise_tables.c */,
-			);
-			name = RNNoise;
-			path = rnnoise/src;
-			sourceTree = "<group>";
-		};
-		BB00036A /* ThirdParty */ = {
-			isa = PBXGroup;
-			children = (
-				BB000369 /* RNNoise */,
-			);
-			path = ThirdParty;
-			sourceTree = "<group>";
-		};
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -680,7 +633,6 @@
 				037E25272F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf */,
 				0354AFB52F6737A300C41BAA /* Bloggo.Debug.entitlements */,
 				0354AFB72F6737A300C41BAA /* Bloggo.Release.entitlements */,
-				BB00036A /* ThirdParty */,
 				BB0001AE /* fastblog */,
 				BB0001AF /* Products */,
 				03B8B6572F7CA2EB0088C39F /* Recovered References */,
@@ -940,8 +892,7 @@
 				BB0002B0 /* SlideshowMusicPreference.swift */,
 				BB000342 /* MomentVideoPreferences.swift */,
 				BB000349 /* MomentVideoTrimmer.swift */,
-				BB000353 /* MomentVideoAudioCleaner.swift */,
-				BB000354 /* fastblog-Bridging-Header.h */,
+				BB000353 /* MomentVideoVolumeAdjuster.swift */,
 				BB000344 /* BlogReelAutoplayCoordinator.swift */,
 				BB0002B4 /* SlideshowBundledMusic.swift */,
 				BB0002B6 /* BlogVideoExportService.swift */,
@@ -1247,17 +1198,7 @@
 				BB0002B1 /* SlideshowMusicPreference.swift in Sources */,
 				BB000343 /* MomentVideoPreferences.swift in Sources */,
 				BB000348 /* MomentVideoTrimmer.swift in Sources */,
-				BB000352 /* MomentVideoAudioCleaner.swift in Sources */,
-				BB000355 /* denoise.c in Sources */,
-				BB000357 /* rnn.c in Sources */,
-				BB000359 /* pitch.c in Sources */,
-				BB00035B /* kiss_fft.c in Sources */,
-				BB00035D /* celt_lpc.c in Sources */,
-				BB00035F /* nnet.c in Sources */,
-				BB000361 /* nnet_default.c in Sources */,
-				BB000363 /* parse_lpcnet_weights.c in Sources */,
-				BB000365 /* rnnoise_data.c in Sources */,
-				BB000367 /* rnnoise_tables.c in Sources */,
+				BB000352 /* MomentVideoVolumeAdjuster.swift in Sources */,
 				BB000345 /* BlogReelAutoplayCoordinator.swift in Sources */,
 				BB000347 /* InlineMomentReelMedia.swift in Sources */,
 				BB0002B5 /* SlideshowBundledMusic.swift in Sources */,
@@ -1501,13 +1442,6 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				
-				HEADER_SEARCH_PATHS = (
-					"$(SRCROOT)/ThirdParty/rnnoise/include",
-					"$(SRCROOT)/ThirdParty/rnnoise/src",
-					"$(inherited)",
-				);
-				SWIFT_OBJC_BRIDGING_HEADER = fastblog/fastblog-Bridging-Header.h;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -1544,13 +1478,6 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				
-				HEADER_SEARCH_PATHS = (
-					"$(SRCROOT)/ThirdParty/rnnoise/include",
-					"$(SRCROOT)/ThirdParty/rnnoise/src",
-					"$(inherited)",
-				);
-				SWIFT_OBJC_BRIDGING_HEADER = fastblog/fastblog-Bridging-Header.h;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

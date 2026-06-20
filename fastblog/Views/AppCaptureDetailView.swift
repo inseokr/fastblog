@@ -226,9 +226,6 @@ struct AppCaptureDetailView: View {
                     onApply: { trimmedURL in
                         applyTrimmedMomentVideo(trimmedURL)
                     },
-                    onRemove: {
-                        removeMomentVideoForCurrentItem()
-                    },
                     onCancel: { }
                 )
             }

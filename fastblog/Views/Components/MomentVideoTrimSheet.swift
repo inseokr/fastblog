@@ -12,7 +12,6 @@ import SwiftUI
 struct MomentVideoTrimSheet: View {
     let sourceURL: URL
     var onApply: (URL) -> Void
-    var onRemove: () -> Void
     var onCancel: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -24,7 +23,6 @@ struct MomentVideoTrimSheet: View {
     @State private var isLoading = true
     @State private var isExporting = false
     @State private var errorMessage: String?
-    @State private var showRemoveConfirm = false
 
     @State private var player: AVPlayer?
     @State private var itemObserver: AnyCancellable?
@@ -32,10 +30,10 @@ struct MomentVideoTrimSheet: View {
     @State private var isPlayingPreview = false
     @State private var previewFocus: PreviewFocus = .start
     @State private var activeDragHandle: TrimHandle?
-    @State private var reduceBackgroundNoise = false
-    @State private var isCleaningPreview = false
-    @State private var cleanedPreviewURL: URL?
-    @State private var cleanPreviewTask: Task<Void, Never>?
+    @State private var audioVolume: Double = 1.0
+
+    private let originalAudioVolume: Double = 1.0
+    private let minimumAudioVolume: Double = 0.1
 
     private enum TrimHandle {
         case start
@@ -51,6 +49,8 @@ struct MomentVideoTrimSheet: View {
     @State private var playbackRange = TrimPlaybackRange()
     @State private var seekGeneration = 0
 
+    private let loopFrameEpsilon: TimeInterval = 1.0 / 30.0
+
     private var selectedDuration: TimeInterval {
         max(0, endSeconds - startSeconds)
     }
@@ -61,40 +61,18 @@ struct MomentVideoTrimSheet: View {
 
             VStack(spacing: 0) {
                 header
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
 
-                Spacer(minLength: 12)
+                Spacer(minLength: 8)
 
-                ZStack {
-                    if let player {
-                        TrimFillVideoPlayerView(player: player)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    } else if isLoading {
-                        ProgressView()
-                            .tint(.white)
-                    }
+                videoPreviewSection
+                    .padding(.horizontal, 20)
 
-                    if !isLoading, player != nil {
-                        previewPlayButton
-                    }
-                }
-                .padding(.horizontal, 16)
-                .aspectRatio(9.0 / 16.0, contentMode: .fit)
-                .frame(maxWidth: .infinity)
+                Spacer(minLength: 20)
 
-                Spacer(minLength: 16)
-
-                timelineSection
-                    .padding(.horizontal, 16)
-
-                quickNudgeRow
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-
-                noiseReductionSection
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
+                controlsPanel
+                    .padding(.horizontal, 20)
 
                 if let errorMessage {
                     Text(errorMessage)
@@ -102,13 +80,10 @@ struct MomentVideoTrimSheet: View {
                         .foregroundColor(.orange)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
-                        .padding(.top, 10)
+                        .padding(.top, 12)
                 }
 
-                footer
-                    .padding(.horizontal, 20)
-                    .padding(.top, 18)
-                    .padding(.bottom, 24)
+                Spacer(minLength: 16)
             }
         }
         .preferredColorScheme(.dark)
@@ -116,30 +91,28 @@ struct MomentVideoTrimSheet: View {
             await loadAsset()
         }
         .onChange(of: startSeconds) { _, _ in
-            scheduleCleanPreviewIfNeeded()
+            if activeDragHandle == nil {
+                if isPlayingPreview {
+                    refreshLoopPlaybackIfNeeded()
+                } else {
+                    updateScrubPreview(focus: .start)
+                }
+            }
         }
         .onChange(of: endSeconds) { _, _ in
-            scheduleCleanPreviewIfNeeded()
+            if activeDragHandle == nil {
+                if isPlayingPreview {
+                    refreshLoopPlaybackIfNeeded()
+                } else {
+                    updateScrubPreview(focus: .end)
+                }
+            }
         }
-        .onChange(of: reduceBackgroundNoise) { _, _ in
-            scheduleCleanPreviewIfNeeded()
+        .onChange(of: audioVolume) { _, _ in
+            applyPreviewVolume()
         }
         .onDisappear {
-            cleanPreviewTask?.cancel()
-            if let url = cleanedPreviewURL {
-                try? FileManager.default.removeItem(at: url)
-            }
             stopPlayback()
-        }
-        .alert("Remove this reel?", isPresented: $showRemoveConfirm) {
-            Button("Cancel", role: .cancel) {}
-            Button("Remove", role: .destructive) {
-                stopPlayback()
-                onRemove()
-                dismiss()
-            }
-        } message: {
-            Text("The short video clip will be removed from this moment. The photo stays.")
         }
     }
 
@@ -152,84 +125,196 @@ struct MomentVideoTrimSheet: View {
                 onCancel()
                 dismiss()
             }
-            .font(.body.weight(.medium))
-            .foregroundColor(.white)
+            .font(.body)
+            .foregroundStyle(.white.opacity(0.88))
 
             Spacer()
 
-            Text("Trim reel")
-                .font(.headline)
-                .foregroundColor(.white)
+            Text("Trim Reel")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.92))
 
             Spacer()
 
-            Button("Use clip") {
+            Button(isExporting ? "Saving…" : "Save") {
                 Task { await applyTrim() }
             }
             .font(.body.weight(.semibold))
-            .foregroundColor(canApply ? .yellow : .white.opacity(0.35))
+            .foregroundStyle(canApply ? Color.yellow : Color.white.opacity(0.35))
             .disabled(!canApply || isExporting)
         }
     }
 
+    private var videoPreviewSection: some View {
+        ZStack {
+            if let player {
+                TrimFillVideoPlayerView(player: player)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else if isLoading {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+                ProgressView()
+                    .tint(.white)
+            }
+
+            if !isLoading, player != nil {
+                previewPlayButton
+            }
+        }
+        .aspectRatio(9.0 / 16.0, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var controlsPanel: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Timeline")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .textCase(.uppercase)
+
+                durationLabels
+
+                HStack(spacing: 10) {
+                    trimNudgeButton(
+                        systemImage: "arrow.right.to.line.compact",
+                        accessibilityLabel: "Nudge start later by 0.25 seconds"
+                    ) {
+                        startSeconds = clampedStart(startSeconds + MomentVideoTrimmer.nudgeStep)
+                        playLoopingTrimRange()
+                    }
+
+                    timelineFilmstrip
+                        .frame(height: 52)
+
+                    trimNudgeButton(
+                        systemImage: "arrow.left.to.line.compact",
+                        accessibilityLabel: "Nudge end earlier by 0.25 seconds"
+                    ) {
+                        endSeconds = clampedEnd(endSeconds - MomentVideoTrimmer.nudgeStep)
+                        playLoopingTrimRange()
+                    }
+                }
+
+                Text("Drag the yellow handles, or use the arrows for 0.25s steps.")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+
+            Rectangle()
+                .fill(Color.white.opacity(0.1))
+                .frame(height: 1)
+
+            audioVolumeSection
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+        )
+    }
+
+    private var durationLabels: some View {
+        HStack {
+            durationLabel(title: "Start", value: MomentVideoTrimmer.formattedDuration(startSeconds), alignment: .leading)
+
+            Spacer(minLength: 8)
+
+            durationLabel(
+                title: "Clip",
+                value: MomentVideoTrimmer.formattedDuration(selectedDuration),
+                alignment: .center,
+                valueColor: .yellow
+            )
+
+            Spacer(minLength: 8)
+
+            durationLabel(
+                title: "End",
+                value: MomentVideoTrimmer.formattedDuration(endSeconds),
+                alignment: .trailing
+            )
+        }
+    }
+
+    private func durationLabel(
+        title: String,
+        value: String,
+        alignment: HorizontalAlignment,
+        valueColor: Color = .white.opacity(0.88)
+    ) -> some View {
+        VStack(alignment: alignment, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.45))
+            Text(value)
+                .font(.caption.monospacedDigit().weight(.medium))
+                .foregroundStyle(valueColor)
+        }
+    }
+
+    private var hasTrimChanges: Bool {
+        !(startSeconds <= 0.05 && abs(endSeconds - totalDuration) <= 0.05)
+    }
+
+    private var hasVolumeChanges: Bool {
+        audioVolume < originalAudioVolume - 0.001
+    }
+
     private var canApply: Bool {
-        !isLoading && selectedDuration >= MomentVideoTrimmer.minimumClipDuration - 0.01
+        !isLoading
+            && selectedDuration >= MomentVideoTrimmer.minimumClipDuration - 0.01
+            && (hasTrimChanges || hasVolumeChanges)
     }
 
     // MARK: - Timeline
 
-    private var timelineSection: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text(MomentVideoTrimmer.formattedDuration(startSeconds))
-                Spacer()
-                Text(MomentVideoTrimmer.formattedDuration(selectedDuration))
-                    .foregroundColor(.yellow)
-                Spacer()
-                Text(MomentVideoTrimmer.formattedDuration(endSeconds))
-            }
-            .font(.caption.monospacedDigit())
-            .foregroundColor(.white.opacity(0.82))
+    private var trimExcludedOverlay: some View {
+        Rectangle()
+            .fill(Color.black.opacity(0.68))
+    }
 
-            GeometryReader { geo in
-                let width = max(geo.size.width, 1)
-                let startX = xPosition(for: startSeconds, width: width)
-                let endX = xPosition(for: endSeconds, width: width)
+    private var timelineFilmstrip: some View {
+        GeometryReader { geo in
+            let width = max(geo.size.width, 1)
+            let startX = xPosition(for: startSeconds, width: width)
+            let endX = xPosition(for: endSeconds, width: width)
+            let selectedWidth = max(0, endX - startX)
 
-                ZStack(alignment: .leading) {
-                    Group {
-                        filmstripBackground(width: width)
-
-                        Rectangle()
-                            .fill(Color.black.opacity(0.62))
-                            .frame(width: max(0, startX), height: geo.size.height)
-
-                        Rectangle()
-                            .fill(Color.black.opacity(0.62))
-                            .frame(width: max(0, width - endX), height: geo.size.height)
-                            .offset(x: endX)
-
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .stroke(Color.yellow, lineWidth: 2)
-                            .frame(width: max(0, endX - startX), height: geo.size.height)
-                            .offset(x: startX)
-                    }
+            ZStack(alignment: .leading) {
+                filmstripBackground(width: width)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-                    trimHandleVisual(at: startX, height: geo.size.height)
-                    trimHandleVisual(at: endX, height: geo.size.height)
+                HStack(spacing: 0) {
+                    trimExcludedOverlay
+                        .frame(width: max(0, startX))
+                    Color.clear
+                        .frame(width: selectedWidth)
+                    trimExcludedOverlay
+                        .frame(width: max(0, width - endX))
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .gesture(
-                    timelineDragGesture(
-                        width: width,
-                        startX: startX,
-                        endX: endX
-                    )
-                )
+                .frame(width: width, height: geo.size.height)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .allowsHitTesting(false)
+
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(Color.yellow, lineWidth: 2)
+                    .frame(width: selectedWidth, height: geo.size.height)
+                    .offset(x: startX)
+                    .allowsHitTesting(false)
+
+                trimHandleVisual(at: startX, height: geo.size.height)
+                trimHandleVisual(at: endX, height: geo.size.height)
             }
-            .frame(height: 56)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                timelineDragGesture(
+                    width: width,
+                    startX: startX,
+                    endX: endX
+                )
+            )
         }
     }
 
@@ -298,93 +383,79 @@ struct MomentVideoTrimSheet: View {
             togglePreviewPlayback()
         } label: {
             Image(systemName: isPlayingPreview ? "pause.fill" : "play.fill")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundColor(.white)
-                .frame(width: 56, height: 56)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
                 .background(.ultraThinMaterial)
-                .background(Color.black.opacity(0.35))
+                .background(Color.black.opacity(0.3))
                 .clipShape(Circle())
-                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 1))
+                .overlay(Circle().stroke(Color.white.opacity(0.28), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isPlayingPreview ? "Pause preview" : "Play trimmed clip")
     }
 
-    // MARK: - Quick nudges
-
-    private var quickNudgeRow: some View {
-        HStack(spacing: 10) {
-            nudgeButton(title: "Trim start", systemImage: "arrow.right.to.line") {
-                startSeconds = clampedStart(startSeconds + MomentVideoTrimmer.nudgeStep)
-                playLoopingTrimRange()
-            }
-            nudgeButton(title: "Trim end", systemImage: "arrow.left.to.line") {
-                endSeconds = clampedEnd(endSeconds - MomentVideoTrimmer.nudgeStep)
-                playLoopingTrimRange()
-            }
-        }
-    }
-
-    private func nudgeButton(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+    private func trimNudgeButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Color.white.opacity(0.12), in: Capsule())
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.78))
+                .frame(width: 34, height: 34)
+                .background(Color.white.opacity(0.08), in: Circle())
         }
         .buttonStyle(.plain)
         .disabled(isLoading || isExporting)
+        .accessibilityLabel(accessibilityLabel)
     }
 
-    private var noiseReductionSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle(isOn: $reduceBackgroundNoise) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Reduce background noise")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
-                    Text("Uses on-device AI. Best when you’re speaking.")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.68))
-                }
-            }
-            .tint(.yellow)
-            .disabled(isLoading || isExporting)
-
-            if isCleaningPreview {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.white)
-                    Text("Cleaning audio preview…")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.72))
-                }
-            }
+    private var audioVolumeLabel: String {
+        if audioVolume >= originalAudioVolume - 0.001 {
+            return "Original"
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        return "\(Int((audioVolume * 100).rounded()))%"
     }
 
-    // MARK: - Footer
-
-    private var footer: some View {
-        HStack {
-            Button("Remove reel") {
-                showRemoveConfirm = true
+    private var audioVolumeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Volume")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .textCase(.uppercase)
+                    Text("Too much wind or background noise? Drag left to save a quieter clip.")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.45))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Text(audioVolumeLabel)
+                    .font(.caption.monospacedDigit().weight(.medium))
+                    .foregroundStyle(audioVolume >= originalAudioVolume - 0.001 ? .white.opacity(0.55) : .yellow)
             }
-            .font(.body.weight(.medium))
-            .foregroundColor(.red.opacity(0.92))
-            .disabled(isExporting)
 
-            Spacer()
-
-            if isExporting {
-                ProgressView()
-                    .tint(.white)
+            HStack(spacing: 10) {
+                Image(systemName: "speaker.wave.1.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.4))
+                    .accessibilityHidden(true)
+                Slider(
+                    value: $audioVolume,
+                    in: minimumAudioVolume...originalAudioVolume,
+                    step: 0.05
+                )
+                .tint(.yellow)
+                .disabled(isLoading || isExporting)
+                .accessibilityLabel("Clip volume")
+                .accessibilityValue(audioVolumeLabel)
+                Text("Original")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.45))
+                    .accessibilityHidden(true)
             }
         }
     }
@@ -412,6 +483,7 @@ struct MomentVideoTrimSheet: View {
         totalDuration = duration
         startSeconds = 0
         endSeconds = duration
+        audioVolume = originalAudioVolume
         filmstripFrames = await MomentVideoTrimmer.generateFilmstrip(from: sourceURL)
 
         isLoading = false
@@ -426,6 +498,7 @@ struct MomentVideoTrimSheet: View {
         stopPlayback()
 
         let needsTrim = !(startSeconds <= 0.05 && abs(endSeconds - totalDuration) <= 0.05)
+        let needsVolumeAdjust = audioVolume < originalAudioVolume - 0.001
         var outputURL = sourceURL
 
         if needsTrim {
@@ -453,25 +526,27 @@ struct MomentVideoTrimSheet: View {
             ))
         }
 
-        if reduceBackgroundNoise {
-            do {
-                let cleanedURL = try await MomentVideoAudioCleaner.cleanVideo(at: outputURL)
-                if outputURL.path != sourceURL.path {
-                    try? FileManager.default.removeItem(at: outputURL)
-                }
-                outputURL = cleanedURL
-                AppAnalytics.track(.appInAppCameraReelNoiseReduced(
-                    duration: Int(selectedDuration.rounded())
-                ))
-            } catch {
-                errorMessage = error.localizedDescription
+        if needsVolumeAdjust {
+            guard let adjustedURL = await MomentVideoVolumeAdjuster.export(
+                at: outputURL,
+                volume: Float(audioVolume)
+            ) else {
+                errorMessage = "Couldn’t adjust audio volume. Try again."
                 isExporting = false
                 preparePreviewPlayer()
                 return
             }
+            if outputURL.path != sourceURL.path {
+                try? FileManager.default.removeItem(at: outputURL)
+            }
+            outputURL = adjustedURL
+            AppAnalytics.track(.appInAppCameraReelVolumeAdjusted(
+                duration: Int(selectedDuration.rounded()),
+                volumePercent: Int((audioVolume * 100).rounded())
+            ))
         }
 
-        if !needsTrim && !reduceBackgroundNoise {
+        if !needsTrim && !needsVolumeAdjust {
             onApply(sourceURL)
         } else {
             onApply(outputURL)
@@ -480,105 +555,28 @@ struct MomentVideoTrimSheet: View {
         dismiss()
     }
 
-    @MainActor
-    private func scheduleCleanPreviewIfNeeded() {
-        cleanPreviewTask?.cancel()
-        guard reduceBackgroundNoise, !isLoading else {
-            if let url = cleanedPreviewURL {
-                try? FileManager.default.removeItem(at: url)
-                cleanedPreviewURL = nil
-                preparePreviewPlayer()
-            }
-            isCleaningPreview = false
-            return
-        }
-
-        if let url = cleanedPreviewURL {
-            try? FileManager.default.removeItem(at: url)
-            cleanedPreviewURL = nil
-            preparePreviewPlayer()
-        }
-
-        cleanPreviewTask = Task {
-            isCleaningPreview = true
-            defer { isCleaningPreview = false }
-
-            let baseURL: URL
-            if startSeconds <= 0.05, abs(endSeconds - totalDuration) <= 0.05 {
-                baseURL = sourceURL
-            } else if let trimmed = await MomentVideoTrimmer.exportTrimmed(
-                from: sourceURL,
-                startSeconds: startSeconds,
-                endSeconds: endSeconds
-            ) {
-                baseURL = trimmed
-            } else {
-                return
-            }
-
-            guard !Task.isCancelled else {
-                if baseURL.path != sourceURL.path {
-                    try? FileManager.default.removeItem(at: baseURL)
-                }
-                return
-            }
-
-            do {
-                let cleaned = try await MomentVideoAudioCleaner.cleanVideo(at: baseURL)
-                if baseURL.path != sourceURL.path {
-                    try? FileManager.default.removeItem(at: baseURL)
-                }
-                guard !Task.isCancelled else {
-                    try? FileManager.default.removeItem(at: cleaned)
-                    return
-                }
-                if let previous = cleanedPreviewURL, previous.path != cleaned.path {
-                    try? FileManager.default.removeItem(at: previous)
-                }
-                cleanedPreviewURL = cleaned
-                preparePreviewPlayer()
-            } catch {
-                guard !Task.isCancelled else { return }
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private var playbackURL: URL {
-        if reduceBackgroundNoise, let cleanedPreviewURL {
-            return cleanedPreviewURL
-        }
-        return sourceURL
-    }
-
-    /// Cleaned preview is exported from the trimmed subclip, so its timeline starts at zero.
-    private var usesTrimmedPreviewTimeline: Bool {
-        guard reduceBackgroundNoise, cleanedPreviewURL != nil else { return false }
-        return !(startSeconds <= 0.05 && abs(endSeconds - totalDuration) <= 0.05)
-    }
-
-    private func playerTime(forTrimSeconds seconds: TimeInterval) -> TimeInterval {
-        if usesTrimmedPreviewTimeline {
-            return max(0, seconds - startSeconds)
-        }
-        return seconds
-    }
-
     private func previewTime(for focus: PreviewFocus) -> TimeInterval {
         switch focus {
         case .start:
-            return playerTime(forTrimSeconds: startSeconds)
+            return MomentVideoTrimmer.filmstripPreviewTime(for: startSeconds, totalDuration: totalDuration)
         case .end:
-            return playerTime(forTrimSeconds: endPreviewTime)
+            return MomentVideoTrimmer.filmstripPreviewTime(for: endSeconds, totalDuration: totalDuration)
         }
     }
 
     private func loopPlaybackStartTime() -> TimeInterval {
-        usesTrimmedPreviewTimeline ? 0 : startSeconds
+        MomentVideoTrimmer.filmstripPreviewTime(for: startSeconds, totalDuration: totalDuration)
     }
 
     private func loopPlaybackEndTime() -> TimeInterval {
-        usesTrimmedPreviewTimeline ? selectedDuration : endSeconds
+        endSeconds
+    }
+
+    private func refreshLoopPlaybackIfNeeded() {
+        guard isPlayingPreview else { return }
+        playbackRange.start = loopPlaybackStartTime()
+        playbackRange.end = loopPlaybackEndTime()
+        installLoopObserver()
     }
 
     // MARK: - Playback
@@ -587,8 +585,7 @@ struct MomentVideoTrimSheet: View {
         stopPlayback()
         configureAudioSessionForMomentVideoPlayback()
 
-        let url = playbackURL
-        let item = AVPlayerItem(url: url)
+        let item = AVPlayerItem(url: sourceURL)
         let player = AVPlayer(playerItem: item)
         player.isMuted = false
         player.volume = 1.0
@@ -597,13 +594,33 @@ struct MomentVideoTrimSheet: View {
 
         itemObserver = item.publisher(for: \.status)
             .receive(on: DispatchQueue.main)
-            .sink { status in
+            .sink { [weak player] status in
                 guard status == .readyToPlay else { return }
+                applyPreviewVolume()
                 updateScrubPreview(focus: previewFocus)
             }
 
         if item.status == .readyToPlay {
+            applyPreviewVolume()
             updateScrubPreview(focus: previewFocus)
+        }
+    }
+
+    private func applyPreviewVolume() {
+        guard let player, let item = player.currentItem else { return }
+
+        if audioVolume >= originalAudioVolume - 0.001 {
+            item.audioMix = nil
+            player.volume = 1.0
+            return
+        }
+
+        let volume = Float(audioVolume)
+        let asset = item.asset
+        Task { @MainActor in
+            guard player.currentItem === item else { return }
+            item.audioMix = await MomentVideoVolumeAdjuster.makePreviewMix(for: asset, volume: volume)
+            player.volume = 1.0
         }
     }
 
@@ -625,8 +642,9 @@ struct MomentVideoTrimSheet: View {
     }
 
     private func playLoopingTrimRange() {
-        guard player != nil else { return }
+        guard let player else { return }
         isPlayingPreview = true
+        player.actionAtItemEnd = .none
         playbackRange.start = loopPlaybackStartTime()
         playbackRange.end = loopPlaybackEndTime()
         installLoopObserver()
@@ -635,21 +653,18 @@ struct MomentVideoTrimSheet: View {
 
     private func pausePreviewPlayback() {
         isPlayingPreview = false
+        player?.actionAtItemEnd = .pause
         removeLoopObserver()
         player?.pause()
         seekPlayer(to: previewTime(for: previewFocus), shouldPlay: false)
-    }
-
-    /// Last in-range frame before the exclusive export end time.
-    private var endPreviewTime: TimeInterval {
-        max(startSeconds, min(endSeconds - 0.04, totalDuration - 0.04))
     }
 
     private func seekPlayer(to seconds: TimeInterval, shouldPlay: Bool) {
         guard let player else { return }
         seekGeneration += 1
         let generation = seekGeneration
-        let time = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
+        let clampedSeconds = min(max(0, seconds), max(0, totalDuration - 0.001))
+        let time = CMTime(seconds: clampedSeconds, preferredTimescale: 600)
         player.pause()
         player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { finished in
             guard finished, generation == self.seekGeneration else { return }
@@ -657,6 +672,7 @@ struct MomentVideoTrimSheet: View {
                 player.play()
             } else {
                 player.pause()
+                player.rate = 0
             }
         }
     }
@@ -666,12 +682,13 @@ struct MomentVideoTrimSheet: View {
         removeLoopObserver()
 
         let range = playbackRange
+        let epsilon = loopFrameEpsilon
         loopObserver = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.05, preferredTimescale: 600),
+            forInterval: CMTime(seconds: 0.03, preferredTimescale: 600),
             queue: .main
         ) { [weak player] time in
             guard let player else { return }
-            if time.seconds >= range.end - 0.04 {
+            if time.seconds >= range.end - epsilon {
                 let restart = CMTime(seconds: range.start, preferredTimescale: 600)
                 player.seek(to: restart, toleranceBefore: .zero, toleranceAfter: .zero) { finished in
                     guard finished else { return }
@@ -691,6 +708,7 @@ struct MomentVideoTrimSheet: View {
     private func stopPlayback() {
         removeLoopObserver()
         isPlayingPreview = false
+        player?.actionAtItemEnd = .pause
         player?.pause()
         player = nil
         itemObserver = nil

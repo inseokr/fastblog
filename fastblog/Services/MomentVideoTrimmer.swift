@@ -34,18 +34,17 @@ enum MomentVideoTrimmer {
         generator.requestedTimeToleranceAfter = .zero
 
         let count = max(frameCount, 1)
-        let lastSampleSeconds = max(0, totalSeconds - 0.04)
         var images: [UIImage] = []
         images.reserveCapacity(count)
 
         for index in 0..<count {
             let seconds: Double
             if count == 1 {
-                seconds = lastSampleSeconds * 0.5
+                seconds = totalSeconds * 0.5
             } else if index == count - 1 {
-                seconds = lastSampleSeconds
+                seconds = max(0, totalSeconds - 0.04)
             } else {
-                seconds = lastSampleSeconds * (Double(index) / Double(count - 1))
+                seconds = totalSeconds * (Double(index) / Double(count - 1))
             }
             let time = CMTime(seconds: seconds, preferredTimescale: timescale)
             guard let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) else { continue }
@@ -112,5 +111,15 @@ enum MomentVideoTrimmer {
 
     static func formattedDuration(_ seconds: TimeInterval) -> String {
         String(format: "%.1fs", seconds)
+    }
+
+    /// Maps a timeline position to the frame time shown at that point on the filmstrip.
+    static func filmstripPreviewTime(for seconds: TimeInterval, totalDuration: TimeInterval) -> TimeInterval {
+        guard totalDuration > 0 else { return 0 }
+        let clamped = min(max(seconds, 0), totalDuration)
+        if clamped >= totalDuration - 0.05 {
+            return max(0, totalDuration - 0.04)
+        }
+        return clamped
     }
 }

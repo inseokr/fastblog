@@ -4900,9 +4900,6 @@ struct CameraCaptureView: View {
                         onApply: { trimmedURL in
                             applyTrimmedMomentVideo(trimmedURL)
                         },
-                        onRemove: {
-                            removeMomentVideoForCurrentPreview()
-                        },
                         onCancel: {
                             syncInAppCameraAudioSession()
                         }
