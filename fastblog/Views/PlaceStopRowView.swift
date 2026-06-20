@@ -392,15 +392,18 @@ struct PlaceStopRowView: View {
 
     @ViewBuilder
     private func mediaSlide(for photo: RecapPhoto) -> some View {
-        blogPhotoThumbnail(
-            photo: photo,
-            cornerRadius: 0,
-            targetSize: carouselThumbnailTargetSize
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        GeometryReader { geo in
+            blogPhotoThumbnail(
+                photo: photo,
+                cornerRadius: 0,
+                targetSize: carouselThumbnailTargetSize
+            )
+            .aspectRatio(contentMode: .fill)
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
+        }
+        .frame(maxWidth: .infinity)
         .frame(height: mediaTileHeight)
-        .clipped()
-        .contentShape(Rectangle())
         .appChromeCornerRadius(10)
         .overlay(alignment: .topLeading) {
             photoTimestampBadge(for: photo)

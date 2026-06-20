@@ -2157,11 +2157,19 @@ struct RecapBlogPageView: View {
     private func coverPhotoHero(screenHeight: CGFloat) -> some View {
         let displayCoverId = cyclingCoverPhotoId ?? draft.selectedCoverPhotoIdentifier
         let resolvedBaseHeight = coverHeroBaseScreenHeight ?? screenHeight
+        let heroHeight = Self.placeMediaTileHeight(for: resolvedBaseHeight)
+        let scale = UIScreen.main.scale
+        let coverTargetWidth = max(320, UIScreen.main.bounds.width) * scale
+        let coverTargetHeight = heroHeight * scale
         return GeometryReader { geo in
             ZStack {
                 // Cover photo — cycles through trip photos while scoring, shows best when done
                 if let coverId = displayCoverId {
-                    AssetPhotoView(assetIdentifier: coverId, cornerRadius: 0, targetSize: CGSize(width: 1200, height: 1200))
+                    AssetPhotoView(
+                        assetIdentifier: coverId,
+                        cornerRadius: 0,
+                        targetSize: CGSize(width: coverTargetWidth, height: coverTargetHeight)
+                    )
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
@@ -2461,7 +2469,7 @@ struct RecapBlogPageView: View {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
-        .frame(height: resolvedBaseHeight * 0.45)
+        .frame(height: heroHeight)
     }
 
     // MARK: - Photo Library Access (Limited users)
