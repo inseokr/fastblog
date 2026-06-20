@@ -29,17 +29,22 @@ struct BlogReelCandidatePreferenceKey: PreferenceKey {
 final class BlogReelAutoplayCoordinator: ObservableObject {
     @Published private(set) var focusedPhotoId: UUID?
     @Published private(set) var player: AVPlayer?
+    @Published private(set) var isUserMuted = true
+    @Published private(set) var isPlaying = false
 
     private var candidates: [UUID: BlogReelCandidateFrame] = [:]
     private var photoURLs: [UUID: URL] = [:]
     private var autoplayEnabled = false
     private var userPlaybackSuspended = false
+    private var userPausedManually = false
     private var loopObserver: NSObjectProtocol?
     private var repickTask: Task<Void, Never>?
+    private var itemLoadTask: Task<Void, Never>?
     private var currentURL: URL?
 
     deinit {
         repickTask?.cancel()
+        itemLoadTask?.cancel()
         if let loopObserver {
             NotificationCenter.default.removeObserver(loopObserver)
         }
@@ -65,6 +70,40 @@ final class BlogReelAutoplayCoordinator: ObservableObject {
         }
     }
 
+    func setUserMuted(_ muted: Bool) {
+        guard isUserMuted != muted else { return }
+        isUserMuted = muted
+        player?.isMuted = muted
+        if !muted {
+            configureAudioSessionForPlayback()
+        }
+    }
+
+    func toggleUserMuted() {
+        setUserMuted(!isUserMuted)
+    }
+
+    func togglePlayPause() {
+        guard player != nil, focusedPhotoId != nil else { return }
+        if isPlaying {
+            userPausedManually = true
+            player?.pause()
+            isPlaying = false
+        } else {
+            userPausedManually = false
+            if !isUserMuted {
+                configureAudioSessionForPlayback()
+            }
+            player?.play()
+            isPlaying = true
+        }
+    }
+
+    func pauseForAlternateAudio() {
+        userPausedManually = true
+        pausePlayback()
+    }
+
     func registerPhotoURL(_ url: URL?, for photoId: UUID) {
         if let url {
             photoURLs[photoId] = url
@@ -79,6 +118,7 @@ final class BlogReelAutoplayCoordinator: ObservableObject {
         for frame in frames {
             next[frame.photoId] = frame
         }
+        guard !framesAreSimilar(candidates, next) else { return }
         candidates = next
         scheduleRepick()
     }
@@ -86,7 +126,7 @@ final class BlogReelAutoplayCoordinator: ObservableObject {
     func scheduleRepick() {
         repickTask?.cancel()
         repickTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 90_000_000)
+            try? await Task.sleep(nanoseconds: 200_000_000)
             guard !Task.isCancelled else { return }
             repickFocusedReel()
         }
@@ -133,58 +173,118 @@ final class BlogReelAutoplayCoordinator: ObservableObject {
     }
 
     private func applyFocus(photoId: UUID?) {
+        itemLoadTask?.cancel()
+
         guard let photoId, let url = photoURLs[photoId] else {
             clearPlayback()
             return
         }
 
-        if focusedPhotoId == photoId, currentURL == url {
-            player?.play()
+        if focusedPhotoId == photoId, currentURL == url, player?.currentItem != nil {
+            player?.isMuted = isUserMuted
+            if !userPausedManually {
+                player?.play()
+                isPlaying = true
+            }
             return
         }
 
         focusedPhotoId = photoId
         currentURL = url
+        userPausedManually = false
+        player?.pause()
+        isPlaying = false
 
-        if let loopObserver {
-            NotificationCenter.default.removeObserver(loopObserver)
-            self.loopObserver = nil
+        itemLoadTask = Task { @MainActor in
+            let asset = AVURLAsset(url: url)
+            let playable = (try? await asset.load(.isPlayable)) ?? false
+            guard !Task.isCancelled, self.currentURL == url, playable else { return }
+            self.attachPlayerItem(AVPlayerItem(asset: asset))
+        }
+    }
+
+    private func attachPlayerItem(_ item: AVPlayerItem) {
+        removeLoopObserver()
+
+        if let player {
+            player.replaceCurrentItem(with: item)
+        } else {
+            player = AVPlayer(playerItem: item)
         }
 
-        let newPlayer = AVPlayer(url: url)
-        newPlayer.isMuted = true
-        newPlayer.actionAtItemEnd = .none
-        player = newPlayer
+        guard let player else { return }
+
+        player.isMuted = isUserMuted
+        player.actionAtItemEnd = .none
 
         loopObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
-            object: newPlayer.currentItem,
+            object: player.currentItem,
             queue: .main
-        ) { [weak newPlayer] _ in
-            newPlayer?.seek(to: .zero)
-            newPlayer?.play()
+        ) { [weak player] _ in
+            player?.seek(to: .zero)
+            player?.play()
         }
 
-        try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+        if isUserMuted {
+            try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+        } else {
+            configureAudioSessionForPlayback()
+        }
 
-        newPlayer.play()
+        player.play()
+        isPlaying = true
+    }
+
+    private func configureAudioSessionForPlayback() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers, .defaultToSpeaker])
+        try? session.setActive(true)
     }
 
     private func pausePlayback() {
         player?.pause()
+        isPlaying = false
     }
 
     private func clearPlayback() {
         repickTask?.cancel()
         repickTask = nil
+        itemLoadTask?.cancel()
+        itemLoadTask = nil
         focusedPhotoId = nil
         currentURL = nil
+        userPausedManually = false
         player?.pause()
         player = nil
+        isPlaying = false
+        removeLoopObserver()
+    }
+
+    private func removeLoopObserver() {
         if let loopObserver {
             NotificationCenter.default.removeObserver(loopObserver)
             self.loopObserver = nil
         }
+    }
+
+    private func framesAreSimilar(
+        _ lhs: [UUID: BlogReelCandidateFrame],
+        _ rhs: [UUID: BlogReelCandidateFrame]
+    ) -> Bool {
+        guard lhs.keys == rhs.keys else { return false }
+        for (id, frame) in rhs {
+            guard let old = lhs[id] else { return false }
+            let a = old.frame
+            let b = frame.frame
+            if abs(a.midX - b.midX) > 6
+                || abs(a.midY - b.midY) > 6
+                || abs(a.width - b.width) > 6
+                || abs(a.height - b.height) > 6 {
+                return false
+            }
+        }
+        return true
     }
 }
 

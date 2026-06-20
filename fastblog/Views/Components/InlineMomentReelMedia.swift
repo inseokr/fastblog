@@ -30,10 +30,8 @@ struct InlineMomentReelMedia: View {
 
             if isFocused, let player = reelAutoplay.player {
                 InlineMomentReelPlayerLayer(player: player)
-                    .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: isFocused)
         .onAppear {
             reelAutoplay.registerPhotoURL(videoURL, for: photoId)
         }

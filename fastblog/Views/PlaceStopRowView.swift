@@ -163,6 +163,8 @@ struct PlaceStopRowView: View {
     @Binding var placeNote: String
     @Binding var overallStory: String
     var photoCaption: (UUID) -> Binding<String>
+    /// On-device Bloggo capture reel playback (passed from parent — not observed here to avoid re-rendering every place row).
+    var reelAutoplay: BlogReelAutoplayCoordinator
     var onDelete: () -> Void
     var onKebab: (() -> Void)?
     var onRemovePhoto: ((UUID) -> Void)?
@@ -219,9 +221,6 @@ struct PlaceStopRowView: View {
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
-    @EnvironmentObject private var reelAutoplay: BlogReelAutoplayCoordinator
-    @StateObject private var voiceMemoPlayer = VibePlayer()
-    @State private var playingVoiceMemoPhotoId: UUID? = nil
     @State private var showPlaceGoogleSearchSheet = false
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
@@ -317,6 +316,19 @@ struct PlaceStopRowView: View {
         return AppCapturePhotoService.shared.momentVideoFileURL(for: captureId)
     }
 
+    @StateObject private var voiceMemoPlayer = VibePlayer()
+    @State private var playingVoiceMemoPhotoId: UUID? = nil
+
+    /// Width ÷ height for place media tiles (5:4 → height is 80% of width, shorter than 4:5 portrait).
+    private static let placeMediaAspectRatio: CGFloat = 5 / 4
+
+    private var carouselThumbnailTargetSize: CGSize {
+        let width = max(320, UIScreen.main.bounds.width - 32)
+        let scale = UIScreen.main.scale
+        let pixelSide = width * scale
+        return CGSize(width: pixelSide, height: pixelSide * 4 / 5)
+    }
+
     /// Read-mode inline reel when a moment clip exists; otherwise the still thumbnail.
     @ViewBuilder
     private func blogPhotoThumbnail(
@@ -332,69 +344,8 @@ struct PlaceStopRowView: View {
                 targetSize: targetSize,
                 photoId: photo.id
             )
-            .blogReelCandidate(photoId: photo.id, isActive: true)
         } else {
             RecapPhotoThumbnail(photo: photo, cornerRadius: cornerRadius, showIcon: false, targetSize: targetSize)
-        }
-    }
-
-    @ViewBuilder
-    private func vibeBottomLeftControl(for photo: RecapPhoto, compact: Bool) -> some View {
-        if vibeURL(for: photo) != nil {
-            let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
-            HStack(spacing: compact ? 4 : 5) {
-                Button {
-                    if isPlaying {
-                        vibePlayer.stop()
-                        playingVibePhotoId = nil
-                    } else if let url = vibeURL(for: photo) {
-                        voiceMemoPlayer.stop()
-                        playingVoiceMemoPhotoId = nil
-                        playingVibePhotoId = photo.id
-                        vibePlayer.play(url: url)
-                    }
-                } label: {
-                    Image(systemName: "waveform")
-                        .font(.system(size: compact ? 11 : 12, weight: .semibold))
-                        .foregroundStyle(
-                            LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                        )
-                        .padding(compact ? 6 : 7)
-                        .background(Color.black.opacity(0.5))
-                        .clipShape(Circle())
-                        .overlay(
-                            Circle().stroke(
-                                Color.green.opacity(isPlaying ? 0.85 : 0.5),
-                                lineWidth: 1
-                            )
-                        )
-                }
-                .buttonStyle(.plain)
-
-                if !isPlaying {
-                    Button {
-                        if let url = vibeURL(for: photo) {
-                            voiceMemoPlayer.stop()
-                            playingVoiceMemoPhotoId = nil
-                            playingVibePhotoId = photo.id
-                            vibePlayer.play(url: url)
-                        }
-                    } label: {
-                        Text("Play Vibe")
-                            .font(.system(size: compact ? 10 : 11, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, compact ? 7 : 8)
-                            .padding(.vertical, compact ? 3.5 : 4)
-                            .background(Color.black.opacity(0.5))
-                            .clipShape(Capsule())
-                            .overlay(Capsule().stroke(Color.white.opacity(0.35), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .transition(.opacity)
-                }
-            }
-            .padding(compact ? 5 : 8)
-            .animation(.easeInOut(duration: 0.2), value: isPlaying)
         }
     }
 
@@ -404,82 +355,21 @@ struct PlaceStopRowView: View {
         let hasCaption = !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let isExpanded = expandedCaptionPhotoId == photo.id
 
-        VStack(alignment: .leading, spacing: 8) {
-            if hasCaption {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(caption)
-                        .font(.body)
-                        .foregroundColor(rowStoryReadColor)
-                        .lineLimit(isExpanded ? nil : 4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: isExpanded)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                expandedCaptionPhotoId = isExpanded ? nil : photo.id
-                            }
-                        }
-
-                    voiceMemoButton(for: photo)
-                }
+        if hasCaption {
+            Text(caption)
+                .font(.body)
+                .foregroundColor(rowStoryReadColor)
+                .lineLimit(isExpanded ? nil : 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                voiceMemoButton(for: photo)
-            }
-        }
-        .frame(width: width, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private func voiceMemoButton(for photo: RecapPhoto) -> some View {
-        if let memoURL = voiceMemoURL(for: photo) {
-            let isMemoPlaying = playingVoiceMemoPhotoId == photo.id && voiceMemoPlayer.isPlaying
-            Button {
-                if isMemoPlaying {
-                    voiceMemoPlayer.stop()
-                    playingVoiceMemoPhotoId = nil
-                } else {
-                    vibePlayer.stop()
-                    playingVibePhotoId = nil
-                    playingVoiceMemoPhotoId = photo.id
-                    voiceMemoPlayer.play(url: memoURL)
+                .fixedSize(horizontal: false, vertical: isExpanded)
+                .contentShape(Rectangle())
+                .frame(width: width, alignment: .leading)
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        expandedCaptionPhotoId = isExpanded ? nil : photo.id
+                    }
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: isMemoPlaying ? "stop.circle.fill" : "mic.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(isMemoPlaying ? "Stop voice memo" : "Play voice memo")
-                        .font(.caption.weight(.semibold))
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(Color.blue.opacity(0.9))
-                )
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    /// Horizontal strip thumbnails — ~80% of screen width per item so one photo is prominent with peek like before.
-    private var photoStripThumbnailSize: CGFloat { UIScreen.main.bounds.width * 0.8 }
-
-    /// Vertical gap between successive horizontal photo rows (each row is its own ScrollView).
-    private static let photoStripRowSpacing: CGFloat = 14
-
-    private static func chunkedPhotos(_ photos: [RecapPhoto], chunkSize: Int) -> [[RecapPhoto]] {
-        guard chunkSize > 0 else { return [photos] }
-        var rows: [[RecapPhoto]] = []
-        var index = photos.startIndex
-        while index < photos.endIndex {
-            let end = photos.index(index, offsetBy: chunkSize, limitedBy: photos.endIndex) ?? photos.endIndex
-            rows.append(Array(photos[index..<end]))
-            index = end
-        }
-        return rows
     }
 
     /// True when the focused field (place note or photo caption) has text, so Clear should be red.
@@ -490,126 +380,221 @@ struct PlaceStopRowView: View {
         return false
     }
 
+    /// Top preview photos (max 3) shown in a vertical stack at recap level.
+    private var stackPhotos: [RecapPhoto] {
+        Array(displayableIncludedPhotos.prefix(3))
+    }
+
     /// Included photos that still resolve to real pixels (omits deleted library assets / missing app captures).
     private var displayableIncludedPhotos: [RecapPhoto] {
         stop.photos.filter(\.isIncluded).filter(\.hasDisplayableLocalBacking)
     }
 
     @ViewBuilder
-    private func stripPhotoCell(photo: RecapPhoto) -> some View {
-        let thumb = photoStripThumbnailSize
-        VStack(alignment: .leading, spacing: 6) {
-            blogPhotoThumbnail(photo: photo, cornerRadius: 8, targetSize: CGSize(width: 480, height: 480))
-                .aspectRatio(1, contentMode: .fill)
-                .frame(width: thumb, height: thumb)
-                .clipped()
-                .appChromeCornerRadius(8)
-                .overlay(alignment: .topLeading) {
-                    photoTimestampBadge(for: photo)
-                        .padding(.leading, 8)
-                        .padding(.top, 8)
-                }
-                .overlay(alignment: .topTrailing) {
-                    if isEditMode {
-                        Button {
-                            onRemovePhoto?(photo.id)
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 30))
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(.white, Color.black.opacity(0.6))
-                        }
-                        .buttonStyle(.plain)
+    private func mediaSlide(for photo: RecapPhoto) -> some View {
+        Group {
+            blogPhotoThumbnail(
+                photo: photo,
+                cornerRadius: 0,
+                targetSize: carouselThumbnailTargetSize
+            )
+            .aspectRatio(Self.placeMediaAspectRatio, contentMode: .fill)
+        }
+        .frame(maxWidth: .infinity)
+        .aspectRatio(Self.placeMediaAspectRatio, contentMode: .fit)
+        .clipped()
+        .appChromeCornerRadius(10)
+        .overlay(alignment: .topLeading) {
+            photoTimestampBadge(for: photo)
+                .padding(.leading, 8)
+                .padding(.top, 8)
+        }
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 6) {
+                if hasMomentVideo(for: photo), !isEditMode {
+                    Image(systemName: "video.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white)
                         .padding(6)
-                    }
+                        .background(Color.black.opacity(0.55))
+                        .clipShape(Circle())
                 }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    onPhotoTapped?(photo)
-                }
-                .overlay(alignment: .bottomLeading) {
-                    if vibeURL(for: photo) != nil {
-                        let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
-                        HStack(spacing: 5) {
-                            Button {
-                                if isPlaying {
-                                    vibePlayer.stop()
-                                    playingVibePhotoId = nil
-                                } else if let url = vibeURL(for: photo) {
-                                    voiceMemoPlayer.stop()
-                                    playingVoiceMemoPhotoId = nil
-                                    playingVibePhotoId = photo.id
-                                    vibePlayer.play(url: url)
-                                }
-                            } label: {
-                                Image(systemName: "waveform")
-                                    .font(.system(size: isPlaying ? 15 : 11, weight: .semibold))
-                                    .foregroundStyle(
-                                        LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                                    )
-                                    .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
-                                    .padding(isPlaying ? 8 : 6)
-                                    .background(Color.black.opacity(0.55))
-                                    .clipShape(Circle())
-                                    .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
-                                    .scaleEffect(isPlaying ? 1.25 : 1.0)
-                                    .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
-                            }
-                            .buttonStyle(.plain)
-
-                            if !isPlaying {
-                                Button {
-                                    if let url = vibeURL(for: photo) {
-                                        voiceMemoPlayer.stop()
-                                        playingVoiceMemoPhotoId = nil
-                                        playingVibePhotoId = photo.id
-                                        vibePlayer.play(url: url)
-                                    }
-                                } label: {
-                                    Text("Play Vibe")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color.black.opacity(0.55))
-                                        .clipShape(Capsule())
-                                        .overlay(Capsule().stroke(Color.green.opacity(0.5), lineWidth: 1))
-                                }
-                                .buttonStyle(.plain)
-                                .transition(.opacity.combined(with: .scale(scale: 0.85)))
-                            }
-                        }
-                        .padding(5)
-                        .animation(.easeInOut(duration: 0.2), value: isPlaying)
-                    }
-                }
-            if isEditMode {
-                VStack(alignment: .leading, spacing: 8) {
+                if isEditMode {
                     Button {
-                        onCaptionTapped?(photo.id)
+                        onRemovePhoto?(photo.id)
                     } label: {
-                        let caption = photoCaption(photo.id).wrappedValue
-                        Text(caption.isEmpty ? "Leave a story for this photo" : caption)
-                            .font(.subheadline)
-                            .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
-                            .background(rowInset)
-                            .appChromeCornerRadius(6)
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 30))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, Color.black.opacity(0.6))
                     }
-                    .frame(width: thumb)
                     .buttonStyle(.plain)
-
-                    voiceMemoButton(for: photo)
-                        .frame(height: 36)
                 }
+            }
+            .padding(8)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onPhotoTapped?(photo)
+        }
+        .blogReelCandidate(
+            photoId: photo.id,
+            isActive: !isEditMode && hasMomentVideo(for: photo)
+        )
+    }
+
+    private func hasMomentVideo(for photo: RecapPhoto) -> Bool {
+        momentVideoURL(for: photo) != nil
+    }
+
+    @ViewBuilder
+    private func verticalPhotoBlock(photo: RecapPhoto) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            mediaSlide(for: photo)
+
+            if !isEditMode, hasMediaControls(for: photo) {
+                PlaceMediaControlBar(
+                    photos: [photo],
+                    focusedPhotoId: photo.id,
+                    reelAutoplay: reelAutoplay,
+                    momentVideoURL: momentVideoURL(for:),
+                    vibeURL: vibeURL(for:),
+                    voiceMemoURL: voiceMemoURL(for:),
+                    playingVibePhotoId: playingVibePhotoId,
+                    playingVoiceMemoPhotoId: playingVoiceMemoPhotoId,
+                    vibeIsPlaying: vibePlayer.isPlaying,
+                    voiceMemoIsPlaying: voiceMemoPlayer.isPlaying,
+                    onToggleVibe: toggleVibe(for:),
+                    onToggleVoiceMemo: toggleVoiceMemo(for:)
+                )
+            }
+
+            if isEditMode {
+                Button {
+                    onCaptionTapped?(photo.id)
+                } label: {
+                    let caption = photoCaption(photo.id).wrappedValue
+                    Text(caption.isEmpty ? "Leave a story for this photo" : caption)
+                        .font(.subheadline)
+                        .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                        .background(rowInset)
+                        .appChromeCornerRadius(6)
+                }
+                .buttonStyle(.plain)
             } else {
-                photoReadSecondaryContent(for: photo, width: thumb)
+                photoReadSecondaryContent(for: photo)
             }
         }
-        .frame(width: thumb)
+    }
+
+    private func hasMediaControls(for photo: RecapPhoto) -> Bool {
+        momentVideoURL(for: photo) != nil
+            || vibeURL(for: photo) != nil
+            || voiceMemoURL(for: photo) != nil
+    }
+
+    private func toggleVibe(for photo: RecapPhoto) {
+        if playingVibePhotoId == photo.id && vibePlayer.isPlaying {
+            vibePlayer.stop()
+            playingVibePhotoId = nil
+        } else if let url = vibeURL(for: photo) {
+            voiceMemoPlayer.stop()
+            playingVoiceMemoPhotoId = nil
+            reelAutoplay.pauseForAlternateAudio()
+            playingVibePhotoId = photo.id
+            vibePlayer.play(url: url)
+        }
+    }
+
+    private func toggleVoiceMemo(for photo: RecapPhoto) {
+        if playingVoiceMemoPhotoId == photo.id && voiceMemoPlayer.isPlaying {
+            voiceMemoPlayer.stop()
+            playingVoiceMemoPhotoId = nil
+        } else if let memoURL = voiceMemoURL(for: photo) {
+            vibePlayer.stop()
+            playingVibePhotoId = nil
+            reelAutoplay.pauseForAlternateAudio()
+            playingVoiceMemoPhotoId = photo.id
+            voiceMemoPlayer.play(url: memoURL)
+        }
+    }
+
+    @ViewBuilder
+    private var placeMediaSection: some View {
+        let totalPhotoCount = displayableIncludedPhotos.count
+        let photos = stackPhotos
+
+        VStack(alignment: .leading, spacing: 12) {
+            if isEditMode, let onManagePhotos {
+                Button(action: onManagePhotos) {
+                    Label("Manage Photos", systemImage: "photo.stack")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .background(rowInset)
+                        .appChromeCornerRadius(10)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if photos.isEmpty && isEditMode && !stop.photos.isEmpty {
+                Text("No photos are shown for this place.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            }
+
+            if !photos.isEmpty {
+                VStack(alignment: .leading, spacing: 14) {
+                    PlaceMediaCarouselView(
+                        photos: photos,
+                        isEditMode: isEditMode,
+                        reportsReelCandidates: false,
+                        cornerRadius: 10,
+                        slideContent: { photo in
+                            verticalPhotoBlock(photo: photo)
+                        }
+                    )
+
+                    if !isEditMode, totalPhotoCount > 3,
+                       let firstHidden = displayableIncludedPhotos.dropFirst(3).first {
+                        Button {
+                            onPhotoTapped?(firstHidden)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("Show all \(totalPhotoCount) photos")
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 2)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Show all \(totalPhotoCount) photos")
+                    }
+                }
+                .onChange(of: reelAutoplay.isUserMuted) { _, muted in
+                    if !muted {
+                        vibePlayer.stop()
+                        playingVibePhotoId = nil
+                        voiceMemoPlayer.stop()
+                        playingVoiceMemoPhotoId = nil
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, isEditMode ? 4 : 0)
+        .padding(.bottom, isEditMode ? 20 : 12)
     }
 
     /// Blue coachmark pill when the place name has never been manually edited (`placeTitleIsManual` is false).
@@ -1000,130 +985,9 @@ struct PlaceStopRowView: View {
             //     .padding(.bottom, 12)
             // }
 
-            // Photo strip: large thumbnails; one full photo visible + peek of next so users know they can scroll
-            if displayableIncludedPhotos.count == 1, let photo = displayableIncludedPhotos.first {
-                // --- CASE 2a: Single included photo — full-width hero (read and edit).
-                VStack(alignment: .leading, spacing: 12) {
-                    if isEditMode, let onManagePhotos {
-                        Button(action: onManagePhotos) {
-                            Label("Manage Photos", systemImage: "photo.stack")
-                                .font(.subheadline.weight(.medium))
-                                .foregroundColor(.primary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .background(rowInset)
-                                .appChromeCornerRadius(10)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    VStack(alignment: .leading, spacing: 0) {
-                        blogPhotoThumbnail(photo: photo, cornerRadius: 10, targetSize: CGSize(width: 960, height: 640))
-                            .frame(maxWidth: .infinity, maxHeight: 260)
-                            .clipped()
-                            .appChromeCornerRadius(10)
-                            .overlay(alignment: .topLeading) {
-                                photoTimestampBadge(for: photo)
-                                    .padding(.leading, 8)
-                                    .padding(.top, 8)
-                            }
-                            .overlay(alignment: .topTrailing) {
-                                if isEditMode {
-                                    Button {
-                                        onRemovePhoto?(photo.id)
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .font(.system(size: 30))
-                                            .symbolRenderingMode(.palette)
-                                            .foregroundStyle(.white, Color.black.opacity(0.6))
-                                    }
-                                    .buttonStyle(.plain)
-                                    .padding(6)
-                                }
-                            }
-                            .overlay(alignment: .bottomLeading) {
-                                vibeBottomLeftControl(for: photo, compact: false)
-                                    .padding(.leading, 6)
-                                    .padding(.bottom, 6)
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture { onPhotoTapped?(photo) }
-
-                    if isEditMode {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Button {
-                                onCaptionTapped?(photo.id)
-                            } label: {
-                                let caption = photoCaption(photo.id).wrappedValue
-                                Text(caption.isEmpty ? "Leave a story for this photo" : caption)
-                                    .font(.subheadline)
-                                    .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.leading)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(8)
-                                    .background(rowInset)
-                                    .appChromeCornerRadius(6)
-                            }
-                            .buttonStyle(.plain)
-
-                            voiceMemoButton(for: photo)
-                        }
-                        .padding(.top, 8)
-                    } else {
-                        photoReadSecondaryContent(for: photo)
-                            .padding(.top, 8)
-                    }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, isEditMode ? 4 : 0)
-                .padding(.bottom, isEditMode ? 20 : 12)
-            } else if displayableIncludedPhotos.count > 1 || (displayableIncludedPhotos.isEmpty && isEditMode) {
-                // --- CASE 2b: Multiple included photos, or edit mode with none displayable (manage via ⋯). ---
-                VStack(alignment: .leading, spacing: 12) {
-                    if isEditMode, let onManagePhotos {
-                        Button(action: onManagePhotos) {
-                            Label("Manage Photos", systemImage: "photo.stack")
-                                .font(.subheadline.weight(.medium))
-                                .foregroundColor(.primary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .background(rowInset)
-                                .appChromeCornerRadius(10)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    if displayableIncludedPhotos.isEmpty && isEditMode && !stop.photos.isEmpty {
-                        Text("No photos are shown for this place.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 4)
-                    }
-
-                    if !displayableIncludedPhotos.isEmpty {
-                        let photoRows = Self.chunkedPhotos(displayableIncludedPhotos, chunkSize: 3)
-                        VStack(alignment: .leading, spacing: Self.photoStripRowSpacing) {
-                            ForEach(Array(photoRows.enumerated()), id: \.offset) { _, rowPhotos in
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(alignment: .top, spacing: 10) {
-                                        ForEach(rowPhotos) { photo in
-                                            stripPhotoCell(photo: photo)
-                                                .id(photo.id)
-                                        }
-                                    }
-                                    .padding(.trailing, 16)
-                                }
-                                .frame(minHeight: isEditMode ? photoStripThumbnailSize + 78 : photoStripThumbnailSize + 28)
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, isEditMode ? 4 : 0)
-                .padding(.bottom, isEditMode ? 20 : 12)
+            // Photo media: 4:5 carousel (top 3) + unified controls
+            if !displayableIncludedPhotos.isEmpty || (isEditMode && !stop.photos.isEmpty) {
+                placeMediaSection
             }
 
             // timelineLine removed per user request
@@ -1406,6 +1270,7 @@ struct PlaceStopRowView: View {
             placeNote: .constant(""),
             overallStory: .constant(""),
             photoCaption: { _ in .constant("") },
+            reelAutoplay: BlogReelAutoplayCoordinator(),
             onDelete: {},
             onKebab: nil,
             onRemovePhoto: nil,
@@ -1421,7 +1286,6 @@ struct PlaceStopRowView: View {
         )
         .padding()
     }
-    .environmentObject(BlogReelAutoplayCoordinator())
     .background(Color.black)
     .preferredColorScheme(.dark)
 }

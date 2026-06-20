@@ -230,6 +230,7 @@
 		BB000348 /* MomentVideoTrimmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000349 /* MomentVideoTrimmer.swift */; };
 		BB000350 /* MomentVideoTrimSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000351 /* MomentVideoTrimSheet.swift */; };
 		BB000352 /* MomentVideoVolumeAdjuster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000353 /* MomentVideoVolumeAdjuster.swift */; };
+		BB000355 /* PlaceMediaCarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000354 /* PlaceMediaCarouselView.swift */; };
 		BB0003A1 /* PDFExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003A2 /* PDFExportOptionsSheet.swift */; };
 		BB0003B1 /* VisitedCitiesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B0 /* VisitedCitiesService.swift */; };
 		BB0003B3 /* VisitedCitiesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B2 /* VisitedCitiesSheet.swift */; };
@@ -513,6 +514,7 @@
 		BB000349 /* MomentVideoTrimmer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoTrimmer.swift; sourceTree = "<group>"; };
 		BB000351 /* MomentVideoTrimSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoTrimSheet.swift; sourceTree = "<group>"; };
 		BB000353 /* MomentVideoVolumeAdjuster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentVideoVolumeAdjuster.swift; sourceTree = "<group>"; };
+		BB000354 /* PlaceMediaCarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceMediaCarouselView.swift; sourceTree = "<group>"; };
 		BB0003A2 /* PDFExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFExportOptionsSheet.swift; sourceTree = "<group>"; };
 		BB0003B0 /* VisitedCitiesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesService.swift; sourceTree = "<group>"; };
 		BB0003B2 /* VisitedCitiesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesSheet.swift; sourceTree = "<group>"; };
@@ -939,6 +941,7 @@
 				BB000313 /* MomentVideoFullScreenPlayer.swift */,
 				BB000351 /* MomentVideoTrimSheet.swift */,
 				BB000346 /* InlineMomentReelMedia.swift */,
+				BB000354 /* PlaceMediaCarouselView.swift */,
 				BB0001C1 /* KeyboardCaptionToolbar.swift */,
 				BBA0B004 /* BottomNavBar.swift */,
 				BB0003F2 /* BlogMenuIndicatorBadge.swift */,
@@ -1201,6 +1204,7 @@
 				BB000352 /* MomentVideoVolumeAdjuster.swift in Sources */,
 				BB000345 /* BlogReelAutoplayCoordinator.swift in Sources */,
 				BB000347 /* InlineMomentReelMedia.swift in Sources */,
+				BB000355 /* PlaceMediaCarouselView.swift in Sources */,
 				BB0002B5 /* SlideshowBundledMusic.swift in Sources */,
 				BB0002B7 /* BlogVideoExportService.swift in Sources */,
 				BB000340 /* BlogCarouselExportService.swift in Sources */,
