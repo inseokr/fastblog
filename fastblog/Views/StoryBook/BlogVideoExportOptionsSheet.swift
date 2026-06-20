@@ -27,6 +27,7 @@ struct BlogVideoExportOptionsSheet: View {
     @State private var reelPickerCache = ReelPickerCache.empty
     /// Header stats derived from selection; updated without rebuilding the full reel list.
     @State private var playbackStats = PlaybackStats.empty
+    @State private var previewMomentVideo: PreviewMomentVideoItem?
 
     private var selectedReelCount: Int { playbackStats.includedReelCount }
     private var canExport: Bool { selectedReelCount > 0 }
@@ -127,6 +128,11 @@ struct BlogVideoExportOptionsSheet: View {
                     Button("OK", role: .cancel) {}
                 } message: {
                     Text("Capture short moment reels with the in-app camera (Reel mode), then come back to create your video.")
+                }
+                .fullScreenCover(item: $previewMomentVideo) { item in
+                    MomentVideoFullScreenPlayer(url: item.url) {
+                        previewMomentVideo = nil
+                    }
                 }
             }
 
@@ -505,7 +511,12 @@ struct BlogVideoExportOptionsSheet: View {
                                     ReelExportCheckRow(
                                         item: item,
                                         isIncluded: isReelIncluded(item.id),
-                                        onToggle: { toggleReel(item.id, visibleIDs: cache.visibleReelPhotoIDs) }
+                                        onToggle: { toggleReel(item.id, visibleIDs: cache.visibleReelPhotoIDs) },
+                                        onPreview: {
+                                            if let url = MomentVideoTransfer.momentVideoURL(for: item.photo) {
+                                                previewMomentVideo = PreviewMomentVideoItem(url: url)
+                                            }
+                                        }
                                     )
                                 }
                             }
@@ -1010,74 +1021,84 @@ struct BlogVideoExportOptionsSheet: View {
 
     // MARK: - Reel picker row (isolated to limit diff scope on selection toggles)
 
+    private struct PreviewMomentVideoItem: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
+
     private struct ReelExportCheckRow: View {
         let item: ReelPickerItem
         let isIncluded: Bool
         let onToggle: () -> Void
+        let onPreview: () -> Void
 
         private let thumbSide: CGFloat = 72
 
         var body: some View {
-            Button(action: onToggle) {
-                HStack(spacing: 12) {
-                    ZStack(alignment: .bottomLeading) {
-                        RecapPhotoThumbnail(
-                            photo: item.photo,
-                            cornerRadius: 10,
-                            showIcon: false,
-                            targetSize: CGSize(width: thumbSide * 1.5, height: thumbSide * 1.5)
-                        )
-                        .frame(width: thumbSide, height: thumbSide)
-                        .clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            HStack(spacing: 12) {
+                ZStack(alignment: .bottomLeading) {
+                    RecapPhotoThumbnail(
+                        photo: item.photo,
+                        cornerRadius: 10,
+                        showIcon: false,
+                        targetSize: CGSize(width: thumbSide * 1.5, height: thumbSide * 1.5)
+                    )
+                    .frame(width: thumbSide, height: thumbSide)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-                        Image(systemName: "film.fill")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(5)
-                            .background(Circle().fill(Color.black.opacity(0.55)))
-                            .padding(6)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.stop.placeTitle)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        Text(item.timeLabel)
-                            .font(.caption.monospacedDigit())
-                            .foregroundColor(.secondary)
-                        if let caption = item.photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines),
-                           !caption.isEmpty {
-                            Text(caption)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(2)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                    ZStack {
-                        Circle()
-                            .fill(isIncluded ? Color.accentColor : Color(uiColor: .tertiarySystemGroupedBackground))
-                            .frame(width: 26, height: 26)
-                        if isIncluded {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                    }
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(7)
+                        .background(Circle().fill(Color.black.opacity(0.55)))
+                        .padding(6)
                 }
-                .padding(12)
-                .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .opacity(isIncluded ? 1 : 0.55)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(isIncluded ? Color.accentColor : Color.clear, lineWidth: 2)
-                )
-                .appChromeCornerRadius(12)
-                .contentShape(Rectangle())
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .onTapGesture(perform: onPreview)
+
+                Button(action: onToggle) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.stop.placeTitle)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                            Text(item.timeLabel)
+                                .font(.caption.monospacedDigit())
+                                .foregroundColor(.secondary)
+                            if let caption = item.photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines),
+                               !caption.isEmpty {
+                                Text(caption)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                        ZStack {
+                            Circle()
+                                .fill(isIncluded ? Color.accentColor : Color(uiColor: .tertiarySystemGroupedBackground))
+                                .frame(width: 26, height: 26)
+                            if isIncluded {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+            .padding(12)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .opacity(isIncluded ? 1 : 0.55)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(isIncluded ? Color.accentColor : Color.clear, lineWidth: 2)
+            )
+            .appChromeCornerRadius(12)
         }
     }
 }
