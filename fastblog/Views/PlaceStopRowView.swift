@@ -165,6 +165,8 @@ struct PlaceStopRowView: View {
     var photoCaption: (UUID) -> Binding<String>
     /// On-device Bloggo capture reel playback (passed from parent — not observed here to avoid re-rendering every place row).
     var reelAutoplay: BlogReelAutoplayCoordinator
+    /// Height of each photo/reel tile in the vertical stack (~80% of screen in recap timeline).
+    var mediaTileHeight: CGFloat = 560
     var onDelete: () -> Void
     var onKebab: (() -> Void)?
     var onRemovePhoto: ((UUID) -> Void)?
@@ -319,14 +321,12 @@ struct PlaceStopRowView: View {
     @StateObject private var voiceMemoPlayer = VibePlayer()
     @State private var playingVoiceMemoPhotoId: UUID? = nil
 
-    /// Width ÷ height for place media tiles (5:4 → height is 80% of width, shorter than 4:5 portrait).
-    private static let placeMediaAspectRatio: CGFloat = 5 / 4
-
     private var carouselThumbnailTargetSize: CGSize {
-        let width = max(320, UIScreen.main.bounds.width - 32)
+        let width = max(320, UIScreen.main.bounds.width - 16)
         let scale = UIScreen.main.scale
-        let pixelSide = width * scale
-        return CGSize(width: pixelSide, height: pixelSide * 4 / 5)
+        let pixelWidth = width * scale
+        let pixelHeight = mediaTileHeight * scale
+        return CGSize(width: pixelWidth, height: pixelHeight)
     }
 
     /// Read-mode inline reel when a moment clip exists; otherwise the still thumbnail.
@@ -392,17 +392,15 @@ struct PlaceStopRowView: View {
 
     @ViewBuilder
     private func mediaSlide(for photo: RecapPhoto) -> some View {
-        Group {
-            blogPhotoThumbnail(
-                photo: photo,
-                cornerRadius: 0,
-                targetSize: carouselThumbnailTargetSize
-            )
-            .aspectRatio(Self.placeMediaAspectRatio, contentMode: .fill)
-        }
-        .frame(maxWidth: .infinity)
-        .aspectRatio(Self.placeMediaAspectRatio, contentMode: .fit)
+        blogPhotoThumbnail(
+            photo: photo,
+            cornerRadius: 0,
+            targetSize: carouselThumbnailTargetSize
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(height: mediaTileHeight)
         .clipped()
+        .contentShape(Rectangle())
         .appChromeCornerRadius(10)
         .overlay(alignment: .topLeading) {
             photoTimestampBadge(for: photo)
@@ -467,6 +465,7 @@ struct PlaceStopRowView: View {
                     onToggleVibe: toggleVibe(for:),
                     onToggleVoiceMemo: toggleVoiceMemo(for:)
                 )
+                .padding(.horizontal, 12)
             }
 
             if isEditMode {
@@ -485,8 +484,10 @@ struct PlaceStopRowView: View {
                         .appChromeCornerRadius(6)
                 }
                 .buttonStyle(.plain)
+                .padding(.horizontal, 12)
             } else {
                 photoReadSecondaryContent(for: photo)
+                    .padding(.horizontal, 12)
             }
         }
     }
@@ -541,6 +542,7 @@ struct PlaceStopRowView: View {
                         .appChromeCornerRadius(10)
                 }
                 .buttonStyle(.plain)
+                .padding(.horizontal, 12)
             }
 
             if photos.isEmpty && isEditMode && !stop.photos.isEmpty {
@@ -549,6 +551,7 @@ struct PlaceStopRowView: View {
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
+                    .padding(.horizontal, 12)
             }
 
             if !photos.isEmpty {
@@ -580,6 +583,7 @@ struct PlaceStopRowView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Show all \(totalPhotoCount) photos")
+                        .padding(.horizontal, 12)
                     }
                 }
                 .onChange(of: reelAutoplay.isUserMuted) { _, muted in
@@ -592,7 +596,6 @@ struct PlaceStopRowView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
         .padding(.top, isEditMode ? 4 : 0)
         .padding(.bottom, isEditMode ? 20 : 12)
     }
@@ -1271,6 +1274,7 @@ struct PlaceStopRowView: View {
             overallStory: .constant(""),
             photoCaption: { _ in .constant("") },
             reelAutoplay: BlogReelAutoplayCoordinator(),
+            mediaTileHeight: 560,
             onDelete: {},
             onKebab: nil,
             onRemovePhoto: nil,

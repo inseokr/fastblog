@@ -35,14 +35,6 @@ private struct BlogSettingsGearFramePreferenceKey: PreferenceKey {
     }
 }
 
-/// Tracks vertical scroll offset of the active day timeline (`minY` in the `"scroll"` coordinate space).
-private struct RecapDayScrollOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 // MARK: - Caption Edit Sheet Item Types
 
 /// Carries the day identity + header lines for the full-screen day caption editor overlay.
@@ -225,11 +217,6 @@ struct RecapBlogPageView: View {
     @State private var showOverlayDraftExitConfirmation = false
     @State private var showUploadPromptAlert = false
     @State private var showNavBarTitle = false
-    /// Scroll-driven nav bar visibility (hidden while scrolling down into content).
-    @State private var recapScrollTopChromeVisible = true
-    /// Scroll-driven day filter visibility (hidden while scrolling up toward the top).
-    @State private var recapScrollBottomChromeVisible = true
-    @State private var lastRecapDayScrollOffset: CGFloat = 0
     @State private var hasFinishedInitialLoad = false
     /// Education for account users when blog photos only exist on another device.
     @State private var showMissingPhotosTooltip = false
@@ -1109,7 +1096,7 @@ struct RecapBlogPageView: View {
             .toolbarBackground(recapNavigationBarBackgroundVisibility, for: .navigationBar)
             .toolbarBackground(recapNavigationBarBackgroundFill, for: .navigationBar)
             .toolbar { toolbarContent }
-            .toolbar(shouldHideRecapNavigationBar || !recapScrollTopChromeVisible ? .hidden : .automatic, for: .navigationBar)
+            .toolbar(shouldHideRecapNavigationBar ? .hidden : .automatic, for: .navigationBar)
     }
 
     private func applyPrimarySheetModifiers<Content: View>(to content: Content) -> some View {
@@ -1603,6 +1590,10 @@ struct RecapBlogPageView: View {
 
     private static let dayFilterApproxHeight: CGFloat = 52
 
+    private static func placeMediaTileHeight(for screenHeight: CGFloat) -> CGFloat {
+        screenHeight * 0.80
+    }
+
     /// Scroll timeline to `initialScrollToStopId` after the blog (and stop rows) are available.
     private func schedulePlacesVisitedDeepLinkScroll() {
         guard let targetStopId = initialScrollToStopId else { return }
@@ -1714,13 +1705,13 @@ struct RecapBlogPageView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            if !isKeyboardVisible && recapScrollBottomChromeVisible {
+            if !isKeyboardVisible {
                 dayFilterSection
                     .zIndex(1)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            if shouldShowRecapCameraQuickCapture && !isKeyboardVisible && recapScrollBottomChromeVisible {
+            if shouldShowRecapCameraQuickCapture && !isKeyboardVisible {
                 recapCameraQuickCaptureButton
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 16)
@@ -1732,7 +1723,6 @@ struct RecapBlogPageView: View {
         .ignoresSafeArea(.keyboard)
         .background(recapScreenBackground)
         .onChange(of: selectedDayIndex) { _, newIndex in
-            resetRecapScrollChromeVisibility()
             visitedDayIndices.insert(newIndex)
             preloadDayPagerThumbnails(around: newIndex)
             // Reset so subsequent non-swipe changes don't inherit swipe animation.
@@ -1829,14 +1819,6 @@ struct RecapBlogPageView: View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear.frame(height: 0)
                 .id(RecapBlogScrollAnchor.pageTop)
-                .background {
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: RecapDayScrollOffsetPreferenceKey.self,
-                            value: geo.frame(in: .named("scroll")).minY
-                        )
-                    }
-                }
 
             // Always show the trip header (cover/title) on every day so swiping doesn't feel like the
             // cover "disappears" after Day 1. (Other trip-level affordances can still be Day 1 only.)
@@ -1885,7 +1867,7 @@ struct RecapBlogPageView: View {
             }
 
             VStack(alignment: .leading, spacing: 16) {
-                daySection(day: blogDay, dayIndex: index)
+                daySection(day: blogDay, dayIndex: index, screenHeight: screenHeight)
                     .id("day-section-\(blogDay.id)")
             }
             .padding(.horizontal, 8)
@@ -1946,47 +1928,6 @@ struct RecapBlogPageView: View {
         }
     }
 
-    private static let recapScrollChromeDeltaThreshold: CGFloat = 8
-    private static let recapScrollTopResetThreshold: CGFloat = 4
-
-    private func resetRecapScrollChromeVisibility() {
-        lastRecapDayScrollOffset = 0
-        withAnimation(.easeInOut(duration: 0.22)) {
-            recapScrollTopChromeVisible = true
-            recapScrollBottomChromeVisible = true
-        }
-    }
-
-    /// Hides the nav bar while scrolling down and the day filter while scrolling up; both reappear at the top.
-    private func updateRecapScrollChromeVisibility(for offset: CGFloat) {
-        defer { lastRecapDayScrollOffset = offset }
-
-        if offset >= -Self.recapScrollTopResetThreshold {
-            if !recapScrollTopChromeVisible || !recapScrollBottomChromeVisible {
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    recapScrollTopChromeVisible = true
-                    recapScrollBottomChromeVisible = true
-                }
-            }
-            return
-        }
-
-        let delta = offset - lastRecapDayScrollOffset
-        guard abs(delta) >= Self.recapScrollChromeDeltaThreshold else { return }
-
-        if delta < 0 {
-            if recapScrollTopChromeVisible {
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    recapScrollTopChromeVisible = false
-                }
-            }
-        } else if recapScrollBottomChromeVisible {
-            withAnimation(.easeInOut(duration: 0.22)) {
-                recapScrollBottomChromeVisible = false
-            }
-        }
-    }
-
     private func dayPageScrollView(
         blogDay: RecapBlogDay,
         index: Int,
@@ -2014,10 +1955,6 @@ struct RecapBlogPageView: View {
                     showNavBarTitle = shouldShow
                 }
             }
-            .onPreferenceChange(RecapDayScrollOffsetPreferenceKey.self) { offset in
-                guard index == selectedDayIndex else { return }
-                updateRecapScrollChromeVisibility(for: offset)
-            }
             .background(recapScreenBackground)
             .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
 
@@ -2041,9 +1978,6 @@ struct RecapBlogPageView: View {
         }
         .onChange(of: isKeyboardVisible) { _, visible in
             guard selectedDayIndex == index else { return }
-            if visible {
-                resetRecapScrollChromeVisibility()
-            }
             if visible, let id = pendingScrollToStopId {
                 pendingScrollToStopId = nil
                 withAnimation(.easeOut(duration: 0.25)) {
@@ -2527,7 +2461,7 @@ struct RecapBlogPageView: View {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
-        .frame(height: resolvedBaseHeight * 0.55)
+        .frame(height: resolvedBaseHeight * 0.45)
     }
 
     // MARK: - Photo Library Access (Limited users)
@@ -2898,7 +2832,8 @@ struct RecapBlogPageView: View {
         )
     }
 
-    private func daySection(day: RecapBlogDay, dayIndex: Int) -> some View {
+    private func daySection(day: RecapBlogDay, dayIndex: Int, screenHeight: CGFloat) -> some View {
+        let mediaTileHeight = Self.placeMediaTileHeight(for: screenHeight)
         let isDayLoading = !day.isPlaceNamesResolved
         let hasNewMoments = newMomentsDayIndices.contains(dayIndex)
         return VStack(alignment: .leading, spacing: 16) {
@@ -3118,6 +3053,7 @@ struct RecapBlogPageView: View {
                     overallStory: bindingForOverallStory(dayId: day.id, stopId: stop.id),
                     photoCaption: { bindingForPhotoCaption(dayId: day.id, stopId: stop.id, photoId: $0) },
                     reelAutoplay: blogReelAutoplay,
+                    mediaTileHeight: mediaTileHeight,
                     onDelete: {
                         removePlaceStop(dayId: day.id, stopId: stop.id)
                     },
