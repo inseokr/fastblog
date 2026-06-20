@@ -119,7 +119,7 @@ struct MomentVideoTrimSheet: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 12) {
             Button("Cancel") {
                 stopPlayback()
                 onCancel()
@@ -127,14 +127,14 @@ struct MomentVideoTrimSheet: View {
             }
             .font(.body)
             .foregroundStyle(.white.opacity(0.88))
-
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Text("Trim Reel")
-                .font(.subheadline.weight(.semibold))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.92))
-
-            Spacer()
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
+                .frame(maxWidth: .infinity, alignment: .center)
 
             Button(isExporting ? "Saving…" : "Save") {
                 Task { await applyTrim() }
@@ -142,6 +142,7 @@ struct MomentVideoTrimSheet: View {
             .font(.body.weight(.semibold))
             .foregroundStyle(canApply ? Color.yellow : Color.white.opacity(0.35))
             .disabled(!canApply || isExporting)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
