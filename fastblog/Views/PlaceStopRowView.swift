@@ -575,7 +575,7 @@ struct PlaceStopRowView: View {
                             onPhotoTapped?(firstHidden)
                         } label: {
                             HStack(spacing: 6) {
-                                Text("Show all \(totalPhotoCount) photos")
+                                Text("See all photos/videos")
                                     .font(.subheadline.weight(.semibold))
                                 Spacer(minLength: 8)
                                 Image(systemName: "chevron.right")
@@ -585,7 +585,7 @@ struct PlaceStopRowView: View {
                             .padding(.top, 2)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Show all \(totalPhotoCount) photos")
+                        .accessibilityLabel("See all photos/videos")
                         .padding(.horizontal, 12)
                     }
                 }

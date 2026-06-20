@@ -165,6 +165,8 @@ struct PanoramaPlayerView: View {
     @State private var showDayPicker = false
     /// AVPlayer for video slides (original clip audio mixed with bundled music).
     @State private var videoPlayer: AVPlayer?
+    /// Loaded duration of the current reel clip; drives slide timing instead of the fixed photo duration.
+    @State private var currentVideoDurationSeconds: Double?
     /// Controls the auto-dismissing place/caption overlay shown at the start of each reel slide.
     @State private var showReelInfoOverlay = false
 
@@ -232,9 +234,18 @@ struct PanoramaPlayerView: View {
         activeGroups[0..<currentGroupIndex].reduce(0) { $0 + $1.count } + currentSlideOffset
     }
 
+    private var effectiveSoloDurationSeconds: CGFloat {
+        if currentPrimaryEntry?.momentVideoURL != nil,
+           let videoDuration = currentVideoDurationSeconds,
+           videoDuration > 0 {
+            return CGFloat(videoDuration)
+        }
+        return CGFloat(soloDurationSeconds)
+    }
+
     private var soloProgress: CGFloat {
         guard currentLayout == .solo else { return 0 }
-        return (soloElapsed / CGFloat(soloDurationSeconds)).clamped(to: 0...1)
+        return (soloElapsed / effectiveSoloDurationSeconds).clamped(to: 0...1)
     }
 
     private var overallProgress: CGFloat {
@@ -442,10 +453,18 @@ struct PanoramaPlayerView: View {
             guard let url = currentPrimaryEntry?.momentVideoURL else {
                 // No new video — fade out whatever is showing.
                 await MainActor.run {
+                    currentVideoDurationSeconds = nil
                     withAnimation(.easeOut(duration: 0.4)) { videoPlayer = nil }
                 }
                 return
             }
+
+            let asset = AVURLAsset(url: url)
+            let loadedDuration = try? await asset.load(.duration)
+            let durationSeconds = loadedDuration.map(CMTimeGetSeconds) ?? 0
+            let slideDuration = durationSeconds.isFinite && durationSeconds > 0
+                ? durationSeconds
+                : soloDurationSeconds
 
             let item = AVPlayerItem(url: url)
             let newPlayer = AVPlayer(playerItem: item)
@@ -455,9 +474,16 @@ struct PanoramaPlayerView: View {
                 forName: .AVPlayerItemDidPlayToEndTime,
                 object: item,
                 queue: .main
-            ) { _ in newPlayer.seek(to: .zero); newPlayer.play() }
+            ) { _ in
+                Task { @MainActor in
+                    guard isPlaying else { return }
+                    stopTimer()
+                    advanceSlide()
+                }
+            }
 
             await MainActor.run {
+                currentVideoDurationSeconds = slideDuration
                 configureAudioSessionForReelSlideshow()
                 // Crossfade: replacing videoPlayer with a new instance changes the view's
                 // .id(ObjectIdentifier(player)), so SwiftUI dissolves the old view out while
@@ -1375,7 +1401,7 @@ struct PanoramaPlayerView: View {
                 if self.currentLayout == .solo {
                     self.updateSoloKenBurnsScale()
                 }
-                if self.soloElapsed >= CGFloat(self.soloDurationSeconds) {
+                if self.soloElapsed >= self.effectiveSoloDurationSeconds {
                     self.stopTimer()
                     self.advanceSlide()
                 }
