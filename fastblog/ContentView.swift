@@ -456,7 +456,10 @@ struct ContentView: View {
                 let dx = value.translation.width
                 let dy = value.translation.height
 
-                guard showsHomeChrome else { return }
+                guard showsHomeChrome else {
+                    swipeDragIsActive = false
+                    return
+                }
                 guard abs(dx) > abs(dy) * 1.5 || swipeDragIsActive else { return }
 
                 if homeTab == .camera && !swipeDragIsActive {
