@@ -450,6 +450,58 @@ struct ContentView: View {
         return CGFloat(myIdx - activeIdx) * screenWidth + swipeDragOffset
     }
 
+    private func swipeGesture(screenWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                let dx = value.translation.width
+                let dy = value.translation.height
+
+                guard showsHomeChrome else { return }
+                guard abs(dx) > abs(dy) * 1.5 || swipeDragIsActive else { return }
+
+                if homeTab == .camera && !swipeDragIsActive {
+                    guard value.startLocation.x < 50 || value.startLocation.x > screenWidth - 50 else { return }
+                }
+
+                swipeDragIsActive = true
+
+                let activeIdx = tabOrder.firstIndex(of: homeTab) ?? 1
+                let atLeftEnd  = activeIdx == 0
+                let atRightEnd = activeIdx == tabOrder.count - 1
+
+                if (atLeftEnd && dx > 0) || (atRightEnd && dx < 0) {
+                    swipeDragOffset = dx * 0.15
+                } else {
+                    swipeDragOffset = dx
+                }
+            }
+            .onEnded { value in
+                swipeDragIsActive = false
+
+                let dx             = value.translation.width
+                let velocityProxy  = value.predictedEndTranslation.width - value.translation.width
+                let shouldCommit   = abs(dx) > screenWidth * 0.35 || abs(velocityProxy) > 200
+
+                let activeIdx  = tabOrder.firstIndex(of: homeTab) ?? 1
+                let direction  = dx < 0 ? 1 : -1
+                let newTabIdx  = shouldCommit
+                    ? max(0, min(tabOrder.count - 1, activeIdx + direction))
+                    : activeIdx
+
+                if newTabIdx != activeIdx {
+                    swipeDragOffset += CGFloat(newTabIdx - activeIdx) * screenWidth
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        homeTab = tabOrder[newTabIdx]
+                    }
+                }
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    swipeDragOffset = 0
+                }
+            }
+    }
+
     private func selectHomeTab(_ tab: BottomNavTab) {
         cancelHomeBottomNavAutoHide()
         var transaction = Transaction()
