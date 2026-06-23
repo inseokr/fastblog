@@ -90,6 +90,7 @@ struct PlacesVisitedView: View {
     @State private var revealNavDuringModalDismiss: Bool = false
     @FocusState private var isSearchFocused: Bool
     @State private var isSearchActive: Bool = false
+    @State private var scrollRestorationPlaceId: String?
 
     @State private var showShareYourPlacesSheet = false
     @State private var showPlacesShareTooManyAlert = false
@@ -175,88 +176,100 @@ struct PlacesVisitedView: View {
                 filterBar
                     .padding(.horizontal, horizontalPadding)
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if filteredPlaces.isEmpty {
-                            VStack(spacing: 10) {
-                                Text(createdRecapStore.visitedPlaces.isEmpty ? "No places yet" : "No matches")
-                                    .font(.title3)
-                                    .fontWeight(.semibold)
+                ScrollViewReader { scrollProxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            if filteredPlaces.isEmpty {
+                                VStack(spacing: 10) {
+                                    Text(createdRecapStore.visitedPlaces.isEmpty ? "No places yet" : "No matches")
+                                        .font(.title3)
+                                        .fontWeight(.semibold)
 
-                                Text(createdRecapStore.visitedPlaces.isEmpty
-                                     ? "Create a blog to start building your Places."
-                                     : "Try clearing filters.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 20)
+                                    Text(createdRecapStore.visitedPlaces.isEmpty
+                                         ? "Create a blog to start building your Places."
+                                         : "Try clearing filters.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 20)
 
-                                // Only treat year / country / category as "filters" for this button.
-                                // Plain text search alone should NOT surface the Clear filters button.
-                                let hasActiveFilters =
-                                    selectedYear != nil ||
-                                    selectedCountry != nil ||
-                                    selectedCategory != nil
+                                    // Only treat year / country / category as "filters" for this button.
+                                    // Plain text search alone should NOT surface the Clear filters button.
+                                    let hasActiveFilters =
+                                        selectedYear != nil ||
+                                        selectedCountry != nil ||
+                                        selectedCategory != nil
 
-                                if !createdRecapStore.visitedPlaces.isEmpty && hasActiveFilters {
-                                    Button("Clear filters") {
-                                        selectedYear = nil
-                                        selectedCountry = nil
-                                        selectedCategory = nil
-                                        searchText = ""
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 44)
-                        } else {
-                            // Group by year, then by month
-                            let yearGroups = groupedByYearThenMonth(filteredPlaces)
-                            LazyVStack(alignment: .leading, spacing: 0) {
-                                ForEach(yearGroups, id: \.year) { yearGroup in
-                                    // Year header — large
-                                    Text(String(yearGroup.year))
-                                        .font(.title)
-                                        .fontWeight(.bold)
-                                        .foregroundStyle(.primary)
-                                        .padding(.top, 8)
-                                        .padding(.bottom, 4)
-
-                                    ForEach(yearGroup.months, id: \.month) { monthGroup in
-                                        // Month header — smaller
-                                        Text(monthGroup.monthName)
-                                            .font(.subheadline)
-                                            .fontWeight(.semibold)
-                                            .foregroundStyle(.secondary)
-                                            .padding(.top, 10)
-                                            .padding(.bottom, 6)
-
-                                        LazyVGrid(columns: PlacesVisitedPlaceGrid.columns, spacing: 12) {
-                                            ForEach(monthGroup.places) { place in
-                                                PlaceVisitedCard(
-                                                    place: place,
-                                                    onTap: {
-                                                        openCategoryPickerWhenPlaceModalOpens = false
-                                                        selectedPlaceForModal = place
-                                                    },
-                                                    onAddCategoryTap: {
-                                                        openCategoryPickerWhenPlaceModalOpens = true
-                                                        selectedPlaceForModal = place
-                                                    }
-                                                )
-                                            }
+                                    if !createdRecapStore.visitedPlaces.isEmpty && hasActiveFilters {
+                                        Button("Clear filters") {
+                                            selectedYear = nil
+                                            selectedCountry = nil
+                                            selectedCategory = nil
+                                            searchText = ""
                                         }
-                                        .padding(.bottom, 12)
+                                        .buttonStyle(.borderedProminent)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 44)
+                            } else {
+                                // Group by year, then by month
+                                let yearGroups = groupedByYearThenMonth(filteredPlaces)
+                                LazyVStack(alignment: .leading, spacing: 0) {
+                                    ForEach(yearGroups, id: \.year) { yearGroup in
+                                        // Year header — large
+                                        Text(String(yearGroup.year))
+                                            .font(.title)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.primary)
+                                            .padding(.top, 8)
+                                            .padding(.bottom, 4)
+
+                                        ForEach(yearGroup.months, id: \.month) { monthGroup in
+                                            // Month header — smaller
+                                            Text(monthGroup.monthName)
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                                .foregroundStyle(.secondary)
+                                                .padding(.top, 10)
+                                                .padding(.bottom, 6)
+
+                                            LazyVGrid(columns: PlacesVisitedPlaceGrid.columns, spacing: 12) {
+                                                ForEach(monthGroup.places) { place in
+                                                    PlaceVisitedCard(
+                                                        place: place,
+                                                        onTap: {
+                                                            scrollRestorationPlaceId = place.id
+                                                            openCategoryPickerWhenPlaceModalOpens = false
+                                                            selectedPlaceForModal = place
+                                                        },
+                                                        onAddCategoryTap: {
+                                                            scrollRestorationPlaceId = place.id
+                                                            openCategoryPickerWhenPlaceModalOpens = true
+                                                            selectedPlaceForModal = place
+                                                        }
+                                                    )
+                                                    .id(place.id)
+                                                }
+                                            }
+                                            .padding(.bottom, 12)
+                                        }
                                     }
                                 }
                             }
                         }
+                        .padding(.horizontal, horizontalPadding)
+                        .padding(.bottom, 12)
                     }
-                    .padding(.horizontal, horizontalPadding)
-                    .padding(.bottom, 12)
+                    .scrollDismissesKeyboard(.immediately)
+                    .onChange(of: selectedPlaceForModal) { _, newValue in
+                        guard newValue == nil, let id = scrollRestorationPlaceId else { return }
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(50))
+                            scrollProxy.scrollTo(id, anchor: .center)
+                        }
+                    }
                 }
-                .scrollDismissesKeyboard(.immediately)
             }
             .dynamicTypeSize(.large)
 

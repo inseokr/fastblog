@@ -311,6 +311,8 @@ struct RecapBlogPageView: View {
     // MARK: - New Moments
     @State private var newMomentPhotos: [MockPhoto] = []
     @State private var showNewMomentsReviewSheet = false
+    /// Cached place-cluster count for `newMomentPhotos` — computed with the same algorithm as `NewMomentsReviewSheet` so the card label matches the sheet contents.
+    @State private var newMomentsGroupCount: Int = 0
     @State private var isCheckingNewMoments = false
     @State private var hasCheckedNewMoments = false
     @State private var showNoNewMomentsAlert = false
@@ -384,7 +386,25 @@ struct RecapBlogPageView: View {
         highlightedNewMomentsDayIndices = []
     }
 
+    private func recomputeNewMomentsGroupCount() {
+        guard !newMomentPhotos.isEmpty else { newMomentsGroupCount = 0; return }
+        let service = PlaceStopClusteringService()
+        let inputs = newMomentPhotos.map { ClusterPhotoInput(id: $0.id, timestamp: $0.timestamp, location: $0.location) }
+        newMomentsGroupCount = service.placeStops(from: inputs) { _ in "Moment" }.count
+    }
+
     private func focusNewMomentsDayIfNeeded(animated: Bool = true, force: Bool = false) {
+        // Only auto-scroll when there are actual new-moment photos in this session or an
+        // explicit initialDayIndex was passed. Stale UserDefaults (hasNewMoments=true from a
+        // previous scan that was never cleared) must not drive auto-scroll on its own —
+        // that's what caused concluded trips to always open on the last day.
+        guard !newMomentPhotos.isEmpty || clampedInitialDayIndex != nil else { return }
+        // If the user already dismissed this batch via "Later", respect their reading
+        // position — don't auto-scroll again on subsequent sessions.
+        if !force, clampedInitialDayIndex == nil,
+           let batchMax = newMomentPhotos.map(\.timestamp).max(),
+           let dismissed = NewMomentsPullUpPresentationStore.dismissedBatchMaxTimestamp(for: blogId),
+           batchMax <= dismissed { return }
         refreshHighlightedNewMomentsDays()
         guard !highlightedNewMomentsDayIndices.isEmpty else { return }
         guard force || !hasAutoScrolledToNewMomentsDay,
@@ -706,7 +726,9 @@ struct RecapBlogPageView: View {
                             pendingSecondSaveCommitAfterAuth = false
                             showAuth = false
                             // Stay on this blog after sign-in; saving must not pop the recap.
-                            _ = saveDraft(suppressPostSaveOnboarding: true)
+                            if saveDraft(suppressPostSaveOnboarding: true) {
+                                isEditMode = false
+                            }
                         } else if pendingEarlyAccessAfterAuth {
                             // Immediately return to the blog with the confirmation pull-up; register via API in the background.
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -1438,6 +1460,9 @@ struct RecapBlogPageView: View {
                 onDismiss: { showPanorama = false },
                 onAppCaptureDeletedFromSlideshow: { identifier in
                     removeAppCapturePhotoFromSlideshow(identifier: identifier)
+                },
+                onPausedMetadataTapped: { identifier in
+                    openPlaceModalFromPanoramaCaptionTap(localIdentifier: identifier)
                 }
             )
         }
@@ -1841,16 +1866,15 @@ struct RecapBlogPageView: View {
                     }
                 }
 
-                if index == 0 {
-                    if newMomentsPlaceCount > 0 {
-                        newMomentsCard
-                            .padding(.horizontal, 16)
-                            .padding(.top, 8)
-                            .padding(.bottom, 12)
-                    }
-                }
-
                 tripNarrativeCard
+            }
+
+            // New moments card — shown once, on the latest day that has new photos.
+            if newMomentsPlaceCount > 0 && preferredNewMomentsDayIndex == index {
+                newMomentsCard
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 12)
             }
 
             // Read-only: map on every day. Edit: map from Day 2+ (Day 1 keeps edit chrome uncluttered).
@@ -2683,11 +2707,6 @@ struct RecapBlogPageView: View {
                         .scaleEffect(0.8)
                         .tint(recapChromeForeground)
                 }
-                if hasNewMoments {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(isSelected ? .white : Self.newMomentsAccent)
-                }
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(isSelected ? .semibold : .regular)
@@ -2698,12 +2717,6 @@ struct RecapBlogPageView: View {
             .padding(.vertical, 10)
             .background(isSelected ? Color.blue : recapDayPillIdleBackground)
             .clipShape(Capsule())
-            .overlay {
-                if hasNewMoments {
-                    Capsule()
-                        .stroke(Self.newMomentsAccent.opacity(isSelected ? 0.55 : 0.9), lineWidth: 2)
-                }
-            }
             .opacity(isUnprocessed ? 0.85 : 1)
         }
         .buttonStyle(.plain)
@@ -2803,15 +2816,15 @@ struct RecapBlogPageView: View {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(Color.green.opacity(0.15))
+                        .fill(Self.newMomentsAccent.opacity(0.15))
                         .frame(width: 40, height: 40)
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 22))
-                        .foregroundColor(.green)
+                        .foregroundColor(Self.newMomentsAccent)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(newMomentsPlaceCount) moment\(newMomentsPlaceCount == 1 ? "" : "s") found")
+                    Text("\(newMomentsGroupCount) moment\(newMomentsGroupCount == 1 ? "" : "s") found")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(recapChromeForeground)
@@ -2836,7 +2849,7 @@ struct RecapBlogPageView: View {
         .appChromeCornerRadius(12)
         .overlay(
             RoundedRectangle(appChromeBaseRadius: 12)
-                .stroke(Color.green.opacity(0.25), lineWidth: 1)
+                .stroke(Self.newMomentsAccent.opacity(0.35), lineWidth: 1)
         )
     }
 
@@ -2849,9 +2862,6 @@ struct RecapBlogPageView: View {
                 Text(day.shortDateText)
                     .font(.blog(selectedBlogFont, size: 20, bold: true))
                     .foregroundColor(recapChromeForeground)
-                if hasNewMoments {
-                    BlogMenuIndicatorBadge(kind: .newMoments)
-                }
                 if isDayLoading {
                     ProgressView()
                         .scaleEffect(0.75)
@@ -3595,6 +3605,7 @@ struct RecapBlogPageView: View {
             isCheckingNewMoments = true
             let photos = await createdRecapStore.scanForNewMoments(blogId: blogId)
             newMomentPhotos = photos
+            recomputeNewMomentsGroupCount()
             isCheckingNewMoments = false
             if !photos.isEmpty {
                 BlogMenuIndicatorStore.shared.noteMomentsAdded(to: blogId)
@@ -3633,8 +3644,7 @@ struct RecapBlogPageView: View {
             return
         }
         NewMomentsPullUpPresentationStore.recordDismissal(for: blogId, batchMaxPhotoDate: maxDate)
-        newMomentPhotos = []
-        clearHighlightedNewMomentsDays()
+        // Keep newMomentPhotos intact so the inline card remains tappable after "Later".
         withAnimation(.easeInOut(duration: 0.3)) {
             showNewMomentsReviewSheet = false
         }
@@ -3645,6 +3655,7 @@ struct RecapBlogPageView: View {
         AppAnalytics.track(.blogMoreMemoriesCreateBlog(sourceBlogId: blogId.uuidString))
         let batchMax = newMomentPhotos.map(\.timestamp).max()
         newMomentPhotos = []
+        newMomentsGroupCount = 0
         withAnimation(.easeInOut(duration: 0.3)) {
             showNewMomentsReviewSheet = false
         }
@@ -3707,6 +3718,7 @@ struct RecapBlogPageView: View {
 
     private func dismissNewMoments() {
         newMomentPhotos = []
+        newMomentsGroupCount = 0
         clearHighlightedNewMomentsDays()
     }
 
@@ -3721,6 +3733,7 @@ struct RecapBlogPageView: View {
         }
         NewMomentsPullUpPresentationStore.clear(for: blogId)
         newMomentPhotos = []
+        newMomentsGroupCount = 0
         clearHighlightedNewMomentsDays()
         BlogMenuIndicatorStore.shared.clear(sourceTripId: blogId)
         withAnimation(.easeInOut(duration: 0.3)) {
@@ -5524,6 +5537,7 @@ Your blog remains private unless you choose to share it.
                 }
             }
         }
+        .padding(.top, isEditMode ? 16 : 0)
     }
 
     private func triggerTripNarrative() {
@@ -7695,7 +7709,8 @@ private let newMomentsTimeFormatter: DateFormatter = {
 
 /// One place group for the new moments sheet: key (e.g. location name) and photos sorted earliest → latest.
 private struct NewMomentPlaceGroup: Identifiable {
-    var id: String { placeKey }
+    /// Stable composite ID: same cluster always produces the same key, no collision across same-city clusters.
+    var id: String { "\(placeKey)-\(earliestTimestamp.timeIntervalSince1970)" }
     let placeKey: String
     let photos: [MockPhoto]
     var earliestTimestamp: Date { photos.map(\.timestamp).min() ?? .distantPast }
@@ -7711,18 +7726,27 @@ private struct NewMomentsReviewSheet: View {
     @State private var hiddenPlaceKeys: Set<String> = []
     @State private var dragOffset: CGFloat = 0
 
-    /// Photos grouped by place (locationName ?? "Moment"), groups sorted earliest → latest.
+    /// Photos clustered by time+location proximity (same algorithm as PlaceStop building), then labelled
+    /// by the dominant locationName in each cluster. This keeps separate visits to the same city as
+    /// distinct moment cards rather than collapsing them into one.
     private var placeGroups: [NewMomentPlaceGroup] {
-        let grouped = Dictionary(grouping: photos) { $0.locationName ?? "Moment" }
-        return grouped.map { key, list in
-            NewMomentPlaceGroup(placeKey: key, photos: list.sorted { $0.timestamp < $1.timestamp })
+        let service = PlaceStopClusteringService()
+        let inputs = photos.map { ClusterPhotoInput(id: $0.id, timestamp: $0.timestamp, location: $0.location) }
+        let clusters = service.placeStops(from: inputs) { _ in "Moment" }
+        return clusters.map { _, clusterInputs in
+            let clusterPhotos = clusterInputs.compactMap { input in photos.first { $0.id == input.id } }
+                .sorted { $0.timestamp < $1.timestamp }
+            let locationNames = clusterPhotos.compactMap(\.locationName)
+            let freq = locationNames.reduce(into: [String: Int]()) { counts, name in counts[name, default: 0] += 1 }
+            let placeKey = freq.max(by: { $0.value < $1.value })?.key ?? "Moment"
+            return NewMomentPlaceGroup(placeKey: placeKey, photos: clusterPhotos)
         }.sorted { $0.earliestTimestamp < $1.earliestTimestamp }
     }
 
     /// Total photos in visible (non-hidden) place groups — used for disable state and onAdd payload.
     private var visibleCount: Int {
         placeGroups
-            .filter { !hiddenPlaceKeys.contains($0.placeKey) }
+            .filter { !hiddenPlaceKeys.contains($0.id) }
             .flatMap(\.photos)
             .count
     }
@@ -7730,13 +7754,13 @@ private struct NewMomentsReviewSheet: View {
     /// Number of visible place groups (moments) — used for CTA label ("Add 1 Moment" / "Add N Moments").
     private var visibleMomentCount: Int {
         placeGroups
-            .filter { !hiddenPlaceKeys.contains($0.placeKey) }
+            .filter { !hiddenPlaceKeys.contains($0.id) }
             .count
     }
 
     private var visiblePhotos: [MockPhoto] {
         placeGroups
-            .filter { !hiddenPlaceKeys.contains($0.placeKey) }
+            .filter { !hiddenPlaceKeys.contains($0.id) }
             .flatMap(\.photos)
     }
 
@@ -7840,7 +7864,7 @@ private struct NewMomentsReviewSheet: View {
     }
 
     private func newMomentPlaceCard(group: NewMomentPlaceGroup) -> some View {
-        let isHidden = hiddenPlaceKeys.contains(group.placeKey)
+        let isHidden = hiddenPlaceKeys.contains(group.id)
         let thumbSize: CGFloat = 72
         let thumbSpacing: CGFloat = 8
         let thumbCorner: CGFloat = 10
@@ -7852,9 +7876,9 @@ private struct NewMomentsReviewSheet: View {
         return Button {
             withAnimation(.easeInOut(duration: 0.2)) {
                 if isHidden {
-                    hiddenPlaceKeys.remove(group.placeKey)
+                    hiddenPlaceKeys.remove(group.id)
                 } else {
-                    hiddenPlaceKeys.insert(group.placeKey)
+                    hiddenPlaceKeys.insert(group.id)
                 }
             }
         } label: {

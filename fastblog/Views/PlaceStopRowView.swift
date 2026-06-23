@@ -792,6 +792,34 @@ struct PlaceStopRowView: View {
                                     }
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .overlay(alignment: .topTrailing) {
+                                HStack(spacing: 12) {
+                                    if stop.placeTitleIsManual {
+                                        Button { onEditName?() } label: {
+                                            ZStack {
+                                                Circle()
+                                                    .fill(colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.08))
+                                                Image(systemName: "square.and.pencil")
+                                                    .font(.system(size: 14, weight: .semibold))
+                                                    .foregroundStyle(rowTitle)
+                                            }
+                                            .frame(width: 28, height: 28)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel("Edit place name")
+                                    }
+                                    Button(action: onDelete) {
+                                        Image(systemName: "eye.slash")
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(.secondary)
+                                            .frame(width: 28, height: 28)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Hide place")
+                                }
+                            }
                         } else {
                             HStack(alignment: .top, spacing: 10) {
                                 Group {
@@ -836,34 +864,8 @@ struct PlaceStopRowView: View {
                                 }
                             }
                         }
-                        Spacer()
-                        if isEditMode {
-                            HStack(spacing: 12) {
-                                if stop.placeTitleIsManual {
-                                    Button { onEditName?() } label: {
-                                        ZStack {
-                                            Circle()
-                                                .fill(colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.08))
-                                            Image(systemName: "square.and.pencil")
-                                                .font(.system(size: 14, weight: .semibold))
-                                                .foregroundStyle(rowTitle)
-                                        }
-                                        .frame(width: 28, height: 28)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("Edit place name")
-                                }
-                                Button(action: onDelete) {
-                                    Image(systemName: "eye.slash")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.secondary)
-                                        .frame(width: 28, height: 28)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Hide place")
-                            }
-                        } else {
+                        if !isEditMode {
+                            Spacer()
                             Button { onKebab?() } label: {
                                 Image(systemName: "ellipsis")
                                     .font(.body)

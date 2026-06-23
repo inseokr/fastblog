@@ -663,18 +663,34 @@ final class CreatedRecapBlogStore: ObservableObject {
     }
 
     /// True when `TripMatchingService` would hide this draft as a duplicate of a saved blog **and**
-    /// every Photos-library asset in the draft already appears in some visible blog.
-    /// Drafts that only match by date/country but contain library photos not in any blog stay visible
-    /// (e.g. same day as a blog built from in-app captures only).
+    /// the draft's library photos are accounted for by an existing blog (fully, mostly, or by the
+    /// matching blog being an in-app-capture-only blog whose iPhone counterpart this draft is).
     func isDraftRedundantWithSavedBlogs(_ draft: TripDraft) -> Bool {
         guard TripMatchingService.isTripSaved(draft: draft, against: visibleRecents) else { return false }
         let libraryIds = draft.days.flatMap(\.photos).compactMap(\.localIdentifier)
             .filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
-        // A trip whose photos are exclusively in-app captures has no PHAsset overlap with any
-        // saved blog and is therefore never redundant — always keep it visible.
+        // A trip whose photos are exclusively in-app captures is never redundant with library-backed blogs.
         if libraryIds.isEmpty { return false }
+
+        // If the matched blog was built entirely from in-app captures (no PHAsset photos),
+        // this draft is the iPhone camera counterpart of the same trip.
+        // Suppress it so New Moments handles routing, not Tap to Blog.
+        for blog in visibleRecents where TripMatchingService.isTripSaved(draft: draft, against: [blog]) {
+            if let detail = blogDetailsBySourceId[blog.sourceTripId] {
+                let hasLibraryPhoto = detail.days.flatMap(\.placeStops).flatMap(\.photos)
+                    .compactMap(\.localIdentifier)
+                    .contains { !$0.hasPrefix(AppCapturePhotoService.prefix) }
+                if !hasLibraryPhoto { return true }
+            }
+        }
+
         let known = allPhotoLibraryLocalIdentifiersInVisibleBlogs()
-        return libraryIds.allSatisfy { known.contains($0) }
+        // All photos already in a blog — clean duplicate.
+        if libraryIds.allSatisfy({ known.contains($0) }) { return true }
+        // Majority overlap: most photos are in the blog but one extra day remains (e.g. Day 4
+        // from iPhone camera when Bloggo camera blog only covered Days 1–3).
+        let matchedCount = libraryIds.filter { known.contains($0) }.count
+        return Double(matchedCount) / Double(libraryIds.count) >= 0.60
     }
 
     /// TripDraft snapshot for opening BlogPreviewView. Nil if not found.

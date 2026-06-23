@@ -53,10 +53,6 @@ struct ContentView: View {
     @State private var showSettingsFromNav = false
     /// My Places place viewer / share studio — hides the shared home tab bar.
     @State private var suppressHomeBottomNav = false
-    @State private var swipeDragOffset: CGFloat = 0
-    @State private var swipeDragIsActive = false
-
-    private let tabOrder: [BottomNavTab] = [.myBlogs, .camera, .myPlaces]
 
     // On-the-go new-moments banner (camera home)
     @State private var showNewMomentsBanner = false
@@ -275,7 +271,6 @@ struct ContentView: View {
 
     /// Tab stacks and overlays — lives in the area above the shared bottom navigation bar.
     private var homeTabsLayer: some View {
-        GeometryReader { geo in
         ZStack {
             // Home tabs stay mounted (opacity) so the shared bottom nav never tears down / re-renders.
             NavigationStack {
@@ -297,9 +292,9 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black)
-            .offset(x: tabVisualOffset(for: .camera, screenWidth: geo.size.width))
-            .allowsHitTesting(homeTab == .camera && !swipeDragIsActive)
-            .zIndex(1)
+            .opacity(homeTab == .camera ? 1 : 0)
+            .allowsHitTesting(homeTab == .camera)
+            .zIndex(homeTab == .camera ? 1 : 0)
 
             NavigationStack {
                 MyBlogsProfileView(
@@ -326,9 +321,9 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .tint(.primary)
             .preferredColorScheme(.dark)
-            .offset(x: tabVisualOffset(for: .myBlogs, screenWidth: geo.size.width))
-            .allowsHitTesting(homeTab == .myBlogs && !swipeDragIsActive)
-            .zIndex(1)
+            .opacity(homeTab == .myBlogs ? 1 : 0)
+            .allowsHitTesting(homeTab == .myBlogs)
+            .zIndex(homeTab == .myBlogs ? 3 : 0)
 
             NavigationStack {
                 PlacesVisitedStandaloneView(
@@ -343,9 +338,9 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .tint(.primary)
             .preferredColorScheme(.dark)
-            .offset(x: tabVisualOffset(for: .myPlaces, screenWidth: geo.size.width))
-            .allowsHitTesting(homeTab == .myPlaces && !swipeDragIsActive)
-            .zIndex(1)
+            .opacity(homeTab == .myPlaces ? 1 : 0)
+            .allowsHitTesting(homeTab == .myPlaces)
+            .zIndex(homeTab == .myPlaces ? 4 : 0)
 
             // Trips overlay — added when user taps "Tap to Blog"; opacity-only fade (no slide).
             // tripsViewKeepMounted extends the lifetime after dismissal so MapKit's CAMetalLayer
@@ -426,9 +421,6 @@ struct ContentView: View {
                     .zIndex(14)
             }
         } // ZStack
-        .clipped()
-        .simultaneousGesture(swipeGesture(screenWidth: geo.size.width))
-        } // GeometryReader
     }
 
     private var showsHomeChrome: Bool {
@@ -444,70 +436,7 @@ struct ContentView: View {
         homeTab == .camera && showsHomeChrome
     }
 
-    private func tabVisualOffset(for tab: BottomNavTab, screenWidth: CGFloat) -> CGFloat {
-        let myIdx     = tabOrder.firstIndex(of: tab)     ?? 0
-        let activeIdx = tabOrder.firstIndex(of: homeTab) ?? 1
-        return CGFloat(myIdx - activeIdx) * screenWidth + swipeDragOffset
-    }
-
-    private func swipeGesture(screenWidth: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 10)
-            .onChanged { value in
-                let dx = value.translation.width
-                let dy = value.translation.height
-
-                guard showsHomeChrome else {
-                    swipeDragIsActive = false
-                    return
-                }
-                guard abs(dx) > abs(dy) * 1.5 || swipeDragIsActive else { return }
-
-                if homeTab == .camera && !swipeDragIsActive {
-                    guard value.startLocation.x < 50 || value.startLocation.x > screenWidth - 50 else { return }
-                }
-
-                swipeDragIsActive = true
-
-                let activeIdx = tabOrder.firstIndex(of: homeTab) ?? 1
-                let atLeftEnd  = activeIdx == 0
-                let atRightEnd = activeIdx == tabOrder.count - 1
-
-                if (atLeftEnd && dx > 0) || (atRightEnd && dx < 0) {
-                    swipeDragOffset = dx * 0.15
-                } else {
-                    swipeDragOffset = dx
-                }
-            }
-            .onEnded { value in
-                swipeDragIsActive = false
-
-                let dx             = value.translation.width
-                let velocityProxy  = value.predictedEndTranslation.width - value.translation.width
-                let shouldCommit   = abs(dx) > screenWidth * 0.35 || abs(velocityProxy) > 200
-
-                let activeIdx  = tabOrder.firstIndex(of: homeTab) ?? 1
-                let direction  = dx < 0 ? 1 : -1
-                let newTabIdx  = shouldCommit
-                    ? max(0, min(tabOrder.count - 1, activeIdx + direction))
-                    : activeIdx
-
-                if newTabIdx != activeIdx {
-                    swipeDragOffset += CGFloat(newTabIdx - activeIdx) * screenWidth
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        homeTab = tabOrder[newTabIdx]
-                    }
-                }
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                    swipeDragOffset = 0
-                }
-            }
-    }
-
     private func selectHomeTab(_ tab: BottomNavTab) {
-        swipeDragOffset = 0
-        swipeDragIsActive = false
         cancelHomeBottomNavAutoHide()
         var transaction = Transaction()
         transaction.disablesAnimations = true

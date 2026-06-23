@@ -89,6 +89,8 @@ struct PanoramaPlayerView: View {
     var onDismiss: () -> Void
     /// When the user deletes an in-app capture (`bloggo-capture:` id) from the slideshow gallery full-screen viewer.
     var onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil
+    /// Called with the photo's asset identifier when the user taps the paused metadata card (place name / timestamp / caption area).
+    var onPausedMetadataTapped: ((String) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -99,7 +101,8 @@ struct PanoramaPlayerView: View {
         dayLabels: [String] = [],
         startInGallery: Bool = false,
         onDismiss: @escaping () -> Void,
-        onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil
+        onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil,
+        onPausedMetadataTapped: ((String) -> Void)? = nil
     ) {
         self.photoGroups = photoGroups
         self.blogId = blogId
@@ -108,6 +111,7 @@ struct PanoramaPlayerView: View {
         self.startInGallery = startInGallery
         self.onDismiss = onDismiss
         self.onAppCaptureDeletedFromSlideshow = onAppCaptureDeletedFromSlideshow
+        self.onPausedMetadataTapped = onPausedMetadataTapped
         _isPlaying = State(initialValue: !startInGallery)
         _showGallery = State(initialValue: startInGallery)
     }
@@ -942,6 +946,12 @@ struct PanoramaPlayerView: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(.black.opacity(0.42))
             )
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .onTapGesture {
+                if let callback = onPausedMetadataTapped {
+                    callback(entry.id)
+                }
+            }
         } else {
             HStack {
                 Spacer()
