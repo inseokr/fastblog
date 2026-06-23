@@ -275,6 +275,7 @@ struct ContentView: View {
 
     /// Tab stacks and overlays — lives in the area above the shared bottom navigation bar.
     private var homeTabsLayer: some View {
+        GeometryReader { geo in
         ZStack {
             // Home tabs stay mounted (opacity) so the shared bottom nav never tears down / re-renders.
             NavigationStack {
@@ -296,9 +297,9 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black)
-            .opacity(homeTab == .camera ? 1 : 0)
-            .allowsHitTesting(homeTab == .camera)
-            .zIndex(homeTab == .camera ? 1 : 0)
+            .offset(x: tabVisualOffset(for: .camera, screenWidth: geo.size.width))
+            .allowsHitTesting(homeTab == .camera && !swipeDragIsActive)
+            .zIndex(1)
 
             NavigationStack {
                 MyBlogsProfileView(
@@ -325,9 +326,9 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .tint(.primary)
             .preferredColorScheme(.dark)
-            .opacity(homeTab == .myBlogs ? 1 : 0)
-            .allowsHitTesting(homeTab == .myBlogs)
-            .zIndex(homeTab == .myBlogs ? 3 : 0)
+            .offset(x: tabVisualOffset(for: .myBlogs, screenWidth: geo.size.width))
+            .allowsHitTesting(homeTab == .myBlogs && !swipeDragIsActive)
+            .zIndex(1)
 
             NavigationStack {
                 PlacesVisitedStandaloneView(
@@ -342,9 +343,9 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .tint(.primary)
             .preferredColorScheme(.dark)
-            .opacity(homeTab == .myPlaces ? 1 : 0)
-            .allowsHitTesting(homeTab == .myPlaces)
-            .zIndex(homeTab == .myPlaces ? 4 : 0)
+            .offset(x: tabVisualOffset(for: .myPlaces, screenWidth: geo.size.width))
+            .allowsHitTesting(homeTab == .myPlaces && !swipeDragIsActive)
+            .zIndex(1)
 
             // Trips overlay — added when user taps "Tap to Blog"; opacity-only fade (no slide).
             // tripsViewKeepMounted extends the lifetime after dismissal so MapKit's CAMetalLayer
@@ -424,7 +425,10 @@ struct ContentView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(14)
             }
-        }
+        } // ZStack
+        .clipped()
+        .simultaneousGesture(swipeGesture(screenWidth: geo.size.width))
+        } // GeometryReader
     }
 
     private var showsHomeChrome: Bool {
