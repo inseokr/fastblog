@@ -69,7 +69,7 @@ struct TripDistanceFromHomeOnboardingView: View {
                         .opacity(showHeadline ? 1 : 0)
                         .offset(y: showHeadline ? 0 : 8)
 
-                    Text("Bloggo ignores photos taken closer than this to your home. So everyday shots stay out of your blogs.")
+                    Text("Bloggo saves everyday shots to My Places. Beyond this distance, we'll ask if you want a trip blog.")
                         .font(.title3)
                         .foregroundColor(.white.opacity(0.72))
                         .multilineTextAlignment(.center)

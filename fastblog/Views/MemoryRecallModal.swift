@@ -25,14 +25,30 @@ struct MemoryRecallModal: View {
                         headerSection
                         
                         LazyVGrid(columns: columns, spacing: 2) {
-                            ForEach(recall.assets, id: \.localIdentifier) { asset in
-                                Rectangle()
-                                    .fill(Color.gray.opacity(0.1))
-                                    .aspectRatio(1, contentMode: .fill)
-                                    .overlay(
-                                        AssetPhotoView(assetIdentifier: asset.localIdentifier, cornerRadius: 0, targetSize: CGSize(width: 400, height: 400))
-                                    )
-                                    .clipped()
+                            if recall.everydayCaptureIds.isEmpty {
+                                ForEach(recall.assets, id: \.localIdentifier) { asset in
+                                    Rectangle()
+                                        .fill(Color.gray.opacity(0.1))
+                                        .aspectRatio(1, contentMode: .fill)
+                                        .overlay(
+                                            AssetPhotoView(assetIdentifier: asset.localIdentifier, cornerRadius: 0, targetSize: CGSize(width: 400, height: 400))
+                                        )
+                                        .clipped()
+                                }
+                            } else {
+                                ForEach(recall.everydayCaptureIds, id: \.self) { captureId in
+                                    Rectangle()
+                                        .fill(Color.gray.opacity(0.1))
+                                        .aspectRatio(1, contentMode: .fill)
+                                        .overlay {
+                                            if let image = AppCapturePhotoService.shared.loadThumbnail(captureId: captureId, maxPixelSize: 400) {
+                                                Image(uiImage: image)
+                                                    .resizable()
+                                                    .scaledToFill()
+                                            }
+                                        }
+                                        .clipped()
+                                }
                             }
                         }
                         
@@ -83,7 +99,7 @@ struct MemoryRecallModal: View {
         VStack {
             Spacer()
             Button(action: onCreateBlog) {
-                Text("Create Blog From This Memory")
+                Text(recall.everydayCaptureIds.isEmpty ? "Create Blog From This Memory" : "Open My Places")
                     .font(.headline)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)

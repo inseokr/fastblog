@@ -2717,6 +2717,12 @@ struct RecapBlogPageView: View {
             .padding(.vertical, 10)
             .background(isSelected ? Color.blue : recapDayPillIdleBackground)
             .clipShape(Capsule())
+            .overlay {
+                if hasNewMoments {
+                    Capsule()
+                        .stroke(Self.newMomentsAccent.opacity(isSelected ? 0.55 : 0.9), lineWidth: 2)
+                }
+            }
             .opacity(isUnprocessed ? 0.85 : 1)
         }
         .buttonStyle(.plain)
@@ -2856,7 +2862,6 @@ struct RecapBlogPageView: View {
     private func daySection(day: RecapBlogDay, dayIndex: Int, screenHeight: CGFloat) -> some View {
         let mediaTileHeight = Self.placeMediaTileHeight(for: screenHeight)
         let isDayLoading = !day.isPlaceNamesResolved
-        let hasNewMoments = newMomentsDayIndices.contains(dayIndex)
         return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 6) {
                 Text(day.shortDateText)
@@ -2959,18 +2964,6 @@ struct RecapBlogPageView: View {
                 }
             }
             .padding(.top, 4)
-            .padding(.horizontal, hasNewMoments ? 10 : 0)
-            .padding(.bottom, hasNewMoments ? 8 : 0)
-            .background {
-                if hasNewMoments {
-                    RoundedRectangle(appChromeBaseRadius: 12)
-                        .fill(Self.newMomentsAccent.opacity(colorScheme == .dark ? 0.14 : 0.1))
-                        .overlay(
-                            RoundedRectangle(appChromeBaseRadius: 12)
-                                .stroke(Self.newMomentsAccent.opacity(0.35), lineWidth: 1)
-                        )
-                }
-            }
 
             // Day-level caption — right below the date header
             dayCaptionRow(day: day)

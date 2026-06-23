@@ -58,6 +58,7 @@ struct AppCaptureItem: Identifiable {
 
 struct AppCaptureGalleryView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
 
     /// When provided the view works as a photo picker. The callback receives the UUIDs of selected
     /// captures and the sheet is dismissed automatically. Download/trash actions are hidden.
@@ -74,6 +75,7 @@ struct AppCaptureGalleryView: View {
     @State private var isSelectMode = false
     @State private var selectedIds: Set<UUID> = []
     @State private var showRemoveConfirmation = false
+    @State private var showCreateTripBlogAlert = false
     @AppStorage("bloggo.inAppCamera.hasSeenDownloadTooltip") private var hasSeenDownloadTooltip = false
     @State private var downloadToast: String?
     @State private var showDownloadTooltip = false
@@ -153,6 +155,18 @@ struct AppCaptureGalleryView: View {
                             }
                             .disabled(selectedIds.isEmpty)
                             .accessibilityLabel("Save selected to Photos")
+
+                            Button {
+                                showCreateTripBlogAlert = true
+                            } label: {
+                                Image(systemName: "book.closed.fill")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundColor(selectedIds.isEmpty ? .gray : .white)
+                                    .frame(width: 56, height: 56)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                            }
+                            .disabled(selectedIds.isEmpty)
+                            .accessibilityLabel("Create trip blog from selection")
 
                             Spacer()
 
@@ -246,6 +260,14 @@ struct AppCaptureGalleryView: View {
                 }
             } message: {
                 Text(selectedIds.count == 1 ? "This photo will be removed from Bloggo." : "These photos will be removed from Bloggo.")
+            }
+            .alert("Create trip blog?", isPresented: $showCreateTripBlogAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Create Blog") {
+                    createTripBlogFromSelectedCaptures()
+                }
+            } message: {
+                Text("Selected captures will become a trip blog in My Blogs.")
             }
         }
         .presentationDetents([.fraction(1)])
@@ -544,6 +566,28 @@ struct AppCaptureGalleryView: View {
         items.removeAll { toRemove.contains($0.id) }
         selectedIds = []
         isSelectMode = false
+    }
+
+    private func createTripBlogFromSelectedCaptures() {
+        let service = AppCapturePhotoService.shared
+        let photos: [RecapPhoto] = selectedIds.compactMap { captureId in
+            guard let meta = service.metadata(captureId: captureId) else { return nil }
+            return RecapPhoto(
+                id: captureId,
+                timestamp: meta.timestamp,
+                location: meta.location,
+                imageName: "camera.fill",
+                isIncluded: true,
+                localIdentifier: AppCapturePhotoService.identifier(for: captureId),
+                caption: meta.caption,
+                digitizedTime: meta.digitizedTime
+            )
+        }
+        guard !photos.isEmpty else { return }
+        _ = createdRecapStore.createTripBlogFromEverydayPhotos(photos)
+        selectedIds = []
+        isSelectMode = false
+        dismiss()
     }
 
     private func itemIndex(at location: CGPoint) -> Int? {

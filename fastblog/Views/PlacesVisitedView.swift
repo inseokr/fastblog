@@ -71,6 +71,7 @@ struct PlacesVisitedStandaloneView: View {
 
 struct PlacesVisitedView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @ObservedObject private var everydayStore = EverydayMomentsStore.shared
 
     @Binding var searchText: String
     @Binding var showPlacesMap: Bool
@@ -100,6 +101,8 @@ struct PlacesVisitedView: View {
     @State private var showPlacesVideoExport = false
     @State private var placesVideoShareURL: URL?
     @State private var showPlacesVideoShareSheet = false
+    @State private var showPromoteToBlogConfirmation = false
+    @State private var placePendingPromote: VisitedPlaceSummary?
 
     private let horizontalPadding: CGFloat = 16
 
@@ -170,207 +173,270 @@ struct PlacesVisitedView: View {
             .sorted(by: { $0.latestVisitDate > $1.latestVisitDate })
     }
 
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            VStack(alignment: .leading, spacing: 12) {
-                filterBar
-                    .padding(.horizontal, horizontalPadding)
+    private var hasActivePlaceFilters: Bool {
+        selectedYear != nil || selectedCountry != nil || selectedCategory != nil
+    }
 
-                ScrollViewReader { scrollProxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 12) {
-                            if filteredPlaces.isEmpty {
-                                VStack(spacing: 10) {
-                                    Text(createdRecapStore.visitedPlaces.isEmpty ? "No places yet" : "No matches")
-                                        .font(.title3)
-                                        .fontWeight(.semibold)
+    @ViewBuilder
+    private var placesScrollEmptyState: some View {
+        VStack(spacing: 10) {
+            Text(createdRecapStore.visitedPlaces.isEmpty ? "No places yet" : "No matches")
+                .font(.title3)
+                .fontWeight(.semibold)
 
-                                    Text(createdRecapStore.visitedPlaces.isEmpty
-                                         ? "Create a blog to start building your Places."
-                                         : "Try clearing filters.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 20)
+            Text(createdRecapStore.visitedPlaces.isEmpty
+                 ? "Capture everyday moments with the camera — they appear here automatically."
+                 : "Try clearing filters.")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 20)
 
-                                    // Only treat year / country / category as "filters" for this button.
-                                    // Plain text search alone should NOT surface the Clear filters button.
-                                    let hasActiveFilters =
-                                        selectedYear != nil ||
-                                        selectedCountry != nil ||
-                                        selectedCategory != nil
+            if !createdRecapStore.visitedPlaces.isEmpty && hasActivePlaceFilters {
+                Button("Clear filters") {
+                    selectedYear = nil
+                    selectedCountry = nil
+                    selectedCategory = nil
+                    searchText = ""
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 44)
+    }
 
-                                    if !createdRecapStore.visitedPlaces.isEmpty && hasActiveFilters {
-                                        Button("Clear filters") {
-                                            selectedYear = nil
-                                            selectedCountry = nil
-                                            selectedCategory = nil
-                                            searchText = ""
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                    }
+    @ViewBuilder
+    private func placesYearMonthList(for places: [VisitedPlaceSummary]) -> some View {
+        let yearGroups = groupedByYearThenMonth(places)
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(yearGroups, id: \.year) { yearGroup in
+                Text(String(yearGroup.year))
+                    .font(.title)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.primary)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+
+                ForEach(yearGroup.months, id: \.month) { monthGroup in
+                    Text(monthGroup.monthName)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 10)
+                        .padding(.bottom, 6)
+
+                    LazyVGrid(columns: PlacesVisitedPlaceGrid.columns, spacing: 12) {
+                        ForEach(monthGroup.places) { place in
+                            PlaceVisitedCard(
+                                place: place,
+                                onTap: {
+                                    scrollRestorationPlaceId = place.id
+                                    openCategoryPickerWhenPlaceModalOpens = false
+                                    selectedPlaceForModal = place
+                                },
+                                onAddCategoryTap: {
+                                    scrollRestorationPlaceId = place.id
+                                    openCategoryPickerWhenPlaceModalOpens = true
+                                    selectedPlaceForModal = place
                                 }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 44)
-                            } else {
-                                // Group by year, then by month
-                                let yearGroups = groupedByYearThenMonth(filteredPlaces)
-                                LazyVStack(alignment: .leading, spacing: 0) {
-                                    ForEach(yearGroups, id: \.year) { yearGroup in
-                                        // Year header — large
-                                        Text(String(yearGroup.year))
-                                            .font(.title)
-                                            .fontWeight(.bold)
-                                            .foregroundStyle(.primary)
-                                            .padding(.top, 8)
-                                            .padding(.bottom, 4)
-
-                                        ForEach(yearGroup.months, id: \.month) { monthGroup in
-                                            // Month header — smaller
-                                            Text(monthGroup.monthName)
-                                                .font(.subheadline)
-                                                .fontWeight(.semibold)
-                                                .foregroundStyle(.secondary)
-                                                .padding(.top, 10)
-                                                .padding(.bottom, 6)
-
-                                            LazyVGrid(columns: PlacesVisitedPlaceGrid.columns, spacing: 12) {
-                                                ForEach(monthGroup.places) { place in
-                                                    PlaceVisitedCard(
-                                                        place: place,
-                                                        onTap: {
-                                                            scrollRestorationPlaceId = place.id
-                                                            openCategoryPickerWhenPlaceModalOpens = false
-                                                            selectedPlaceForModal = place
-                                                        },
-                                                        onAddCategoryTap: {
-                                                            scrollRestorationPlaceId = place.id
-                                                            openCategoryPickerWhenPlaceModalOpens = true
-                                                            selectedPlaceForModal = place
-                                                        }
-                                                    )
-                                                    .id(place.id)
-                                                }
-                                            }
-                                            .padding(.bottom, 12)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.horizontal, horizontalPadding)
-                        .padding(.bottom, 12)
-                    }
-                    .scrollDismissesKeyboard(.immediately)
-                    .onChange(of: selectedPlaceForModal) { _, newValue in
-                        guard newValue == nil, let id = scrollRestorationPlaceId else { return }
-                        Task { @MainActor in
-                            try? await Task.sleep(for: .milliseconds(50))
-                            scrollProxy.scrollTo(id, anchor: .center)
+                            )
+                            .id(place.id)
                         }
                     }
+                    .padding(.bottom, 12)
                 }
             }
-            .dynamicTypeSize(.large)
+        }
+    }
 
-            // Full-screen place viewer (matches blog overlay, not a sheet).
-            if let place = selectedPlaceForModal {
-                PlaceVisitedPhotoModalWrapper(
-                    place: place,
-                    presentCategoryPickerInitially: openCategoryPickerWhenPlaceModalOpens,
-                    onDismiss: {
-                        selectedPlaceForModal = nil
-                        openCategoryPickerWhenPlaceModalOpens = false
-                        revealNavDuringModalDismiss = false
-                    },
-                    onDismissSlideBegan: { revealNavDuringModalDismiss = true },
-                    onViewBlog: {
-                        guard let ref = place.relatedBlogs.first,
-                              let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == ref.blogId }) else { return }
-                        // Keep the place modal presented under the global recap overlay so dismissing
-                        // the blog returns here instead of leaving only the list/map underneath.
-                        openCategoryPickerWhenPlaceModalOpens = false
-                        initialScrollToStopIdForRecap = ref.placeStopId
-                        selectedCreatedRecap = recap
-                    }
-                )
-                .environmentObject(createdRecapStore)
-                .transition(.asymmetric(insertion: .opacity, removal: .identity))
-                .zIndex(200)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea(.container)
+    @ViewBuilder
+    private var placesScrollContent: some View {
+        if filteredPlaces.isEmpty {
+            placesScrollEmptyState
+        } else {
+            placesYearMonthList(for: filteredPlaces)
+        }
+    }
+
+    @ViewBuilder
+    private var placesMainZStack: some View {
+        ZStack(alignment: .bottom) {
+            placesListColumn
+            placesSelectedPlaceOverlay
+        }
+    }
+
+    private var placesListColumn: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            filterBar
+                .padding(.horizontal, horizontalPadding)
+            placesScrollReader
+        }
+        .dynamicTypeSize(.large)
+    }
+
+    private var placesScrollReader: some View {
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    placesScrollContent
+                }
+                .padding(.horizontal, horizontalPadding)
+                .padding(.bottom, 12)
+            }
+            .scrollDismissesKeyboard(.immediately)
+            .onChange(of: selectedPlaceForModal) { _, newValue in
+                restoreScrollAfterPlaceModalDismiss(newValue: newValue, scrollProxy: scrollProxy)
             }
         }
-        .modifier(PlacesVisitedBottomChromeInset(isHidden: shouldHidePlacesVisitedNavigationBar) {
-            placesBottomChrome
-        })
-        .onTapGesture {
-            if isSearchFocused {
-                isSearchFocused = false
-                isSearchActive = false
-            }
+    }
+
+    private func restoreScrollAfterPlaceModalDismiss(
+        newValue: VisitedPlaceSummary?,
+        scrollProxy: ScrollViewProxy
+    ) {
+        guard newValue == nil, let id = scrollRestorationPlaceId else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(50))
+            scrollProxy.scrollTo(id, anchor: .center)
         }
-        .animation(.easeInOut(duration: 0.38), value: selectedPlaceForModal?.id)
-        .sheet(isPresented: $showShareYourPlacesSheet) {
-            ShareYourPlacesSheet(
-                onPickDestination: { destination in
-                    showShareYourPlacesSheet = false
-                    let placeCount = filteredPlaces.count
-                    let cap = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
-                    if placeCount > cap {
-                        placesShareBlockedPlaceCount = placeCount
-                        showPlacesShareTooManyAlert = true
-                        return
+    }
+
+    @ViewBuilder
+    private var placesSelectedPlaceOverlay: some View {
+        if let place = selectedPlaceForModal {
+            placeModalView(for: place)
+        }
+    }
+
+    @ViewBuilder
+    private func placeModalView(for place: VisitedPlaceSummary) -> some View {
+        PlaceVisitedPhotoModalWrapper(
+            place: place,
+            presentCategoryPickerInitially: openCategoryPickerWhenPlaceModalOpens,
+            onDismiss: {
+                selectedPlaceForModal = nil
+                openCategoryPickerWhenPlaceModalOpens = false
+                revealNavDuringModalDismiss = false
+            },
+            onDismissSlideBegan: { revealNavDuringModalDismiss = true },
+            onViewBlog: { openRelatedBlog(for: place) },
+            onCreateTripBlog: place.isEverydayOnly ? {
+                placePendingPromote = place
+                showPromoteToBlogConfirmation = true
+            } : nil
+        )
+        .environmentObject(createdRecapStore)
+        .transition(.asymmetric(insertion: .opacity, removal: .identity))
+        .zIndex(200)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea(.container)
+    }
+
+    private func openRelatedBlog(for place: VisitedPlaceSummary) {
+        guard let ref = place.relatedBlogs.first,
+              let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == ref.blogId }) else { return }
+        openCategoryPickerWhenPlaceModalOpens = false
+        initialScrollToStopIdForRecap = ref.placeStopId
+        selectedCreatedRecap = recap
+    }
+
+    private var placesChromeLayer: some View {
+        placesMainZStack
+            .modifier(PlacesVisitedBottomChromeInset(isHidden: shouldHidePlacesVisitedNavigationBar) {
+                placesBottomChrome
+            })
+            .alert("Create trip blog?", isPresented: $showPromoteToBlogConfirmation) {
+                Button("Cancel", role: .cancel) { placePendingPromote = nil }
+                Button("Create Blog") {
+                    if let place = placePendingPromote {
+                        _ = createdRecapStore.createTripBlogFromEverydayPhotos(
+                            place.photos,
+                            preferredTitle: place.displayName
+                        )
                     }
-                    beginPlacesShare(destination: destination)
-                },
-                onDismiss: { showShareYourPlacesSheet = false }
-            )
-            .presentationDetents([.height(420)])
-            .presentationDragIndicator(.visible)
-        }
-        .alert("Too many places to share", isPresented: $showPlacesShareTooManyAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(placesShareTooManyAlertMessage)
-        }
-        .sheet(isPresented: $showPlacesVideoExport) {
-            if let draft = placesShareDraft {
-                BlogVideoExportOptionsSheet(
-                    draft: draft,
-                    isPlacesCollectionExport: true,
-                    onShare: { url in
-                        placesVideoShareURL = url
-                        Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 350_000_000)
-                            showPlacesVideoShareSheet = true
+                    placePendingPromote = nil
+                    selectedPlaceForModal = nil
+                }
+            } message: {
+                Text("These everyday moments will become a trip blog in My Blogs.")
+            }
+            .onTapGesture {
+                if isSearchFocused {
+                    isSearchFocused = false
+                    isSearchActive = false
+                }
+            }
+            .animation(.easeInOut(duration: 0.38), value: selectedPlaceForModal?.id)
+    }
+
+    private var placesShareSheetsLayer: some View {
+        placesChromeLayer
+            .sheet(isPresented: $showShareYourPlacesSheet) {
+                ShareYourPlacesSheet(
+                    onPickDestination: { destination in
+                        showShareYourPlacesSheet = false
+                        let placeCount = filteredPlaces.count
+                        let cap = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
+                        if placeCount > cap {
+                            placesShareBlockedPlaceCount = placeCount
+                            showPlacesShareTooManyAlert = true
+                            return
                         }
+                        beginPlacesShare(destination: destination)
                     },
-                    onRequestReelCapture: {}
+                    onDismiss: { showShareYourPlacesSheet = false }
                 )
+                .presentationDetents([.height(420)])
+                .presentationDragIndicator(.visible)
             }
-        }
-        .sheet(isPresented: $showPlacesVideoShareSheet) {
-            if let url = placesVideoShareURL {
-                ShareSheet(items: [url])
+            .alert("Too many places to share", isPresented: $showPlacesShareTooManyAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(placesShareTooManyAlertMessage)
             }
-        }
-        .overlay {
-            if showPlacesSocialStudio, let draft = placesShareDraft {
-                SocialPostStudioSheet(
-                    blog: draft,
-                    opensInEditMode: true,
-                    placesOnlyMode: true,
-                    onDismissFromParent: {
-                        showPlacesSocialStudio = false
-                        placesShareDraft = nil
-                    }
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .transition(.opacity)
-                .zIndex(300)
+            .sheet(isPresented: $showPlacesVideoExport) {
+                if let draft = placesShareDraft {
+                    BlogVideoExportOptionsSheet(
+                        draft: draft,
+                        isPlacesCollectionExport: true,
+                        onShare: { url in
+                            placesVideoShareURL = url
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 350_000_000)
+                                showPlacesVideoShareSheet = true
+                            }
+                        },
+                        onRequestReelCapture: {}
+                    )
+                }
             }
-        }
+            .sheet(isPresented: $showPlacesVideoShareSheet) {
+                if let url = placesVideoShareURL {
+                    ShareSheet(items: [url])
+                }
+            }
+            .overlay {
+                if showPlacesSocialStudio, let draft = placesShareDraft {
+                    SocialPostStudioSheet(
+                        blog: draft,
+                        opensInEditMode: true,
+                        placesOnlyMode: true,
+                        onDismissFromParent: {
+                            showPlacesSocialStudio = false
+                            placesShareDraft = nil
+                        }
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
+                    .zIndex(300)
+                }
+            }
+    }
+
+    var body: some View {
+        placesShareSheetsLayer
         .navigationDestination(isPresented: $showPlacesMap) {
             PlacesVisitedMapView(
                 selectedYear: $selectedYear,
@@ -383,58 +449,10 @@ struct PlacesVisitedView: View {
             )
             .environmentObject(createdRecapStore)
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarLeading) {
-                if selectedYear != nil || selectedCountry != nil || selectedCategory != nil {
-                    Button("Reset") {
-                        selectedYear = nil
-                        selectedCountry = nil
-                        selectedCategory = nil
-                    }
-                    .foregroundStyle(.primary)
-                }
-            }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if !isSearchActive, !filteredPlaces.isEmpty {
-                    Button {
-                        showShareYourPlacesSheet = true
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                            .foregroundStyle(.primary)
-                    }
-                    .accessibilityLabel("Share places")
-                }
-                if isSearchActive {
-                    Button("Done") {
-                        searchText = ""
-                        isSearchFocused = false
-                        isSearchActive = false
-                        UIApplication.shared.sendAction(
-                            #selector(UIResponder.resignFirstResponder),
-                            to: nil,
-                            from: nil,
-                            for: nil
-                        )
-                    }
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.primary)
-                } else {
-                    Menu {
-                        Button("All Countries") { selectedCountry = nil }
-                        ForEach(availableCountries, id: \.self) { c in
-                            Button(c) { selectedCountry = c }
-                        }
-                    } label: {
-                        Image(systemName: selectedCountry == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                            .foregroundStyle(.primary)
-                    }
-                }
-            }
-        }
+        .toolbar { placesToolbarContent }
         .toolbar(shouldHidePlacesVisitedNavigationBar ? .hidden : .automatic, for: .navigationBar)
         .toolbarBackground(shouldHidePlacesVisitedNavigationBar ? .hidden : .automatic, for: .navigationBar)
         .onChange(of: selectedYear) { _, _ in
-            // If the user switches years, drop any category that doesn't exist for the new year.
             if let selectedCategory,
                !availableCategories.contains(where: { $0.caseInsensitiveCompare(selectedCategory) == .orderedSame }) {
                 self.selectedCategory = nil
@@ -444,6 +462,56 @@ struct PlacesVisitedView: View {
         .onChange(of: revealNavDuringModalDismiss) { _, _ in syncHomeBottomNavSuppression() }
         .onChange(of: showPlacesSocialStudio) { _, _ in syncHomeBottomNavSuppression() }
         .onDisappear { suppressHomeBottomNav = false }
+    }
+
+    @ToolbarContentBuilder
+    private var placesToolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarLeading) {
+            if selectedYear != nil || selectedCountry != nil || selectedCategory != nil {
+                Button("Reset") {
+                    selectedYear = nil
+                    selectedCountry = nil
+                    selectedCategory = nil
+                }
+                .foregroundStyle(.primary)
+            }
+        }
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            if !isSearchActive, !filteredPlaces.isEmpty {
+                Button {
+                    showShareYourPlacesSheet = true
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .foregroundStyle(.primary)
+                }
+                .accessibilityLabel("Share places")
+            }
+            if isSearchActive {
+                Button("Done") {
+                    searchText = ""
+                    isSearchFocused = false
+                    isSearchActive = false
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder),
+                        to: nil,
+                        from: nil,
+                        for: nil
+                    )
+                }
+                .fontWeight(.semibold)
+                .foregroundStyle(.primary)
+            } else {
+                Menu {
+                    Button("All Countries") { selectedCountry = nil }
+                    ForEach(availableCountries, id: \.self) { c in
+                        Button(c) { selectedCountry = c }
+                    }
+                } label: {
+                    Image(systemName: selectedCountry == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                        .foregroundStyle(.primary)
+                }
+            }
+        }
     }
 
     /// Hide My Places chrome while place viewer or Carousel Studio is full-screen (matches blog recap during share).
@@ -637,6 +705,7 @@ private struct PlaceVisitedPhotoModalWrapper: View {
     var onDismiss: () -> Void
     var onDismissSlideBegan: (() -> Void)? = nil
     var onViewBlog: (() -> Void)?
+    var onCreateTripBlog: (() -> Void)? = nil
 
     /// Live caption state keyed by photo ID. Seeded from place.photos on appear.
     @State private var liveCaptions: [UUID: String] = [:]
@@ -648,6 +717,7 @@ private struct PlaceVisitedPhotoModalWrapper: View {
         // even if isIncluded flags changed after this sheet was first presented.
         let photos = store.visitedPlaces.first { $0.placeId == place.placeId }?.photos ?? place.photos
         if let initialPhotoId = photos.first?.id {
+            ZStack(alignment: .topTrailing) {
             PlacePhotoModalView(
                 placeTitle: Binding(
                     get: { livePlaceTitle.isEmpty ? place.displayName : livePlaceTitle },
@@ -705,6 +775,19 @@ private struct PlaceVisitedPhotoModalWrapper: View {
                     store.updatePlaceStopCategoryFromPlacesVisited(photoId: initialPhotoId, category: newCategory)
                 }
             )
+            if let onCreateTripBlog {
+                Button(action: onCreateTripBlog) {
+                    Label("Create Trip Blog", systemImage: "book.closed.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.blue.opacity(0.9), in: Capsule())
+                }
+                .padding(.top, 56)
+                .padding(.trailing, 16)
+            }
+            }
         } else {
             Color.clear.onAppear { onDismiss() }
         }

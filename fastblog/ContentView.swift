@@ -61,10 +61,13 @@ struct ContentView: View {
     @State private var newMomentsBannerDayIndex: Int?
     @State private var newMomentsBannerDragOffset: CGFloat = 0
     @State private var postCameraToastDragOffset: CGFloat = 0
+    @StateObject private var memoryRecallViewModel = MemoryRecallViewModel()
+    @State private var showMemoryRecall = false
+    @State private var showPushPermissionPrompt = false
 
-    /// Post-camera toast: sits just above the camera shutter controls (tab bar is outside `homeTabsLayer`).
+    /// Post-camera toast: sits above shutter, gallery, zoom strip, and mode picker.
     private var cameraHomeBannerBottomInset: CGFloat {
-        HomeChromeMetrics.cameraCaptureControlsBottomInset(isCompactHeight: verticalSizeClass == .compact)
+        HomeChromeMetrics.cameraToastBottomPadding(isCompactHeight: verticalSizeClass == .compact)
     }
     /// New moments banner: small lift from the bottom of the tab content area.
     private var newMomentsBannerBottomInset: CGFloat { 32 }
@@ -157,6 +160,43 @@ struct ContentView: View {
                     .environmentObject(photoAuth)
                     .environmentObject(createdRecapStore)
             }
+            .sheet(isPresented: $showPushPermissionPrompt) {
+                PushPermissionPromptView(isPresented: $showPushPermissionPrompt)
+            }
+            .sheet(isPresented: $showMemoryRecall) {
+                if let recall = memoryRecallViewModel.currentRecall {
+                    MemoryRecallModal(recall: recall) {
+                        showMemoryRecall = false
+                        if recall.everydayCaptureIds.isEmpty {
+                            scheduleFindPastTripsScan()
+                        } else {
+                            selectHomeTab(.myPlaces)
+                        }
+                    }
+                }
+            }
+            .onChange(of: memoryRecallViewModel.currentRecall?.id) { _, newId in
+                if newId != nil { showMemoryRecall = true }
+            }
+            .onAppear {
+                memoryRecallViewModel.onAppear()
+                UserDefaults.standard.set(Date(), forKey: EverydayRetentionKeys.lastAppOpenDate)
+                if UserDefaults.standard.bool(forKey: EverydayRetentionKeys.shouldShowPushPrompt) {
+                    UserDefaults.standard.set(false, forKey: EverydayRetentionKeys.shouldShowPushPrompt)
+                    showPushPermissionPrompt = true
+                }
+                if justFinishedOnboarding {
+                    justFinishedOnboarding = false
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        homeTab = .myBlogs
+                        isHomeBottomNavRevealed = true
+                    }
+                    showPostOnboardingWelcome = true
+                }
+                considerPresentingNewMomentsBannerOnCamera()
+            }
             .sheet(isPresented: Binding(
                 get: { nearbyShare.presentReceiveFromDeepLink },
                 set: { new in
@@ -209,20 +249,6 @@ struct ContentView: View {
                         dismissTripsOverlay()
                     }
                 }
-            }
-            .onAppear {
-                if justFinishedOnboarding {
-                    justFinishedOnboarding = false
-                    // Onboarding exit keeps the original My Blogs + tab bar landing; cold starts use `.camera` default.
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        homeTab = .myBlogs
-                        isHomeBottomNavRevealed = true
-                    }
-                    showPostOnboardingWelcome = true
-                }
-                considerPresentingNewMomentsBannerOnCamera()
             }
             .onChange(of: isCameraHomeVisible) { _, visible in
                 if visible {

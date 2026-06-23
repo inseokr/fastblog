@@ -48,9 +48,22 @@ enum HomeChromeMetrics {
         homeMapActionSize + homeSearchChromeMapGap + homeSearchBarHeight + homeSearchBarOuterBottomPadding
     }
 
-    /// Camera shutter + Photo/Vibe/Reel picker stack (toast sits above this).
+    /// Camera shutter + zoom strip + Photo/Vibe/Reel picker stack (excludes home-indicator safe area).
     static func cameraCaptureControlsBottomInset(isCompactHeight: Bool) -> CGFloat {
-        isCompactHeight ? 138 : 156
+        // mode picker + spacing + shutter row + spacing + zoom preset bar
+        isCompactHeight ? 180 : 194
+    }
+
+    /// Bottom padding for camera "moment added" toasts — clears gallery, shutter, zoom, and mode picker.
+    static func cameraToastBottomPadding(isCompactHeight: Bool) -> CGFloat {
+        let safeBottom = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }?
+            .keyWindow?
+            .safeAreaInsets.bottom ?? 34
+        return cameraCaptureControlsBottomInset(isCompactHeight: isCompactHeight)
+            + max(safeBottom, 8)
+            + 16
     }
 
     /// Bottom search field typography (My Blogs + My Places).

@@ -42,8 +42,38 @@ struct VisitedPlaceSummary: Identifiable, Equatable {
     let placeCaption: String?
     let photoCaptions: [String]
     let relatedBlogs: [RelatedBlogRef]
+    /// True when this place comes from everyday moments only (not linked to a trip blog).
+    var isEverydayOnly: Bool
 
     var id: String { placeId }
+
+    init(
+        placeId: String,
+        placeName: String,
+        city: String,
+        country: String,
+        categoryRawValue: String?,
+        latestVisitDate: Date,
+        year: Int,
+        photos: [RecapPhoto],
+        placeCaption: String?,
+        photoCaptions: [String],
+        relatedBlogs: [RelatedBlogRef],
+        isEverydayOnly: Bool = false
+    ) {
+        self.placeId = placeId
+        self.placeName = placeName
+        self.city = city
+        self.country = country
+        self.categoryRawValue = categoryRawValue
+        self.latestVisitDate = latestVisitDate
+        self.year = year
+        self.photos = photos
+        self.placeCaption = placeCaption
+        self.photoCaptions = photoCaptions
+        self.relatedBlogs = relatedBlogs
+        self.isEverydayOnly = isEverydayOnly
+    }
 
     var displayName: String {
         let trimmed = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -593,6 +623,56 @@ final class CreatedRecapBlogStore: ObservableObject {
         // Persist details immediately so the blog survives a background kill.
         persistBlogDetails()
         BlogMenuIndicatorStore.shared.signalNewBlog(sourceTripId: trip.id)
+    }
+
+    /// Creates a trip blog from everyday (My Places) captures and removes them from the everyday store.
+    @discardableResult
+    func createTripBlogFromEverydayPhotos(_ photos: [RecapPhoto], preferredTitle: String? = nil) -> UUID? {
+        let identifiers = Set(photos.compactMap(\.localIdentifier))
+        let mockPhotos = EverydayMomentsStore.shared.promoteCapturesToBlog(identifiers: identifiers)
+        guard !mockPhotos.isEmpty else { return nil }
+
+        let cal = Calendar.current
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale.current
+        dateFormatter.dateStyle = .medium
+        let byDay = Dictionary(grouping: mockPhotos) { cal.startOfDay(for: $0.timestamp) }
+        let sortedDays = byDay.sorted { $0.key < $1.key }
+        let days: [TripDay] = sortedDays.enumerated().map { index, pair in
+            TripDay(
+                dayIndex: index,
+                dateText: dateFormatter.string(from: pair.key),
+                photos: pair.value.sorted { $0.timestamp < $1.timestamp }
+            )
+        }
+        let tripId = UUID()
+        let locationName = mockPhotos.first?.locationName ?? "Captured Moment"
+        let countryName = mockPhotos.first?.countryName
+        let title = preferredTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? preferredTitle!
+            : (locationName != "Captured Moment" ? locationName : "Trip")
+        let dateRangeStr: String
+        if let first = sortedDays.first?.key, let last = sortedDays.last?.key {
+            dateRangeStr = first == last
+                ? dateFormatter.string(from: first)
+                : "\(dateFormatter.string(from: first)) – \(dateFormatter.string(from: last))"
+        } else {
+            dateRangeStr = dateFormatter.string(from: Date())
+        }
+        let trip = TripDraft(
+            id: tripId,
+            title: title,
+            dateRangeText: dateRangeStr,
+            days: days,
+            coverImageName: "camera.fill",
+            isScannedFromDefaultRange: false,
+            draftCreatedAgoText: "Draft created recently",
+            daysSeasonText: "",
+            coverTheme: "default",
+            coverAssetIdentifier: mockPhotos.first?.localIdentifier
+        )
+        addCreatedBlog(trip: trip)
+        return tripId
     }
 
     /// Dismiss the "Your blog is ready" banner.
@@ -3737,9 +3817,15 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
-    /// Derived list of visited places aggregated across all visible blogs (latest-first).
-    /// - Note: Uses persisted blogDetailsBySourceId only (no on-the-fly rebuild).
+    /// Derived list of visited places aggregated across all visible blogs and everyday moments (latest-first).
+    /// - Note: Uses persisted blogDetailsBySourceId only (no on-the-fly rebuild) plus EverydayMomentsStore.
     var visitedPlaces: [VisitedPlaceSummary] {
+        let blogPlaces = blogDerivedVisitedPlaces
+        let everydayPlaces = EverydayMomentsStore.shared.visitedPlaceSummaries
+        return mergeVisitedPlaceSummaries(blogPlaces: blogPlaces, everydayPlaces: everydayPlaces)
+    }
+
+    private var blogDerivedVisitedPlaces: [VisitedPlaceSummary] {
         let blogs = visibleRecents
         var byKey: [String: (place: VisitedPlaceSummary, latest: Date)] = [:]
 
@@ -3837,6 +3923,70 @@ final class CreatedRecapBlogStore: ObservableObject {
         return byKey.values
             .map(\.place)
             .sorted(by: { $0.latestVisitDate > $1.latestVisitDate })
+    }
+
+    private func mergeVisitedPlaceSummaries(
+        blogPlaces: [VisitedPlaceSummary],
+        everydayPlaces: [VisitedPlaceSummary]
+    ) -> [VisitedPlaceSummary] {
+        var byKey: [String: VisitedPlaceSummary] = [:]
+        for place in blogPlaces {
+            byKey[place.placeId] = place
+        }
+        for place in everydayPlaces {
+            if let existing = byKey[place.placeId] {
+                let mergedPhotos = (existing.photos + place.photos)
+                    .uniqued(by: { $0.id })
+                    .sorted(by: { $0.timestamp > $1.timestamp })
+                let mergedLatest = max(existing.latestVisitDate, place.latestVisitDate)
+                byKey[place.placeId] = VisitedPlaceSummary(
+                    placeId: existing.placeId,
+                    placeName: mergedLatest > existing.latestVisitDate ? place.placeName : existing.placeName,
+                    city: existing.city.isEmpty ? place.city : existing.city,
+                    country: existing.country,
+                    categoryRawValue: existing.categoryRawValue ?? place.categoryRawValue,
+                    latestVisitDate: mergedLatest,
+                    year: Calendar.current.component(.year, from: mergedLatest),
+                    photos: mergedPhotos,
+                    placeCaption: existing.placeCaption ?? place.placeCaption,
+                    photoCaptions: (existing.photoCaptions + place.photoCaptions).filter { !$0.isEmpty },
+                    relatedBlogs: existing.relatedBlogs,
+                    isEverydayOnly: existing.isEverydayOnly && place.isEverydayOnly
+                )
+            } else {
+                byKey[place.placeId] = place
+            }
+        }
+        return byKey.values.sorted(by: { $0.latestVisitDate > $1.latestVisitDate })
+    }
+
+    /// Moves all place stops from a local-only blog into everyday moments and removes the blog.
+    func moveBlogToEverydayPlaces(sourceTripId: UUID) {
+        guard let detail = blogDetailsBySourceId[sourceTripId] else { return }
+        for day in detail.days {
+            for stop in day.placeStops {
+                EverydayMomentsStore.shared.importFromBlogPlaceStop(stop)
+            }
+        }
+        deleteBlog(sourceTripId: sourceTripId)
+        AppAnalytics.shared.trackEvent(
+            name: "blog_moved_to_everyday_places",
+            properties: ["sourceTripId": sourceTripId.uuidString]
+        )
+    }
+
+    /// True when every included photo in the blog is within the home exclusion radius.
+    func isBlogEntirelyWithinHomeRadius(sourceTripId: UUID) -> Bool {
+        guard let home = NeighborhoodStore.getNeighborhoodCenter(),
+              let detail = blogDetailsBySourceId[sourceTripId] else { return false }
+        let minMiles = NeighborhoodStore.effectiveTripMinMilesFromHome
+        let photos = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
+        guard !photos.isEmpty else { return false }
+        return photos.allSatisfy { photo in
+            guard let loc = photo.location else { return true }
+            let cl = CLLocation(latitude: loc.latitude, longitude: loc.longitude)
+            return !TripPhotoFilter.shouldIncludeInTrips(assetLocation: cl, home: home, minMiles: minMiles)
+        }
     }
 }
 

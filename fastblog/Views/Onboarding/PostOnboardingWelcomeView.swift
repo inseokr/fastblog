@@ -57,7 +57,7 @@ struct PostOnboardingWelcomeView: View {
                         icon: "camera.fill",
                         tint: OnboardingConstants.Colors.doneButtonBlue,
                         title: "Capture Moments",
-                        detail: "Use Bloggo's camera on your next outing.",
+                        detail: "Everyday moments save to My Places. Start a trip blog when you travel.",
                         isPrimary: true,
                         action: onCaptureMoments
                     )

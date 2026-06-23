@@ -1124,8 +1124,11 @@ private struct LandingSettingsView: View {
                 // Permissions
                 Section {
                     PhotoAccessRow()
+                    PushNotificationAccessRow()
                 } header: {
                     Text("Permissions")
+                } footer: {
+                    Text("Notifications cover memory recalls, My Places digests, and capture reminders.")
                 }
 
                 Section {

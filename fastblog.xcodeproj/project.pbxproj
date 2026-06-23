@@ -254,6 +254,10 @@
 		BB00040B /* CameraRollToBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00040A /* CameraRollToBlogView.swift */; };
 		BB00040D /* POIInfoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00040C /* POIInfoSheet.swift */; };
 		BB00040F /* KakaoPlaceDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00040E /* KakaoPlaceDetailSheet.swift */; };
+		BB000410 /* EverydayMomentsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000411 /* EverydayMomentsStore.swift */; };
+		BB000412 /* CaptureRoutingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000413 /* CaptureRoutingSession.swift */; };
+		BB000414 /* EverydayPlaceCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000415 /* EverydayPlaceCluster.swift */; };
+		BB000416 /* PushNotificationAccessRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000417 /* PushNotificationAccessRow.swift */; };
 		BB00A001 /* Analytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00A002 /* Analytics.swift */; };
 		BB00AE01 /* AnalyticsEventType.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AE02 /* AnalyticsEventType.swift */; };
 		BB00AI01 /* AnalyticsIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AI02 /* AnalyticsIdentity.swift */; };
@@ -537,6 +541,10 @@
 		BB00040A /* CameraRollToBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollToBlogView.swift; sourceTree = "<group>"; };
 		BB00040C /* POIInfoSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = POIInfoSheet.swift; sourceTree = "<group>"; };
 		BB00040E /* KakaoPlaceDetailSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KakaoPlaceDetailSheet.swift; sourceTree = "<group>"; };
+		BB000411 /* EverydayMomentsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EverydayMomentsStore.swift; sourceTree = "<group>"; };
+		BB000413 /* CaptureRoutingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureRoutingSession.swift; sourceTree = "<group>"; };
+		BB000415 /* EverydayPlaceCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EverydayPlaceCluster.swift; sourceTree = "<group>"; };
+		BB000417 /* PushNotificationAccessRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationAccessRow.swift; sourceTree = "<group>"; };
 		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
 		BB00AE02 /* AnalyticsEventType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsEventType.swift; sourceTree = "<group>"; };
 		BB00AI02 /* AnalyticsIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsIdentity.swift; sourceTree = "<group>"; };
@@ -683,6 +691,7 @@
 				BB000119 /* ScanConfig.swift */,
 				BB00011B /* TripDay.swift */,
 				BB00011D /* TripDraft.swift */,
+				BB000415 /* EverydayPlaceCluster.swift */,
 				BB000400 /* TripCluster.swift */,
 				67D919F737961D65785318BA /* StoryBookContent.swift */,
 				E27CCA2B392AD6D7D60A651A /* StoryPage.swift */,
@@ -776,6 +785,7 @@
 				BB000161 /* ShareSheet.swift */,
 				BB0002D0 /* StorageManagementView.swift */,
 				BB000230 /* PhotoAccessRow.swift */,
+				BB000417 /* PushNotificationAccessRow.swift */,
 				BB0001DC /* SubscriptionSettingsView.swift */,
 				BBA0B002 /* SettingsView.swift */,
 				BB000163 /* TermsOfServiceView.swift */,
@@ -879,6 +889,8 @@
 				BB0001D4 /* MemoryRecallService.swift */,
 				BB00018F /* NeighborhoodStore.swift */,
 				BB0002E0 /* OnTheGoTripStore.swift */,
+				BB000411 /* EverydayMomentsStore.swift */,
+				BB000413 /* CaptureRoutingSession.swift */,
 				BB0002E2 /* InAppCameraPhotoStore.swift */,
 				BB0002E4 /* PlaceLibraryPhotoImport.swift */,
 				BB0002F0 /* ScanSessionStore.swift */,
@@ -1279,6 +1291,10 @@
 				BB0003E1 /* GoogleSearchEmbeddedWebView.swift in Sources */,
 				BB00040D /* POIInfoSheet.swift in Sources */,
 				BB00040F /* KakaoPlaceDetailSheet.swift in Sources */,
+				BB000410 /* EverydayMomentsStore.swift in Sources */,
+				BB000412 /* CaptureRoutingSession.swift in Sources */,
+				BB000414 /* EverydayPlaceCluster.swift in Sources */,
+				BB000416 /* PushNotificationAccessRow.swift in Sources */,
 				3A9F2B1C4D8E5F7A2B0C6E91 /* PhotoCaptionEditSheet.swift in Sources */,
 				5FSCME02E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift in Sources */,
 				PCKBD02E5D40718293A4B6D /* PreviewCaptionKeyboardDock.swift in Sources */,

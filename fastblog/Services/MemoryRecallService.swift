@@ -14,16 +14,52 @@ final class MemoryRecallService {
 
     private init() {}
 
-    /// Generates a daily recall from already-saved blogs. No photo library scan or geocoding.
+    /// Generates a daily recall from saved blogs and everyday moments.
     func generateDailyRecall() async -> RecallTrigger? {
         let blogs = await CreatedRecapBlogStore.shared.visibleRecents
-        guard !blogs.isEmpty else { return nil }
         let now = Date()
 
-        if let recall = onThisDayRecall(from: blogs, for: now) { return recall }
-        if let recall = seasonalRecall(from: blogs, for: now) { return recall }
-        if let recall = activeMonthRecall(from: blogs) { return recall }
+        if let recall = await everydayOnThisDayRecall(for: now) { return recall }
+        if !blogs.isEmpty {
+            if let recall = onThisDayRecall(from: blogs, for: now) { return recall }
+            if let recall = seasonalRecall(from: blogs, for: now) { return recall }
+            if let recall = activeMonthRecall(from: blogs) { return recall }
+        }
         return nil
+    }
+
+    // MARK: - Everyday on this day
+
+    @MainActor
+    private func everydayOnThisDayRecall(for now: Date) -> RecallTrigger? {
+        let calendar = Calendar.current
+        let todayMonth = calendar.component(.month, from: now)
+        let todayDay = calendar.component(.day, from: now)
+        let thisYear = calendar.component(.year, from: now)
+
+        let clusters = EverydayMomentsStore.shared.clusters
+        let candidates = clusters.compactMap { cluster -> (EverydayPlaceCluster, Int)? in
+            let m = calendar.component(.month, from: cluster.latestVisitDate)
+            let d = calendar.component(.day, from: cluster.latestVisitDate)
+            let y = calendar.component(.year, from: cluster.latestVisitDate)
+            guard m == todayMonth, d == todayDay, y < thisYear else { return nil }
+            return (cluster, thisYear - y)
+        }.sorted { $0.1 < $1.1 }
+
+        guard let best = candidates.first else { return nil }
+        let captureIds = best.0.captureIdentifiers.compactMap { AppCapturePhotoService.uuid(from: $0) }
+        guard !captureIds.isEmpty else { return nil }
+
+        let yearLabel = best.1 == 1 ? "1 year ago" : "\(best.1) years ago"
+        return RecallTrigger(
+            type: .onThisDay,
+            title: "\(yearLabel) at \(best.0.placeTitle)",
+            subtitle: best.0.placeSubtitle ?? best.0.latestVisitDate.formatted(date: .abbreviated, time: .omitted),
+            assets: [],
+            date: best.0.latestVisitDate,
+            cityName: best.0.placeSubtitle,
+            everydayCaptureIds: captureIds
+        )
     }
 
     // MARK: - On This Day

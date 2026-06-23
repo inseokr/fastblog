@@ -2852,6 +2852,8 @@ struct CameraCaptureView: View {
     var isTabActive: Bool = true
 
     @StateObject private var cameraController = CameraController()
+    @StateObject private var routingSession = CaptureRoutingSession()
+    @ObservedObject private var everydayStore = EverydayMomentsStore.shared
 
     /// Photos captured in this camera session only (for "new trip" flow; used for gallery).
     @State private var sessionMoments: [CapturedMoment] = []
@@ -2880,10 +2882,16 @@ struct CameraCaptureView: View {
     @State private var pendingBlogStartedAlert: Bool = false
     /// When true, show the "Blog has started, your moments will be saved to [name]" modal after first photo save.
     @State private var showBlogStartedPrompt: Bool = false
-    /// When capture is near home, show confirmation before adding. Pending (image, timestamp) to add if user taps Keep.
+  /// When capture is near home in Trip mode, confirm Daily routing before committing.
     @State private var showNearHomeConfirmation: Bool = false
-    @State private var pendingNearHomeCapture: (image: UIImage, timestamp: Date, vibeURL: URL?)?
+    @State private var pendingNearHomeMoment: CapturedMoment?
     @State private var nearHomeDoNotShowAgain: Bool = false
+    /// Away-from-home trip blog prompt.
+    @State private var showTripBlogPrompt: Bool = false
+    @State private var pendingTripPromptCapture: CapturedMoment?
+    /// Trip blog prompt is shown after the user saves from post-capture preview, not at shutter time.
+    @State private var pendingTripBlogPromptAfterSave: Bool = false
+    @State private var placesCapturesThisSession: Int = 0
     @AppStorage("bloggo.hasSeenCameraTooltip") private var hasSeenCameraTooltip = false
     @State private var showCameraTooltip = false
     @State private var pendingCameraTooltipTask: Task<Void, Never>? = nil
@@ -2895,6 +2903,8 @@ struct CameraCaptureView: View {
     @StateObject private var vibeRecorder = VibeRecorder()
     /// Photo / Vibe / Reel — persisted across camera sessions.
     @AppStorage("bloggo.camera.captureMode") private var captureModeRaw: String = CameraCaptureMode.photo.rawValue
+    /// Daily (My Places) vs Trip (blog when traveling) — top-right camera toggle.
+    @AppStorage("bloggo.camera.captureDestination") private var captureDestinationRaw: String = CaptureDestinationMode.daily.rawValue
     /// Max reel clip length — settable directly from the camera in Reel mode.
     @AppStorage(MomentVideoPreferences.userDefaultsKey) private var reelMaxDurationSeconds: Double =
         MomentVideoPreferences.defaultDurationSeconds
@@ -2959,6 +2969,12 @@ struct CameraCaptureView: View {
     private var captureMode: CameraCaptureMode {
         CameraCaptureMode(rawValue: captureModeRaw) ?? .photo
     }
+
+    private var captureDestinationMode: CaptureDestinationMode {
+        CaptureDestinationMode(rawValue: captureDestinationRaw) ?? .daily
+    }
+
+    private var isTripsCaptureDestination: Bool { captureDestinationMode == .trips }
 
     private var isVibeCaptureEnabled: Bool { captureMode == .vibe }
 
@@ -3286,6 +3302,10 @@ struct CameraCaptureView: View {
             return
         }
         removeCaptureMomentCompletely(moment)
+        if pendingTripPromptCapture?.id == moment.id {
+            pendingTripPromptCapture = nil
+            pendingTripBlogPromptAfterSave = false
+        }
         exitInPlaceCaptionMode()
     }
 
@@ -3321,25 +3341,36 @@ struct CameraCaptureView: View {
             }
             AppAnalytics.track(.appInAppCameraCaption)
         } else {
-            let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
-            if !showBlogStartedAfterSave {
-                if sessionSourceTripId != nil || sessionDraftTripId != nil {
+            if sessionSourceTripId != nil || sessionDraftTripId != nil {
+                let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
+                if !showBlogStartedAfterSave {
                     showToast("Moment saved for \(title)")
-                } else {
-                    showToast("Moment saved")
                 }
+            } else if !showBlogStartedAfterSave && !pendingTripBlogPromptAfterSave {
+                showToast("Saved to My Places")
             }
             AppAnalytics.track(.appInAppCameraCaption)
         }
         let revealBlogStartedPrompt = showBlogStartedAfterSave
+        let revealTripBlogPrompt = pendingTripBlogPromptAfterSave
         if revealBlogStartedPrompt {
             pendingBlogStartedAlert = false
+        }
+        if revealTripBlogPrompt {
+            pendingTripBlogPromptAfterSave = false
         }
         // Resign keyboard before exit so the modal's first tap isn't eaten by dismissal/focus teardown.
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         exitInPlaceCaptionMode()
         // Caption preview uses .transition(.opacity) (~0.18s); layering the prompt in the same frame can leave hit-testing fighting the outgoing overlay.
-        if revealBlogStartedPrompt {
+        if revealTripBlogPrompt {
+            if let moment = pendingTripPromptCapture {
+                routingSession.recordTripPromptShown(at: moment.location)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+                showTripBlogPrompt = true
+            }
+        } else if revealBlogStartedPrompt {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
                 showBlogStartedPrompt = true
             }
@@ -3398,11 +3429,9 @@ struct CameraCaptureView: View {
 
     private var isCompactHomeHeight: Bool { verticalSizeClass == .compact }
 
-    /// Space above shutter + mode picker; keeps toasts low but clear of capture controls.
+    /// Space above shutter, gallery, zoom strip, and mode picker.
     private var cameraToastBottomInset: CGFloat {
-        let shutterArea = HomeChromeMetrics.cameraCaptureControlsBottomInset(isCompactHeight: isCompactHomeHeight)
-        let safeBottom: CGFloat = max(cameraChromeSafeBottom, 8)
-        return shutterArea + safeBottom + 4
+        HomeChromeMetrics.cameraToastBottomPadding(isCompactHeight: isCompactHomeHeight)
     }
 
     /// Height of the bottom screen band where the system home / app-switcher swipe begins.
@@ -3640,12 +3669,29 @@ struct CameraCaptureView: View {
             }
             .accessibilityLabel(saveToPhotosEnabled ? "Save to Photos on, tap to disable" : "Save to Photos off, tap to enable")
 
+            Button {
+                captureDestinationRaw = captureDestinationMode.toggled.rawValue
+            } label: {
+                let isTrips = isTripsCaptureDestination
+                Image(systemName: captureDestinationMode.iconName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial)
+                    .background(isTrips ? Color.cyan.opacity(0.22) : Color.clear)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(isTrips ? Color.cyan.opacity(0.5) : Color.clear, lineWidth: 1))
+            }
+            .accessibilityLabel(captureDestinationMode.accessibilityLabel)
+            .accessibilityHint("Double tap to switch between Daily and Trip mode")
+
             if isReelCaptureMode {
                 reelMaxDurationButton
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
         .animation(.easeInOut(duration: 0.2), value: isReelCaptureMode)
+        .animation(.easeInOut(duration: 0.2), value: captureDestinationRaw)
         .padding(.top, cameraChromeSafeTop + 4)
         .padding(.trailing, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -4716,10 +4762,10 @@ struct CameraCaptureView: View {
             // Sync any captions typed in the gallery into the blog for real-time injected photos.
             syncSessionCaptionsToBlog()
             // If user swipes away with unsaved session moments (e.g. closed before blog creation completed), save as draft.
-            if !sessionMoments.isEmpty && attachedCountThisSession == 0 {
+            if !sessionMoments.isEmpty && attachedCountThisSession == 0 && !routingSession.isEverydayMode {
                 saveSessionAsTripDraftOnly()
             }
-            // Exit toast: when adding to a blog, show "X moment(s) saved for [Blog Name]".
+            // Exit toast
             if !hasReportedDismissToast {
                 let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
                 let blogPending = sessionCapturesForDisplay.filter(\.includedInExitAddedToast)
@@ -4728,6 +4774,11 @@ struct CameraCaptureView: View {
                 if sessionSourceTripId != nil && exitCount > 0 {
                     hasReportedDismissToast = true
                     let msg = "\(exitCount) moment\(exitCount == 1 ? "" : "s") saved for \(title)"
+                    postDismissToast?(msg)
+                } else if placesCapturesThisSession > 0 {
+                    hasReportedDismissToast = true
+                    let count = placesCapturesThisSession
+                    let msg = "\(count) moment\(count == 1 ? "" : "s") saved to My Places"
                     postDismissToast?(msg)
                 } else if exitCount > 0 {
                     hasReportedDismissToast = true
@@ -4749,13 +4800,13 @@ struct CameraCaptureView: View {
                         .padding(.top, 8)
 
                     VStack(spacing: 8) {
-                        Text("Capture moments for your trip")
+                        Text("Capture everyday moments")
                             .font(.title2)
                             .fontWeight(.bold)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.primary)
 
-                        Text("Photos taken here will appear in your blog.")
+                        Text("Photos save to My Places in Daily mode. Switch to Trip mode for blogs when you travel — we'll ask the first time you're near home.")
                             .font(.body)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.secondary)
@@ -4791,6 +4842,7 @@ struct CameraCaptureView: View {
         inAppCameraWithLifecycleHooks
             .sheet(isPresented: $isShowingCapturesGallery, onDismiss: { loadLatestGalleryThumbnail() }) {
             AppCaptureGalleryView()
+                .environmentObject(createdRecapStore)
         }
             .sheet(isPresented: $isShowingSessionGallery) {
             Group {
@@ -4834,8 +4886,12 @@ struct CameraCaptureView: View {
     /// Secondary overlays and vibe tooltip presentation.
     private var inAppCameraBodyWithLifecycle: some View {
         inAppCameraWithSessionSheets
-            .overlay { nearHomeConfirmationOverlay }
+            .overlay { tripBlogPromptOverlay }
             .overlay { blogStartedPromptOverlay }
+            .overlay { nearHomeConfirmationOverlay }
+            .onChange(of: showTripBlogPrompt) { _, show in
+            if show { nearHomeDoNotShowAgain = false }
+            }
             .onChange(of: showNearHomeConfirmation) { _, show in
             if show { nearHomeDoNotShowAgain = false }
             }
@@ -4924,6 +4980,21 @@ struct CameraCaptureView: View {
         sessionSourceTripId = nil
         sessionDraftTripId = nil
         hasOfferedStartBlogThisSession = false
+        placesCapturesThisSession = 0
+        showTripBlogPrompt = false
+        pendingTripPromptCapture = nil
+        pendingTripBlogPromptAfterSave = false
+        showNearHomeConfirmation = false
+        pendingNearHomeMoment = nil
+        routingSession.startNewOuting()
+        if let activeId = OnTheGoTripStore.activeBlogId,
+           OnTheGoTripStore.isTripStillOngoing(),
+           createdRecapStore.hasCreatedBlog(sourceTripId: activeId) {
+            routingSession.setTripBlogIfActive(activeId)
+            sessionSourceTripId = activeId
+            sessionTripTitle = OnTheGoTripStore.activeBlogTitle
+                ?? createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == activeId })?.title
+        }
         pendingBlogStartedAlert = false
         lastCaptureWasVibe = false
         migrateLegacyCaptureModeIfNeeded()
@@ -5131,18 +5202,74 @@ struct CameraCaptureView: View {
         }
     }
 
+    @ViewBuilder private var tripBlogPromptOverlay: some View {
+        if showTripBlogPrompt {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture { }
+            VStack(spacing: 0) {
+                Text("Start a trip blog?")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, 8)
+                Text("You're away from home. Trip blogs are for multi-day travel stories. Everyday moments stay in My Places.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 20)
+                HStack(spacing: 16) {
+                    Button("No, just save to My Places") {
+                        declineTripBlogPrompt()
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    Button("Start Blog") {
+                        acceptTripBlogPrompt()
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.blue, in: RoundedRectangle(appChromeBaseRadius: 10))
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+            }
+            .frame(maxWidth: 300)
+            .background(
+                RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, .dark)
+            )
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 20, style: .continuous))
+            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
+            .padding(.horizontal, 36)
+        }
+    }
+
     @ViewBuilder private var nearHomeConfirmationOverlay: some View {
         if showNearHomeConfirmation {
             Color.black.opacity(0.4)
                 .ignoresSafeArea()
                 .onTapGesture { }
             VStack(spacing: 0) {
-                Text("This moment appears to be near your home. Do you want to keep it anyway?")
-                    .font(.subheadline)
+                Text("This looks like everyday moments")
+                    .font(.headline)
                     .foregroundColor(.primary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
                     .padding(.top, 24)
+                    .padding(.bottom, 8)
+                Text("You're near home. Save to My Places and turn off Trip mode?")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
                     .padding(.bottom, 12)
                 Toggle(isOn: $nearHomeDoNotShowAgain) {
                     Text("Do not show again")
@@ -5152,31 +5279,14 @@ struct CameraCaptureView: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 20)
                 HStack(spacing: 16) {
-                    Button("Cancel") {
-                        if nearHomeDoNotShowAgain {
-                            UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
-                            UserDefaults.standard.set(false, forKey: Self.nearHomeSuppressedPreferKeepKey)
-                        }
-                        // Discard vibe clip for a rejected near-home capture
-                        if let url = pendingNearHomeCapture?.vibeURL {
-                            try? FileManager.default.removeItem(at: url)
-                        }
-                        pendingNearHomeCapture = nil
-                        showNearHomeConfirmation = false
+                    Button("Keep Trip mode") {
+                        resolveNearHomeBlogModePrompt(switchToDaily: false)
                     }
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity)
-                    Button("Keep") {
-                        if nearHomeDoNotShowAgain {
-                            UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
-                            UserDefaults.standard.set(true, forKey: Self.nearHomeSuppressedPreferKeepKey)
-                        }
-                        if let pending = pendingNearHomeCapture {
-                            _ = applyCapturedPhoto(image: pending.image, timestamp: pending.timestamp, vibeURL: pending.vibeURL)
-                            pendingNearHomeCapture = nil
-                        }
-                        showNearHomeConfirmation = false
+                    Button("Save to My Places") {
+                        resolveNearHomeBlogModePrompt(switchToDaily: true)
                     }
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.white)
@@ -5539,27 +5649,6 @@ struct CameraCaptureView: View {
                 let vibeURL = await vibeTask.value
                 if capturedVibeEnabled { vibeRecorder.start() }
                 lastCaptureWasVibe = capturedVibeEnabled && vibeURL != nil
-                if let home = NeighborhoodStore.getNeighborhoodCenter(),
-                   let location = cameraController.currentLocation,
-                   !TripPhotoFilter.shouldIncludeInTrips(
-                       assetLocation: location,
-                       home: home,
-                       minMiles: NeighborhoodStore.effectiveTripMinMilesFromHome
-                   ) {
-                    let suppressed = UserDefaults.standard.bool(forKey: Self.nearHomeAlertSuppressedKey)
-                    if suppressed {
-                        let preferKeep = UserDefaults.standard.bool(forKey: Self.nearHomeSuppressedPreferKeepKey)
-                        if preferKeep {
-                            _ = applyCapturedPhoto(image: image, timestamp: timestamp, vibeURL: vibeURL)
-                        } else if let url = vibeURL {
-                            try? FileManager.default.removeItem(at: url)
-                        }
-                        return
-                    }
-                    pendingNearHomeCapture = (image ?? UIImage(), timestamp, vibeURL)
-                    showNearHomeConfirmation = true
-                    return
-                }
                 _ = applyCapturedPhoto(image: image, timestamp: timestamp, vibeURL: vibeURL)
             }
         }
@@ -5766,9 +5855,7 @@ extension CameraCaptureView {
         return nil
     }
 
-    /// Adds the captured photo to the session and routes it (active blog, matching blog, camera draft, or start-blog prompt).
-    /// Used after capture when not near home, and when user taps "Keep" on the near-home confirmation.
-    /// Only adds to sessionMoments and shows "You are capturing a moment" when it's truly a new trip (no existing blog or draft for this capture).
+    /// Adds the captured photo to the session and routes it to a trip blog or My Places.
     @discardableResult
     private func applyCapturedPhoto(
         image: UIImage?,
@@ -5795,35 +5882,61 @@ extension CameraCaptureView {
             location: location,
             vibeURL: remainingVibeURL
         )
+
+        routingSession.resetOutingIfNeeded(for: timestamp)
+        let isNearHome = isLocationNearHome(location)
+
         if let forcedId = forcedTargetBlogId {
             sessionSourceTripId = forcedId
-            sessionCapturesForDisplay.append(displayMoment)
-            photosCapturedThisSession += 1
+            appendSessionCapture(displayMoment)
             injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: forcedId, momentId: displayMoment.id, vibeURL: vibeURL)
-        } else if let matchedBlog = createdRecapStore.bestMatchingBlog(forCapture: timestamp) {
-            sessionSourceTripId = matchedBlog.sourceTripId
-            sessionCapturesForDisplay.append(displayMoment)
-            photosCapturedThisSession += 1
-            injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: matchedBlog.sourceTripId, momentId: displayMoment.id, vibeURL: vibeURL)
-            if let endDate = createdRecapStore.effectiveEndTimestamp(forSourceTripId: matchedBlog.sourceTripId)
-                ?? matchedBlog.tripEndDate,
-               (Calendar.current.dateComponents([.day], from: endDate, to: Date()).day ?? Int.max) <= 14 {
-                OnTheGoTripStore.markTripAsActive(blogId: matchedBlog.sourceTripId, title: matchedBlog.title, tripEndDate: endDate, country: matchedBlog.countryName)
+        } else if let tripBlogId = routingSession.activeTripBlogId,
+                  createdRecapStore.hasCreatedBlog(sourceTripId: tripBlogId) {
+            sessionSourceTripId = tripBlogId
+            appendSessionCapture(displayMoment)
+            injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: tripBlogId, momentId: displayMoment.id, vibeURL: vibeURL)
+            refreshOnTheGoState(for: tripBlogId)
+        } else if let activeId = OnTheGoTripStore.activeBlogId,
+                  OnTheGoTripStore.isTripStillOngoing(),
+                  createdRecapStore.hasCreatedBlog(sourceTripId: activeId),
+                  !routingSession.declinedBlogPromptThisOuting {
+            routingSession.setTripBlogIfActive(activeId)
+            sessionSourceTripId = activeId
+            appendSessionCapture(displayMoment)
+            injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: activeId, momentId: displayMoment.id, vibeURL: vibeURL)
+            refreshOnTheGoState(for: activeId)
+        } else if isTripsCaptureDestination {
+            if isNearHome && routingSession.shouldShowNearHomeBlogModePrompt(isTripsMode: true) {
+                pendingNearHomeMoment = displayMoment
+                showNearHomeConfirmation = true
+            } else if routingSession.declinedBlogPromptThisOuting {
+                routeCaptureToEverydayPlaces(displayMoment)
+            } else if routingSession.shouldShowTripPrompt(isNearHome: isNearHome, isTripsMode: true, location: location) {
+                sessionMoments.append(displayMoment)
+                appendSessionCapture(displayMoment)
+                pendingTripPromptCapture = displayMoment
+                pendingTripBlogPromptAfterSave = true
+            } else if let tripBlogId = routingSession.activeTripBlogId,
+                      createdRecapStore.hasCreatedBlog(sourceTripId: tripBlogId) {
+                sessionSourceTripId = tripBlogId
+                appendSessionCapture(displayMoment)
+                injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: tripBlogId, momentId: displayMoment.id, vibeURL: vibeURL)
+                refreshOnTheGoState(for: tripBlogId)
+            } else {
+                sessionMoments.append(displayMoment)
+                appendSessionCapture(displayMoment)
+                pendingTripPromptCapture = displayMoment
+                pendingTripBlogPromptAfterSave = true
             }
-        } else if let matchedDraft = tripsViewModel.cameraTripDraftMatching(captureDate: timestamp) {
-            sessionDraftTripId = matchedDraft.id
-            sessionCapturesForDisplay.append(displayMoment)
-            photosCapturedThisSession += 1
-            injectCapturedPhotoIntoCameraDraft(image, at: timestamp, tripId: matchedDraft.id, momentId: displayMoment.id, vibeURL: vibeURL)
+        } else if isNearHome {
+            routeCaptureToEverydayPlaces(displayMoment)
+        } else if routingSession.shouldShowTripPrompt(isNearHome: isNearHome, location: location) {
+            sessionMoments.append(displayMoment)
+            appendSessionCapture(displayMoment)
+            pendingTripPromptCapture = displayMoment
+            pendingTripBlogPromptAfterSave = true
         } else {
-            let moment = displayMoment
-            sessionMoments.append(moment)
-            sessionCapturesForDisplay.append(displayMoment)
-            photosCapturedThisSession += 1
-            if !hasOfferedStartBlogThisSession {
-                hasOfferedStartBlogThisSession = true
-                startNewOnTheGoBlogFromSession()
-            }
+            routeCaptureToEverydayPlaces(displayMoment)
         }
 
         if let videoURL = preattachedMomentVideoURL {
@@ -5837,11 +5950,122 @@ extension CameraCaptureView {
         }
 
         if preattachedMomentVideoURL == nil {
-            DispatchQueue.main.async {
-                self.enterInPlaceCaptionMode()
+            let shouldOpenCaptionPreview = !showNearHomeConfirmation
+            if shouldOpenCaptionPreview {
+                DispatchQueue.main.async {
+                    self.enterInPlaceCaptionMode()
+                }
             }
         }
         return displayMoment.id
+    }
+
+    private func resolveNearHomeBlogModePrompt(switchToDaily: Bool) {
+        if nearHomeDoNotShowAgain {
+            UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
+            if switchToDaily {
+                UserDefaults.standard.set(false, forKey: Self.nearHomeSuppressedPreferKeepKey)
+            } else {
+                UserDefaults.standard.set(true, forKey: Self.nearHomeSuppressedPreferKeepKey)
+            }
+        }
+        routingSession.markNearHomeBlogModePromptShown()
+        if switchToDaily {
+            captureDestinationRaw = CaptureDestinationMode.daily.rawValue
+        }
+        if let moment = pendingNearHomeMoment {
+            if switchToDaily {
+                routeCaptureToEverydayPlaces(moment)
+                pendingNearHomeMoment = nil
+                showNearHomeConfirmation = false
+                DispatchQueue.main.async {
+                    self.enterInPlaceCaptionMode()
+                }
+            } else {
+                sessionMoments.append(moment)
+                appendSessionCapture(moment)
+                pendingTripPromptCapture = moment
+                pendingNearHomeMoment = nil
+                showNearHomeConfirmation = false
+                pendingTripBlogPromptAfterSave = true
+                DispatchQueue.main.async {
+                    self.enterInPlaceCaptionMode()
+                }
+            }
+        } else {
+            showNearHomeConfirmation = false
+        }
+    }
+
+    private func appendSessionCapture(_ displayMoment: CapturedMoment) {
+        sessionCapturesForDisplay.append(displayMoment)
+        photosCapturedThisSession += 1
+    }
+
+    private func routeCaptureToEverydayPlaces(_ moment: CapturedMoment) {
+        if let localId = moment.localIdentifier {
+            everydayStore.registerCapture(localIdentifier: localId)
+        }
+        sessionMoments.append(moment)
+        appendSessionCapture(moment)
+        placesCapturesThisSession += 1
+        attachedCountThisSession = momentCount(from: sessionMoments.isEmpty ? sessionCapturesForDisplay : sessionMoments)
+    }
+
+    private func isLocationNearHome(_ location: PhotoCoordinate?) -> Bool {
+        guard let home = NeighborhoodStore.getNeighborhoodCenter() else { return false }
+        let cl: CLLocation
+        if let location {
+            cl = CLLocation(latitude: location.latitude, longitude: location.longitude)
+        } else if let current = cameraController.currentLocation {
+            cl = current
+        } else {
+            return false
+        }
+        return !TripPhotoFilter.shouldIncludeInTrips(
+            assetLocation: cl,
+            home: home,
+            minMiles: NeighborhoodStore.effectiveTripMinMilesFromHome
+        )
+    }
+
+    private func refreshOnTheGoState(for blogId: UUID) {
+        if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == blogId }),
+           let endDate = createdRecapStore.effectiveEndTimestamp(forSourceTripId: blogId) ?? blog.tripEndDate {
+            OnTheGoTripStore.markTripAsActive(blogId: blogId, title: blog.title, tripEndDate: endDate, country: blog.countryName)
+            sessionTripTitle = blog.title
+        }
+    }
+
+    private func acceptTripBlogPrompt() {
+        showTripBlogPrompt = false
+        let momentsWithImages = sessionMoments.filter { $0.previewImage != nil }
+        guard !momentsWithImages.isEmpty else { return }
+        createBlogFromSessionMomentsOnly(momentsWithImages: momentsWithImages)
+        if let tripId = sessionSourceTripId {
+            routingSession.markAcceptedTripBlog(blogId: tripId)
+        }
+        pendingTripPromptCapture = nil
+        pendingBlogStartedAlert = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+            showBlogStartedPrompt = true
+        }
+    }
+
+    private func declineTripBlogPrompt() {
+        showTripBlogPrompt = false
+        captureDestinationRaw = CaptureDestinationMode.daily.rawValue
+        routingSession.markDeclinedBlogPrompt()
+        let allMoments = sessionMoments + sessionCapturesForDisplay
+        var seen = Set<UUID>()
+        for moment in allMoments where seen.insert(moment.id).inserted {
+            if let localId = moment.localIdentifier {
+                everydayStore.registerCapture(localIdentifier: localId)
+            }
+        }
+        placesCapturesThisSession = max(placesCapturesThisSession, seen.count)
+        pendingTripPromptCapture = nil
+        showToast("Saved to My Places")
     }
 
     private func toggleSaveToPhotos() {
@@ -6009,10 +6233,10 @@ extension CameraCaptureView {
         // Sync any captions typed in the gallery into the blog for real-time injected photos.
         syncSessionCaptionsToBlog()
         // If user has unsaved session moments (e.g. closed before blog creation completed), save as draft.
-        if !sessionMoments.isEmpty && attachedCountThisSession == 0 {
+        if !sessionMoments.isEmpty && attachedCountThisSession == 0 && !routingSession.isEverydayMode {
             saveSessionAsTripDraftOnly()
         }
-        // Exit toast: when adding to a blog, show "X moment(s) saved for [Blog Name]".
+        // Exit toast
         if !hasReportedDismissToast {
             let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
             let blogPending = sessionCapturesForDisplay.filter(\.includedInExitAddedToast)
@@ -6021,6 +6245,11 @@ extension CameraCaptureView {
             if sessionSourceTripId != nil && exitCount > 0 {
                 hasReportedDismissToast = true
                 let msg = "\(exitCount) moment\(exitCount == 1 ? "" : "s") saved for \(title)"
+                postDismissToast?(msg)
+            } else if placesCapturesThisSession > 0 {
+                hasReportedDismissToast = true
+                let count = placesCapturesThisSession
+                let msg = "\(count) moment\(count == 1 ? "" : "s") saved to My Places"
                 postDismissToast?(msg)
             } else if exitCount > 0 {
                 hasReportedDismissToast = true

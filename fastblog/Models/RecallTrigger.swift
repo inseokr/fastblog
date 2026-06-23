@@ -23,7 +23,9 @@ struct RecallTrigger: Identifiable {
     
     // Metadata for the recall
     var cityName: String?
-    var photoCount: Int { assets.count }
+    /// In-app capture UUIDs for everyday-moment recalls (when `assets` is empty).
+    var everydayCaptureIds: [UUID] = []
+    var photoCount: Int { max(assets.count, everydayCaptureIds.count) }
     
     var thumbnailAssets: [PHAsset] {
         Array(assets.prefix(3))

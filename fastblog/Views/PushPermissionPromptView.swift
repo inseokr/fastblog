@@ -8,36 +8,29 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 struct PushPermissionPromptView: View {
     @Binding var isPresented: Bool
     @State private var doNotShowAgain = false
+    @State private var authorizationStatus: UNAuthorizationStatus = .notDetermined
 
     var body: some View {
         VStack(spacing: 0) {
-            // Handle
-            Capsule()
-                .fill(Color.secondary.opacity(0.4))
-                .frame(width: 36, height: 4)
-                .padding(.top, 12)
+            Spacer().frame(height: 28)
 
-            Spacer().frame(height: 32)
-
-            // Icon
             Image(systemName: "bell.badge.fill")
                 .font(.system(size: 52))
                 .foregroundStyle(.orange)
                 .padding(.bottom, 20)
 
-            // Title
             Text("Stay in the loop")
                 .font(.title2.bold())
                 .multilineTextAlignment(.center)
 
             Spacer().frame(height: 12)
 
-            // Body
-            Text("Enable push notifications to get reminders about your blog drafts, updates on your trips, and more.")
+            Text("Get memory recalls, My Places weekly digests, and gentle reminders to capture everyday moments. You can change this anytime in Settings → Permissions.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -45,14 +38,10 @@ struct PushPermissionPromptView: View {
 
             Spacer().frame(height: 36)
 
-            // Primary CTA — opens Settings so the user can flip the toggle
             Button {
-                doNotShowAgain = false
-                saveDoNotShowPreference()
-                openSettings()
-                isPresented = false
+                Task { await enableNotifications() }
             } label: {
-                Text("Enable Notifications")
+                Text(primaryButtonTitle)
                     .font(.body.bold())
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
@@ -64,7 +53,6 @@ struct PushPermissionPromptView: View {
 
             Spacer().frame(height: 12)
 
-            // Secondary — dismiss without opening Settings
             Button {
                 saveDoNotShowPreference()
                 isPresented = false
@@ -79,7 +67,6 @@ struct PushPermissionPromptView: View {
 
             Spacer().frame(height: 20)
 
-            // Do-not-show toggle
             Toggle(isOn: $doNotShowAgain) {
                 Text("Do not show this again")
                     .font(.subheadline)
@@ -91,8 +78,37 @@ struct PushPermissionPromptView: View {
             Spacer().frame(height: 40)
         }
         .background(Color(.systemBackground))
-        .presentationDetents([.height(440)])
-        .presentationDragIndicator(.hidden)
+        .presentationDetents([.height(420)])
+        .presentationDragIndicator(.visible)
+        .task { await refreshAuthorizationStatus() }
+    }
+
+    private var primaryButtonTitle: String {
+        switch authorizationStatus {
+        case .notDetermined:
+            return "Allow Notifications"
+        default:
+            return "Open Settings"
+        }
+    }
+
+    private func refreshAuthorizationStatus() async {
+        authorizationStatus = await DraftReminderNotificationManager.currentAuthorizationStatus()
+    }
+
+    private func enableNotifications() async {
+        if authorizationStatus == .notDetermined {
+            let granted = await DraftReminderNotificationManager.requestAuthorizationFromUser()
+            await refreshAuthorizationStatus()
+            if granted {
+                saveDoNotShowPreference()
+                isPresented = false
+            }
+        } else {
+            saveDoNotShowPreference()
+            openSettings()
+            isPresented = false
+        }
     }
 
     private func saveDoNotShowPreference() {
