@@ -53,6 +53,10 @@ struct ContentView: View {
     @State private var showSettingsFromNav = false
     /// My Places place viewer / share studio — hides the shared home tab bar.
     @State private var suppressHomeBottomNav = false
+    @State private var swipeDragOffset: CGFloat = 0
+    @State private var swipeDragIsActive = false
+
+    private let tabOrder: [BottomNavTab] = [.myBlogs, .camera, .myPlaces]
 
     // On-the-go new-moments banner (camera home)
     @State private var showNewMomentsBanner = false
@@ -434,6 +438,12 @@ struct ContentView: View {
 
     private var isCameraHomeVisible: Bool {
         homeTab == .camera && showsHomeChrome
+    }
+
+    private func tabVisualOffset(for tab: BottomNavTab, screenWidth: CGFloat) -> CGFloat {
+        let myIdx     = tabOrder.firstIndex(of: tab)     ?? 0
+        let activeIdx = tabOrder.firstIndex(of: homeTab) ?? 1
+        return CGFloat(myIdx - activeIdx) * screenWidth + swipeDragOffset
     }
 
     private func selectHomeTab(_ tab: BottomNavTab) {
