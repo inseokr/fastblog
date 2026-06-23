@@ -503,6 +503,8 @@ struct ContentView: View {
     }
 
     private func selectHomeTab(_ tab: BottomNavTab) {
+        swipeDragOffset = 0
+        swipeDragIsActive = false
         cancelHomeBottomNavAutoHide()
         var transaction = Transaction()
         transaction.disablesAnimations = true
