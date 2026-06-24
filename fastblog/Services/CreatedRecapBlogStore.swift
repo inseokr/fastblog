@@ -6,6 +6,11 @@
 import Combine
 import CoreLocation
 import Foundation
+
+extension Notification.Name {
+    /// Posted when a created blog is removed locally (`userInfo["sourceTripId"]: UUID`).
+    static let bloggoCreatedBlogDeleted = Notification.Name("bloggo.createdBlogDeleted")
+}
 import Photos
 import SwiftUI
 
@@ -1953,6 +1958,11 @@ final class CreatedRecapBlogStore: ObservableObject {
             OnTheGoTripStore.markTripAsEnded()
         }
         BlogMenuIndicatorStore.shared.clear(sourceTripId: sourceTripId)
+        NotificationCenter.default.post(
+            name: .bloggoCreatedBlogDeleted,
+            object: nil,
+            userInfo: ["sourceTripId": sourceTripId]
+        )
     }
 
     // MARK: - Merge & Split

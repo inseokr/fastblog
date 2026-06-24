@@ -3670,7 +3670,7 @@ struct CameraCaptureView: View {
             .accessibilityLabel(saveToPhotosEnabled ? "Save to Photos on, tap to disable" : "Save to Photos off, tap to enable")
 
             Button {
-                captureDestinationRaw = captureDestinationMode.toggled.rawValue
+                handleCaptureDestinationToggle()
             } label: {
                 let isTrips = isTripsCaptureDestination
                 Image(systemName: captureDestinationMode.iconName)
@@ -4192,8 +4192,9 @@ struct CameraCaptureView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { beginPreviewCaptionEditing() }
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     LinearGradient(
                         colors: [
@@ -4208,7 +4209,6 @@ struct CameraCaptureView: View {
                 )
             }
         }
-        .padding(.horizontal, 20)
         .padding(.top, 8)
         .padding(.bottom, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -4901,6 +4901,13 @@ struct CameraCaptureView: View {
                 showVibeTooltip = true
             }
             }
+            .onChange(of: captureDestinationRaw) { _, _ in
+            applyCaptureDestinationRouting()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .bloggoCreatedBlogDeleted)) { notification in
+            guard let deletedId = notification.userInfo?["sourceTripId"] as? UUID else { return }
+            handleCreatedBlogDeleted(deletedId)
+            }
             .sheet(isPresented: $showVibeTooltip, onDismiss: {
             hasSeenVibeTooltip = true
             vibeTooltipPage = 0
@@ -4987,13 +4994,8 @@ struct CameraCaptureView: View {
         showNearHomeConfirmation = false
         pendingNearHomeMoment = nil
         routingSession.startNewOuting()
-        if let activeId = OnTheGoTripStore.activeBlogId,
-           OnTheGoTripStore.isTripStillOngoing(),
-           createdRecapStore.hasCreatedBlog(sourceTripId: activeId) {
-            routingSession.setTripBlogIfActive(activeId)
-            sessionSourceTripId = activeId
-            sessionTripTitle = OnTheGoTripStore.activeBlogTitle
-                ?? createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == activeId })?.title
+        if isTripsCaptureDestination {
+            syncTripRoutingFromActiveBlogIfNeeded()
         }
         pendingBlogStartedAlert = false
         lastCaptureWasVibe = false
@@ -5890,23 +5892,23 @@ extension CameraCaptureView {
             sessionSourceTripId = forcedId
             appendSessionCapture(displayMoment)
             injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: forcedId, momentId: displayMoment.id, vibeURL: vibeURL)
-        } else if let tripBlogId = routingSession.activeTripBlogId,
-                  createdRecapStore.hasCreatedBlog(sourceTripId: tripBlogId) {
-            sessionSourceTripId = tripBlogId
-            appendSessionCapture(displayMoment)
-            injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: tripBlogId, momentId: displayMoment.id, vibeURL: vibeURL)
-            refreshOnTheGoState(for: tripBlogId)
-        } else if let activeId = OnTheGoTripStore.activeBlogId,
-                  OnTheGoTripStore.isTripStillOngoing(),
-                  createdRecapStore.hasCreatedBlog(sourceTripId: activeId),
-                  !routingSession.declinedBlogPromptThisOuting {
-            routingSession.setTripBlogIfActive(activeId)
-            sessionSourceTripId = activeId
-            appendSessionCapture(displayMoment)
-            injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: activeId, momentId: displayMoment.id, vibeURL: vibeURL)
-            refreshOnTheGoState(for: activeId)
         } else if isTripsCaptureDestination {
-            if isNearHome && routingSession.shouldShowNearHomeBlogModePrompt(isTripsMode: true) {
+            if let tripBlogId = routingSession.activeTripBlogId,
+               createdRecapStore.hasCreatedBlog(sourceTripId: tripBlogId) {
+                sessionSourceTripId = tripBlogId
+                appendSessionCapture(displayMoment)
+                injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: tripBlogId, momentId: displayMoment.id, vibeURL: vibeURL)
+                refreshOnTheGoState(for: tripBlogId)
+            } else if let activeId = OnTheGoTripStore.activeBlogId,
+                      OnTheGoTripStore.isTripStillOngoing(),
+                      createdRecapStore.hasCreatedBlog(sourceTripId: activeId),
+                      !routingSession.declinedBlogPromptThisOuting {
+                routingSession.setTripBlogIfActive(activeId)
+                sessionSourceTripId = activeId
+                appendSessionCapture(displayMoment)
+                injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: activeId, momentId: displayMoment.id, vibeURL: vibeURL)
+                refreshOnTheGoState(for: activeId)
+            } else if isNearHome && routingSession.shouldShowNearHomeBlogModePrompt(isTripsMode: true) {
                 pendingNearHomeMoment = displayMoment
                 showNearHomeConfirmation = true
             } else if routingSession.declinedBlogPromptThisOuting {
@@ -6012,6 +6014,61 @@ extension CameraCaptureView {
         attachedCountThisSession = momentCount(from: sessionMoments.isEmpty ? sessionCapturesForDisplay : sessionMoments)
     }
 
+    private func handleCaptureDestinationToggle() {
+        let switchingToDaily = isTripsCaptureDestination
+        captureDestinationRaw = captureDestinationMode.toggled.rawValue
+        if switchingToDaily {
+            clearTripBlogSessionRouting()
+        } else {
+            syncTripRoutingFromActiveBlogIfNeeded()
+        }
+    }
+
+    private func applyCaptureDestinationRouting() {
+        if isTripsCaptureDestination {
+            syncTripRoutingFromActiveBlogIfNeeded()
+        } else {
+            clearTripBlogSessionRouting()
+        }
+    }
+
+    /// Restores trip-blog routing when Trip mode is on and a live on-the-go blog still exists.
+    private func syncTripRoutingFromActiveBlogIfNeeded() {
+        guard isTripsCaptureDestination else {
+            clearTripBlogSessionRouting()
+            return
+        }
+        if let activeId = OnTheGoTripStore.activeBlogId,
+           OnTheGoTripStore.isTripStillOngoing(),
+           createdRecapStore.hasCreatedBlog(sourceTripId: activeId) {
+            routingSession.setTripBlogIfActive(activeId)
+            sessionSourceTripId = activeId
+            sessionTripTitle = OnTheGoTripStore.activeBlogTitle
+                ?? createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == activeId })?.title
+            return
+        }
+        if let tripBlogId = routingSession.activeTripBlogId,
+           createdRecapStore.hasCreatedBlog(sourceTripId: tripBlogId) {
+            sessionSourceTripId = tripBlogId
+            sessionTripTitle = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == tripBlogId })?.title
+            return
+        }
+        clearTripBlogSessionRouting()
+    }
+
+    /// Clears in-camera trip routing so Daily mode and deleted blogs cannot keep receiving captures.
+    private func clearTripBlogSessionRouting() {
+        routingSession.clearActiveTripBlogRouting()
+        sessionSourceTripId = nil
+        sessionTripTitle = nil
+    }
+
+    private func handleCreatedBlogDeleted(_ sourceTripId: UUID) {
+        if sessionSourceTripId == sourceTripId || routingSession.activeTripBlogId == sourceTripId {
+            clearTripBlogSessionRouting()
+        }
+    }
+
     private func isLocationNearHome(_ location: PhotoCoordinate?) -> Bool {
         guard let home = NeighborhoodStore.getNeighborhoodCenter() else { return false }
         let cl: CLLocation
@@ -6042,6 +6099,7 @@ extension CameraCaptureView {
         let momentsWithImages = sessionMoments.filter { $0.previewImage != nil }
         guard !momentsWithImages.isEmpty else { return }
         createBlogFromSessionMomentsOnly(momentsWithImages: momentsWithImages)
+        captureDestinationRaw = CaptureDestinationMode.trips.rawValue
         if let tripId = sessionSourceTripId {
             routingSession.markAcceptedTripBlog(blogId: tripId)
         }
@@ -6124,6 +6182,7 @@ extension CameraCaptureView {
 
     /// Injects an already-persisted app capture into the blog (no second save). Updates the moment's injectedPhotoId when done so removal from modal can remove from blog.
     private func injectCapturedImageIntoBlog(_ image: UIImage?, at timestamp: Date, sourceTripId: UUID, momentId: UUID, vibeURL: URL? = nil) {
+        guard forcedTargetBlogId == sourceTripId || createdRecapStore.hasCreatedBlog(sourceTripId: sourceTripId) else { return }
         guard let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) else { return }
         var moment = sessionCapturesForDisplay[idx]
         guard let localId = resolvedCaptureLocalIdentifier(for: moment, fallbackVibeURL: vibeURL) else {

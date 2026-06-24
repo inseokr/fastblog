@@ -83,6 +83,13 @@ final class CaptureRoutingSession: ObservableObject {
         mode = .tripBlog(blogId)
     }
 
+    /// Clears an active trip-blog route without resetting other per-outing flags.
+    func clearActiveTripBlogRouting() {
+        if case .tripBlog = mode {
+            mode = .everyday
+        }
+    }
+
     /// Whether to show the trip blog prompt. Near home is allowed when Trip mode is on.
     func shouldShowTripPrompt(isNearHome: Bool, isTripsMode: Bool = false, location: PhotoCoordinate?) -> Bool {
         if isNearHome && !isTripsMode { return false }
