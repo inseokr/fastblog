@@ -3970,34 +3970,6 @@ final class CreatedRecapBlogStore: ObservableObject {
         return byKey.values.sorted(by: { $0.latestVisitDate > $1.latestVisitDate })
     }
 
-    /// Moves all place stops from a local-only blog into everyday moments and removes the blog.
-    func moveBlogToEverydayPlaces(sourceTripId: UUID) {
-        guard let detail = blogDetailsBySourceId[sourceTripId] else { return }
-        for day in detail.days {
-            for stop in day.placeStops {
-                EverydayMomentsStore.shared.importFromBlogPlaceStop(stop)
-            }
-        }
-        deleteBlog(sourceTripId: sourceTripId)
-        AppAnalytics.shared.trackEvent(
-            name: "blog_moved_to_everyday_places",
-            properties: ["sourceTripId": sourceTripId.uuidString]
-        )
-    }
-
-    /// True when every included photo in the blog is within the home exclusion radius.
-    func isBlogEntirelyWithinHomeRadius(sourceTripId: UUID) -> Bool {
-        guard let home = NeighborhoodStore.getNeighborhoodCenter(),
-              let detail = blogDetailsBySourceId[sourceTripId] else { return false }
-        let minMiles = NeighborhoodStore.effectiveTripMinMilesFromHome
-        let photos = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
-        guard !photos.isEmpty else { return false }
-        return photos.allSatisfy { photo in
-            guard let loc = photo.location else { return true }
-            let cl = CLLocation(latitude: loc.latitude, longitude: loc.longitude)
-            return !TripPhotoFilter.shouldIncludeInTrips(assetLocation: cl, home: home, minMiles: minMiles)
-        }
-    }
 }
 
 private extension Array {

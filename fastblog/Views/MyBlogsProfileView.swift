@@ -76,10 +76,6 @@ struct MyBlogsProfileView: View {
     @State private var newMomentsAlertBlogTitle = ""
     @State private var newMomentsAlertBlogId: UUID? = nil
     @State private var newMomentsDayIndex: Int? = nil
-    @AppStorage("bloggo.dismissedLocalBlogMigrationIds") private var dismissedLocalBlogMigrationIdsData: String = ""
-    @State private var showMoveToPlacesConfirmation = false
-    @State private var blogPendingMoveToPlaces: CreatedRecapBlog?
-
     init(
         createdRecapStore: CreatedRecapBlogStore,
         selectedCreatedRecap: Binding<CreatedRecapBlog?>,
@@ -313,18 +309,6 @@ struct MyBlogsProfileView: View {
         } message: {
             Text("Your trip has new content since you last looked. Tap View to go to the latest day.")
         }
-        .alert("Move to My Places?", isPresented: $showMoveToPlacesConfirmation) {
-            Button("Cancel", role: .cancel) { blogPendingMoveToPlaces = nil }
-            Button("Move", role: .destructive) {
-                if let blog = blogPendingMoveToPlaces {
-                    createdRecapStore.moveBlogToEverydayPlaces(sourceTripId: blog.sourceTripId)
-                    dismissMigrationBanner(for: blog.sourceTripId)
-                }
-                blogPendingMoveToPlaces = nil
-            }
-        } message: {
-            Text("Photos from this blog will appear in My Places instead.")
-        }
         .onChange(of: currentPage) { _, newPage in
             sharedSearchText = ""
             viewModel.searchText = ""
@@ -407,7 +391,6 @@ struct MyBlogsProfileView: View {
                 if !isSearchActive {
                     tapToBlogBanner
                         .padding(.bottom, 10)
-                    localBlogMigrationBanner
                     latestEditsSection
                         .padding(.bottom, latestEditsCountryGap)
                 }
@@ -448,57 +431,6 @@ struct MyBlogsProfileView: View {
         .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in scrollOffset = value }
         .scrollDisabled(latestEditsLocksVerticalScroll)
         .transition(.opacity)
-    }
-
-    private var dismissedLocalBlogMigrationIds: Set<String> {
-        Set(dismissedLocalBlogMigrationIdsData.split(separator: ",").map(String.init))
-    }
-
-    private func dismissMigrationBanner(for blogId: UUID) {
-        var ids = dismissedLocalBlogMigrationIds
-        ids.insert(blogId.uuidString)
-        dismissedLocalBlogMigrationIdsData = ids.sorted().joined(separator: ",")
-    }
-
-    private var localBlogsEligibleForMigration: [CreatedRecapBlog] {
-        createdRecapStore.visibleRecents.filter { blog in
-            !dismissedLocalBlogMigrationIds.contains(blog.sourceTripId.uuidString)
-                && createdRecapStore.isBlogEntirelyWithinHomeRadius(sourceTripId: blog.sourceTripId)
-        }
-    }
-
-    @ViewBuilder
-    private var localBlogMigrationBanner: some View {
-        if let blog = localBlogsEligibleForMigration.first {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("This looks like everyday moments")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                Text("\"\(blog.title)\" is entirely near home. Move it to My Places?")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.75))
-                HStack(spacing: 12) {
-                    Button("Not now") {
-                        dismissMigrationBanner(for: blog.sourceTripId)
-                    }
-                    .font(.caption.weight(.medium))
-                    .foregroundColor(.white.opacity(0.8))
-                    Button("Move to My Places") {
-                        blogPendingMoveToPlaces = blog
-                        showMoveToPlacesConfirmation = true
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.blue.opacity(0.85), in: Capsule())
-                }
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.08), in: RoundedRectangle(appChromeBaseRadius: 14))
-            .padding(.bottom, 10)
-        }
     }
 
     private var tapToBlogBanner: some View {
