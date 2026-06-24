@@ -532,6 +532,8 @@ struct PlacesVisitedView: View {
         .onChange(of: selectedPlaceForModal?.id) { _, _ in syncHomeBottomNavSuppression() }
         .onChange(of: revealNavDuringModalDismiss) { _, _ in syncHomeBottomNavSuppression() }
         .onChange(of: showPlacesSocialStudio) { _, _ in syncHomeBottomNavSuppression() }
+        .onChange(of: isSelectMode) { _, _ in syncHomeBottomNavSuppression() }
+        .onAppear { syncHomeBottomNavSuppression() }
         .onDisappear { suppressHomeBottomNav = false }
     }
 
@@ -618,7 +620,7 @@ struct PlacesVisitedView: View {
     }
 
     private func syncHomeBottomNavSuppression() {
-        suppressHomeBottomNav = shouldHidePlacesVisitedNavigationBar
+        suppressHomeBottomNav = shouldHidePlacesVisitedNavigationBar || isSelectMode
     }
 
     private var placesShareTooManyAlertMessage: String {

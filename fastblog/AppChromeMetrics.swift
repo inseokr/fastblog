@@ -54,6 +54,9 @@ enum HomeChromeMetrics {
         isCompactHeight ? 180 : 194
     }
 
+    /// How long "moment saved" / "added to …" camera toasts stay visible before auto-dismiss.
+    static let momentCaptureToastAutoDismissSeconds: TimeInterval = 3
+
     /// Bottom padding for camera "moment added" toasts — clears gallery, shutter, zoom, and mode picker.
     static func cameraToastBottomPadding(isCompactHeight: Bool) -> CGFloat {
         let safeBottom = UIApplication.shared.connectedScenes
@@ -64,6 +67,11 @@ enum HomeChromeMetrics {
         return cameraCaptureControlsBottomInset(isCompactHeight: isCompactHeight)
             + max(safeBottom, 8)
             + 16
+    }
+
+    /// Post-capture preview (Save moment) — toast sits above the caption chrome + Save dock.
+    static func cameraPreviewToastBottomPadding(safeBottom: CGFloat) -> CGFloat {
+        max(safeBottom, 8) + 6 + 44 + 10 + 132 + 16
     }
 
     /// Bottom search field typography (My Blogs + My Places).

@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var homeBottomNavAutoHideTask: Task<Void, Never>?
     private static let homeBottomNavAutoHideSeconds: UInt64 = 4
     @State private var postCameraToastMessage: String?
+    @State private var postCameraToastDismissTask: Task<Void, Never>?
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var initialDayIndexForRecap: Int?
     @State private var initialScrollToStopIdForRecap: UUID?
@@ -303,7 +304,10 @@ struct ContentView: View {
                 CameraCaptureView(
                     tripsViewModel: tripsViewModel,
                     postDismissToast: { msg in
-                        postCameraToastMessage = msg
+                        presentPostCameraToast(msg)
+                    },
+                    onWillCaptureMoment: {
+                        dismissPostCameraToast()
                     },
                     onDismissOverlay: nil,
                     onNavigateToBlog: { sourceTripId in
@@ -801,10 +805,7 @@ struct ContentView: View {
                     .foregroundColor(.white)
                 Spacer()
                 Button {
-                    withAnimation {
-                        postCameraToastMessage = nil
-                        postCameraToastDragOffset = 0
-                    }
+                    dismissPostCameraToast()
                 } label: {
                     Image(systemName: "xmark")
                         .font(.body)
@@ -829,16 +830,29 @@ struct ContentView: View {
             .offset(y: postCameraToastDragOffset)
             .gesture(postCameraToastDismissDragGesture)
         }
-        .onChange(of: postCameraToastMessage) { _, msg in
-            if msg != nil {
-                postCameraToastDragOffset = 0
-                DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        postCameraToastMessage = nil
-                        postCameraToastDragOffset = 0
-                    }
-                }
+    }
+
+    private func presentPostCameraToast(_ message: String) {
+        postCameraToastDismissTask?.cancel()
+        postCameraToastMessage = message
+        postCameraToastDragOffset = 0
+        postCameraToastDismissTask = Task {
+            try? await Task.sleep(
+                for: .seconds(HomeChromeMetrics.momentCaptureToastAutoDismissSeconds)
+            )
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                dismissPostCameraToast()
             }
+        }
+    }
+
+    private func dismissPostCameraToast() {
+        postCameraToastDismissTask?.cancel()
+        postCameraToastDismissTask = nil
+        withAnimation(.easeOut(duration: 0.3)) {
+            postCameraToastMessage = nil
+            postCameraToastDragOffset = 0
         }
     }
 
@@ -849,10 +863,7 @@ struct ContentView: View {
             }
             .onEnded { value in
                 if value.translation.height > 72 || value.predictedEndTranslation.height > 120 {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        postCameraToastMessage = nil
-                        postCameraToastDragOffset = 0
-                    }
+                    dismissPostCameraToast()
                 } else {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
                         postCameraToastDragOffset = 0

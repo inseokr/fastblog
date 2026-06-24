@@ -271,7 +271,9 @@ struct LandingView: View {
         }
         .onChange(of: postCameraToastMessage) { _, msg in
             if msg != nil {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + HomeChromeMetrics.momentCaptureToastAutoDismissSeconds
+                ) {
                     withAnimation(.easeOut(duration: 0.3)) {
                         postCameraToastMessage = nil
                     }

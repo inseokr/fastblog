@@ -2836,6 +2836,8 @@ struct CameraCaptureView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     /// When set, receives the summary message (e.g. "3 moments added to Trip") when user leaves with attached photos.
     var postDismissToast: ((String) -> Void)? = nil
+    /// When set, called as a new in-app capture begins (dismisses any parent-level capture toast).
+    var onWillCaptureMoment: (() -> Void)? = nil
     /// When set (ZStack overlay presentation), called instead of dismiss().
     var onDismissOverlay: (() -> Void)? = nil
     var onNavigateToBlog: ((UUID) -> Void)? = nil
@@ -2869,6 +2871,7 @@ struct CameraCaptureView: View {
     @State private var toastMessage: String?
     @State private var isShowingToast: Bool = false
     @State private var toastDragOffset: CGFloat = 0
+    @State private var cameraToastDismissTask: Task<Void, Never>?
     @State private var attachedCountThisSession: Int = 0
     /// Trip/blog name that received photos this session, for the exit toast.
     @State private var sessionTripTitle: String? = nil
@@ -3334,12 +3337,7 @@ struct CameraCaptureView: View {
             // Avoid stacking a timed toast behind the blog-started modal (toast ignores taps; feels like a second dismissal).
             if !showBlogStartedAfterSave {
                 let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
-                let msg = "1 moment added to \(title)"
-                if let post = postDismissToast {
-                    post(msg)
-                } else {
-                    showToast(msg)
-                }
+                showToast("1 moment added to \(title)")
             }
             AppAnalytics.track(.appInAppCameraCaption)
         } else {
@@ -3431,9 +3429,12 @@ struct CameraCaptureView: View {
 
     private var isCompactHomeHeight: Bool { verticalSizeClass == .compact }
 
-    /// Space above shutter, gallery, zoom strip, and mode picker.
+    /// Space above shutter, gallery, zoom strip, and mode picker — or above Save dock on post-capture preview.
     private var cameraToastBottomInset: CGFloat {
-        HomeChromeMetrics.cameraToastBottomPadding(isCompactHeight: isCompactHomeHeight)
+        if isCaptionModeActive {
+            return HomeChromeMetrics.cameraPreviewToastBottomPadding(safeBottom: cameraChromeSafeBottom)
+        }
+        return HomeChromeMetrics.cameraToastBottomPadding(isCompactHeight: isCompactHomeHeight)
     }
 
     /// Height of the bottom screen band where the system home / app-switcher swipe begins.
@@ -5198,10 +5199,7 @@ struct CameraCaptureView: View {
             }
             .onEnded { value in
                 if value.translation.height > 72 || value.predictedEndTranslation.height > 120 {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        isShowingToast = false
-                        toastDragOffset = 0
-                    }
+                    dismissCameraToast()
                 } else {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
                         toastDragOffset = 0
@@ -5927,6 +5925,8 @@ extension CameraCaptureView {
         preattachedMomentVideoURL: URL? = nil,
         isContinuousReel: Bool = false
     ) -> UUID? {
+        onWillCaptureMoment?()
+        dismissCameraToast(animated: false)
         if preattachedMomentVideoURL == nil {
             saveCapturedImageToPhotosLibraryIfNeeded(image)
         }
@@ -6333,15 +6333,33 @@ extension CameraCaptureView {
         }
     }
 
+    private func dismissCameraToast(animated: Bool = true) {
+        cameraToastDismissTask?.cancel()
+        cameraToastDismissTask = nil
+        toastDragOffset = 0
+        if animated {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isShowingToast = false
+            }
+        } else {
+            isShowingToast = false
+        }
+    }
+
     private func showToast(_ message: String) {
+        cameraToastDismissTask?.cancel()
         toastMessage = message
         toastDragOffset = 0
         withAnimation(.easeInOut(duration: 0.2)) {
             isShowingToast = true
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isShowingToast = false
+        cameraToastDismissTask = Task {
+            try? await Task.sleep(
+                for: .seconds(HomeChromeMetrics.momentCaptureToastAutoDismissSeconds)
+            )
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                dismissCameraToast()
             }
         }
     }

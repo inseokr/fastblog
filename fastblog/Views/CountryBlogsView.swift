@@ -49,14 +49,6 @@ struct CountryBlogsView: View {
     /// When true, reopen Manage Blogs after the recap overlay dismisses (opened blog from that sheet only).
     @State private var reopenManageSheetAfterRecapDismiss = false
 
-    // Cloud removal
-    @State private var showRemoveCloudPopup = false
-    @State private var blogToRemove: CreatedRecapBlog?
-
-    // Swipe / kebab delete flow
-    @State private var blogToDelete: CreatedRecapBlog?
-    @State private var showDeleteConfirmSheet = false
-
     // Soft-delete + Undo state
     /// The blog is hidden from the list immediately; deletion is only committed when the timer fires.
     @State private var pendingDeleteBlog: CreatedRecapBlog?
@@ -159,65 +151,35 @@ struct CountryBlogsView: View {
 
                 List {
                     ForEach(Array(filteredAndSortedBlogs.enumerated()), id: \.element.id) { index, blog in
-                        Button {
-                            openRecapInEditMode = false
-                            openRecapPresentShareYourBlogSheet = false
-                            selectedBlog = blog
-                        } label: {
-                            CountryBlogRowView(
-                                blog: blog,
-                                menuIndicatorKind: menuIndicators.kind(forSourceTripId: blog.sourceTripId),
-                                isBlogInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
-                                isDraft: !blog.hasCommittedRecapSave,
-                                onRemoveFromCloud: {
-                                    blogToRemove = blog
-                                    showRemoveCloudPopup = true
-                                },
-                                onShareBlog: {
-                                    openRecapInEditMode = false
-                                    openRecapPresentShareYourBlogSheet = true
-                                    selectedBlog = blog
-                                },
-                                onEditBlog: {
-                                    openRecapPresentShareYourBlogSheet = false
-                                    openRecapInEditMode = true
-                                    selectedBlog = blog
-                                },
-                                onDeleteBlog: {
-                                    blogToDelete = blog
-                                    showDeleteConfirmSheet = true
-                                }
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-                        .listRowBackground(Group {
-                            if index == 0 {
-                                GeometryReader { g in
-                                    Color.clear.preference(
-                                        key: CountryListScrollOffsetKey.self,
-                                        value: g.frame(in: .named("countryList")).minY
-                                    )
-                                }
+                        CountryBlogListRow(
+                            blog: blog,
+                            menuIndicatorKind: menuIndicators.kind(forSourceTripId: blog.sourceTripId),
+                            isBlogInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
+                            isDraft: !blog.hasCommittedRecapSave,
+                            swipeDeleteTint: swipeDeleteRed,
+                            reportsScrollOffset: index == 0,
+                            onOpenBlog: {
+                                openRecapInEditMode = false
+                                openRecapPresentShareYourBlogSheet = false
+                                selectedBlog = blog
+                            },
+                            onShareBlog: {
+                                openRecapInEditMode = false
+                                openRecapPresentShareYourBlogSheet = true
+                                selectedBlog = blog
+                            },
+                            onEditBlog: {
+                                openRecapPresentShareYourBlogSheet = false
+                                openRecapInEditMode = true
+                                selectedBlog = blog
+                            },
+                            onRemoveFromCloud: {
+                                createdRecapStore.removeFromCloud(blogId: blog.sourceTripId)
+                            },
+                            onConfirmDelete: { includeCloud in
+                                startSoftDelete(blog: blog, includeCloud: includeCloud)
                             }
-                        })
-                        // ─── Swipe-left trailing action ───────────────────
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button {
-                                let captured = blog
-                                DispatchQueue.main.async {
-                                    blogToDelete = captured
-                                    showDeleteConfirmSheet = true
-                                }
-                            } label: {
-                                Image(systemName: "trash.fill")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundStyle(.white)
-                            }
-                            .tint(swipeDeleteRed)
-                            .accessibilityLabel("Delete")
-                        }
+                        )
                     }
                 }
                 .listStyle(.plain)
@@ -313,59 +275,9 @@ struct CountryBlogsView: View {
             )
             .environmentObject(createdRecapStore)
         }
-        // ─── Confirmation Sheet for Delete ────────────────────────────────
-        .confirmationDialog(
-            deleteDialogTitle,
-            isPresented: $showDeleteConfirmSheet,
-            titleVisibility: .visible
-        ) {
-            if let blog = blogToDelete {
-                let isInCloud = createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId)
-
-                if isInCloud {
-                    Button("Delete from device only") {
-                        startSoftDelete(blog: blog, includeCloud: false)
-                    }
-                    Button("Delete from device and cloud", role: .destructive) {
-                        startSoftDelete(blog: blog, includeCloud: true)
-                    }
-                } else {
-                    Button("Delete", role: .destructive) {
-                        startSoftDelete(blog: blog, includeCloud: false)
-                    }
-                }
-
-                Button("Cancel", role: .cancel) {
-                    blogToDelete = nil
-                }
-            }
-        } message: {
-            if let blog = blogToDelete,
-               createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId) {
-                Text("This blog is also saved in the cloud. Choose whether to delete it locally or from both places.")
-            } else {
-                Text("This will permanently delete this blog and all its local data.")
-            }
-        }
-        // ─── Remove from Cloud Alert ─────────────────────────────────────
-        .alert("Remove from Cloud?", isPresented: $showRemoveCloudPopup, presenting: blogToRemove) { blog in
-            Button("Yes", role: .destructive) {
-                createdRecapStore.removeFromCloud(blogId: blog.sourceTripId)
-            }
-            Button("No", role: .cancel) {
-                blogToRemove = nil
-            }
-        } message: { _ in
-            Text("Are you sure you want to remove this blog from the cloud? Your local copy will remain.")
-        }
     } // end body
 
     // MARK: – Delete helpers
-
-    private var deleteDialogTitle: String {
-        guard let blog = blogToDelete else { return "Delete Blog?" }
-        return "Delete \"\(blog.title)\"?"
-    }
 
     /// Hides the blog from the list, starts the 7-second commit timer, and shows the undo banner.
     private func startSoftDelete(blog: CreatedRecapBlog, includeCloud: Bool) {
@@ -377,7 +289,6 @@ struct CountryBlogsView: View {
 
         pendingDeleteBlog = blog
         pendingDeleteCloud = includeCloud
-        blogToDelete = nil
 
         withAnimation {
             showUndoBanner = true
@@ -460,6 +371,95 @@ private struct InteractivePopGestureDisabler: UIViewControllerRepresentable {
     static func dismantleUIViewController(_ uiViewController: UIViewController, coordinator: ()) {
         DispatchQueue.main.async {
             uiViewController.navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+        }
+    }
+}
+
+// MARK: – Blog List Row (tap, swipe, kebab, and row-anchored delete confirmation)
+
+private struct CountryBlogListRow: View {
+    let blog: CreatedRecapBlog
+    var menuIndicatorKind: BlogMenuIndicatorStore.Kind? = nil
+    let isBlogInCloud: Bool
+    let isDraft: Bool
+    let swipeDeleteTint: Color
+    let reportsScrollOffset: Bool
+    let onOpenBlog: () -> Void
+    let onShareBlog: () -> Void
+    let onEditBlog: () -> Void
+    let onRemoveFromCloud: () -> Void
+    let onConfirmDelete: (_ includeCloud: Bool) -> Void
+
+    @State private var showDeleteConfirmSheet = false
+    @State private var showRemoveCloudPopup = false
+
+    var body: some View {
+        Button(action: onOpenBlog) {
+            CountryBlogRowView(
+                blog: blog,
+                menuIndicatorKind: menuIndicatorKind,
+                isBlogInCloud: isBlogInCloud,
+                isDraft: isDraft,
+                onRemoveFromCloud: { showRemoveCloudPopup = true },
+                onShareBlog: onShareBlog,
+                onEditBlog: onEditBlog,
+                onDeleteBlog: { showDeleteConfirmSheet = true }
+            )
+        }
+        .buttonStyle(.plain)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+        .listRowBackground(Group {
+            if reportsScrollOffset {
+                GeometryReader { g in
+                    Color.clear.preference(
+                        key: CountryListScrollOffsetKey.self,
+                        value: g.frame(in: .named("countryList")).minY
+                    )
+                }
+            }
+        })
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
+                showDeleteConfirmSheet = true
+            } label: {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .tint(swipeDeleteTint)
+            .accessibilityLabel("Delete")
+        }
+        .confirmationDialog(
+            "Delete \"\(blog.title)\"?",
+            isPresented: $showDeleteConfirmSheet,
+            titleVisibility: .visible
+        ) {
+            if isBlogInCloud {
+                Button("Delete from device only") {
+                    onConfirmDelete(false)
+                }
+                Button("Delete from device and cloud", role: .destructive) {
+                    onConfirmDelete(true)
+                }
+            } else {
+                Button("Delete", role: .destructive) {
+                    onConfirmDelete(false)
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            if isBlogInCloud {
+                Text("This blog is also saved in the cloud. Choose whether to delete it locally or from both places.")
+            } else {
+                Text("This will permanently delete this blog and all its local data.")
+            }
+        }
+        .alert("Remove from Cloud?", isPresented: $showRemoveCloudPopup) {
+            Button("Yes", role: .destructive, action: onRemoveFromCloud)
+            Button("No", role: .cancel) { }
+        } message: {
+            Text("Are you sure you want to remove this blog from the cloud? Your local copy will remain.")
         }
     }
 }
