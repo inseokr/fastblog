@@ -62,8 +62,6 @@ struct ContentView: View {
     @State private var newMomentsBannerDayIndex: Int?
     @State private var newMomentsBannerDragOffset: CGFloat = 0
     @State private var postCameraToastDragOffset: CGFloat = 0
-    @StateObject private var memoryRecallViewModel = MemoryRecallViewModel()
-    @State private var showMemoryRecall = false
     @State private var showPushPermissionPrompt = false
 
     /// Post-camera toast: sits above shutter, gallery, zoom strip, and mode picker.
@@ -164,23 +162,7 @@ struct ContentView: View {
             .sheet(isPresented: $showPushPermissionPrompt) {
                 PushPermissionPromptView(isPresented: $showPushPermissionPrompt)
             }
-            .sheet(isPresented: $showMemoryRecall) {
-                if let recall = memoryRecallViewModel.currentRecall {
-                    MemoryRecallModal(recall: recall) {
-                        showMemoryRecall = false
-                        if recall.everydayCaptureIds.isEmpty {
-                            scheduleFindPastTripsScan()
-                        } else {
-                            selectHomeTab(.myPlaces)
-                        }
-                    }
-                }
-            }
-            .onChange(of: memoryRecallViewModel.currentRecall?.id) { _, newId in
-                if newId != nil { showMemoryRecall = true }
-            }
             .onAppear {
-                memoryRecallViewModel.onAppear()
                 UserDefaults.standard.set(Date(), forKey: EverydayRetentionKeys.lastAppOpenDate)
                 if UserDefaults.standard.bool(forKey: EverydayRetentionKeys.shouldShowPushPrompt) {
                     UserDefaults.standard.set(false, forKey: EverydayRetentionKeys.shouldShowPushPrompt)
