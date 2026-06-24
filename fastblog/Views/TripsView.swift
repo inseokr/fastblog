@@ -2985,6 +2985,9 @@ struct CameraCaptureView: View {
 
     private var isReelCaptureMode: Bool { captureMode == .reel }
 
+    /// Camera opened from inside an existing blog (`RecapBlogPageView` full-screen cover).
+    private var isBlogEmbeddedCamera: Bool { forcedTargetBlogId != nil }
+
     /// Mic / `AVAudioSession` only for Vibe ambient capture or Reel video — not plain Photo mode.
     private var isCameraAudioCaptureEnabled: Bool { isVibeCaptureEnabled || isReelCaptureMode }
 
@@ -3452,7 +3455,8 @@ struct CameraCaptureView: View {
     }
 
     private func handleInAppCameraPullGestureEnded(_ value: DragGesture.Value) {
-        guard !isCaptionModeActive else { return }
+        // Moment-taken preview is X / Save only — never swipe-down to return to the live camera.
+        guard !isCaptionModeActive, captionModeMomentId == nil else { return }
         guard shouldHandleCameraVerticalPullGesture(value) else { return }
 
         if value.translation.height < 0 {
@@ -3460,7 +3464,7 @@ struct CameraCaptureView: View {
                 withAnimation(.easeInOut(duration: 0.25)) {
                     navRevealed.wrappedValue = true
                 }
-            } else {
+            } else if !isBlogEmbeddedCamera {
                 isShowingCapturesGallery = true
             }
             return
@@ -3609,7 +3613,7 @@ struct CameraCaptureView: View {
             .padding(.top, cameraChromeSafeTop + 4)
             .padding(.leading, 16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else if onDismissOverlay != nil {
+        } else if onDismissOverlay != nil || isBlogEmbeddedCamera {
             Button {
                 closeCamera()
             } label: {
@@ -3620,6 +3624,7 @@ struct CameraCaptureView: View {
                     .background(.ultraThinMaterial)
                     .clipShape(Circle())
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("Close camera")
             .padding(.top, cameraChromeSafeTop + 4)
             .padding(.leading, 16)
@@ -4419,7 +4424,7 @@ struct CameraCaptureView: View {
         previewChromeHasVoiceMemo = false
     }
 
-    /// Treats X / swipe-to-dismiss as discard (per spec: "if it's not saved then removed").
+    /// Treats the X button as discard (per spec: "if it's not saved then removed").
     /// Adds a confirmation when the user has invested in caption / voice memo to avoid surprise data loss.
     private func requestPreviewClose() {
         guard let moment = captionModeResolvedMoment else {
@@ -4631,14 +4636,10 @@ struct CameraCaptureView: View {
         .disabled(cameraController.isRecordingMomentVideo)
     }
 
-    /// Gestures, bars, flash, and toast — kept separate from sheets/lifecycle to reduce type-check load.
-    private var inAppCameraChromeRoot: some View {
+    /// Shared camera chrome (flash, toast, nav) — pull gesture attached only on the live preview.
+    private var inAppCameraChromeShell: some View {
         inAppCameraPreviewStack
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 50, coordinateSpace: .global)
-                    .onEnded { handleInAppCameraPullGestureEnded($0) }
-            )
             .navigationBarBackButtonHidden(true)
             .toolbar(.hidden, for: .navigationBar)
             .preferredColorScheme(.dark)
@@ -4650,6 +4651,21 @@ struct CameraCaptureView: View {
                     .ignoresSafeArea()
             )
             .overlay(alignment: .bottom) { toastOverlay }
+    }
+
+    /// Gestures, bars, flash, and toast — kept separate from sheets/lifecycle to reduce type-check load.
+    private var inAppCameraChromeRoot: some View {
+        Group {
+            if isCaptionModeActive {
+                inAppCameraChromeShell
+            } else {
+                inAppCameraChromeShell
+                    .gesture(
+                        DragGesture(minimumDistance: 50, coordinateSpace: .global)
+                            .onEnded { handleInAppCameraPullGestureEnded($0) }
+                    )
+            }
+        }
     }
 
     /// Lifecycle and core camera-state updates.
