@@ -1,8 +1,9 @@
 import MapKit
+import Photos
 import SwiftUI
 import UIKit
 
-private enum PlacesVisitedPlaceGrid {
+enum PlacesVisitedPlaceGrid {
     static let columns: [GridItem] = [
         GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 12, alignment: .top),
         GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 12, alignment: .top)
@@ -72,6 +73,7 @@ struct PlacesVisitedStandaloneView: View {
 struct PlacesVisitedView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @ObservedObject private var everydayStore = EverydayMomentsStore.shared
+    @ObservedObject private var hiddenMyPlacesStore = HiddenMyPlacesStore.shared
 
     @Binding var searchText: String
     @Binding var showPlacesMap: Bool
@@ -93,6 +95,13 @@ struct PlacesVisitedView: View {
     @State private var isSearchActive: Bool = false
     @State private var scrollRestorationPlaceId: String?
 
+    @State private var isSelectMode = false
+    @State private var selectedPlaceIds: Set<String> = []
+    @State private var showHidePlacesConfirmation = false
+    @State private var showCreateBlogFromSelectionAlert = false
+    @State private var showHiddenPlacesSheet = false
+    @State private var placesDownloadToast: String?
+
     @State private var showShareYourPlacesSheet = false
     @State private var showPlacesShareTooManyAlert = false
     @State private var placesShareBlockedPlaceCount = 0
@@ -106,16 +115,24 @@ struct PlacesVisitedView: View {
 
     private let horizontalPadding: CGFloat = 16
 
+    private var visiblePlaces: [VisitedPlaceSummary] {
+        createdRecapStore.visitedPlaces.filter { !hiddenMyPlacesStore.isHidden($0.placeId) }
+    }
+
+    private var selectedPlaces: [VisitedPlaceSummary] {
+        visiblePlaces.filter { selectedPlaceIds.contains($0.placeId) }
+    }
+
     private var availableYears: [Int] {
-        Array(Set(createdRecapStore.visitedPlaces.map(\.year))).sorted(by: >)
+        Array(Set(visiblePlaces.map(\.year))).sorted(by: >)
     }
 
     private var availableCountries: [String] {
-        Array(Set(createdRecapStore.visitedPlaces.map(\.country))).sorted()
+        Array(Set(visiblePlaces.map(\.country))).sorted()
     }
 
     private var availableCategories: [String] {
-        let placesForYear = createdRecapStore.visitedPlaces.filter { place in
+        let placesForYear = visiblePlaces.filter { place in
             guard let y = selectedYear else { return true }
             return place.year == y
         }
@@ -141,7 +158,7 @@ struct PlacesVisitedView: View {
     }
 
     private var filteredPlaces: [VisitedPlaceSummary] {
-        createdRecapStore.visitedPlaces
+        visiblePlaces
             .filter { place in
                 if let y = selectedYear, place.year != y { return false }
                 if let c = selectedCountry {
@@ -180,19 +197,28 @@ struct PlacesVisitedView: View {
     @ViewBuilder
     private var placesScrollEmptyState: some View {
         VStack(spacing: 10) {
-            Text(createdRecapStore.visitedPlaces.isEmpty ? "No places yet" : "No matches")
+            Text(visiblePlaces.isEmpty ? "No places yet" : "No matches")
                 .font(.title3)
                 .fontWeight(.semibold)
 
-            Text(createdRecapStore.visitedPlaces.isEmpty
-                 ? "Capture everyday moments with the camera — they appear here automatically."
+            Text(visiblePlaces.isEmpty
+                 ? (createdRecapStore.visitedPlaces.isEmpty
+                    ? "Capture everyday moments with the camera — they appear here automatically."
+                    : "All places are hidden. Tap Manage to restore them.")
                  : "Try clearing filters.")
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 20)
 
-            if !createdRecapStore.visitedPlaces.isEmpty && hasActivePlaceFilters {
+            if hiddenMyPlacesStore.hiddenCount > 0 && visiblePlaces.isEmpty {
+                Button("Show hidden places") {
+                    showHiddenPlacesSheet = true
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            if !visiblePlaces.isEmpty && hasActivePlaceFilters {
                 Button("Clear filters") {
                     selectedYear = nil
                     selectedCountry = nil
@@ -228,14 +254,22 @@ struct PlacesVisitedView: View {
 
                     LazyVGrid(columns: PlacesVisitedPlaceGrid.columns, spacing: 12) {
                         ForEach(monthGroup.places) { place in
+                            let isSelected = selectedPlaceIds.contains(place.placeId)
                             PlaceVisitedCard(
                                 place: place,
+                                isSelectMode: isSelectMode,
+                                isSelected: isSelected,
                                 onTap: {
-                                    scrollRestorationPlaceId = place.id
-                                    openCategoryPickerWhenPlaceModalOpens = false
-                                    selectedPlaceForModal = place
+                                    if isSelectMode {
+                                        togglePlaceSelection(place.placeId)
+                                    } else {
+                                        scrollRestorationPlaceId = place.id
+                                        openCategoryPickerWhenPlaceModalOpens = false
+                                        selectedPlaceForModal = place
+                                    }
                                 },
                                 onAddCategoryTap: {
+                                    guard !isSelectMode else { return }
                                     scrollRestorationPlaceId = place.id
                                     openCategoryPickerWhenPlaceModalOpens = true
                                     selectedPlaceForModal = place
@@ -264,13 +298,28 @@ struct PlacesVisitedView: View {
         ZStack(alignment: .bottom) {
             placesListColumn
             placesSelectedPlaceOverlay
+            if isSelectMode && !filteredPlaces.isEmpty {
+                placesSelectModeBottomBar
+            }
+            if let toast = placesDownloadToast {
+                Text(toast)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.bottom, isSelectMode ? 88 : 120)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
     }
 
     private var placesListColumn: some View {
         VStack(alignment: .leading, spacing: 12) {
-            filterBar
-                .padding(.horizontal, horizontalPadding)
+            if !isSelectMode {
+                filterBar
+                    .padding(.horizontal, horizontalPadding)
+            }
             placesScrollReader
         }
         .dynamicTypeSize(.large)
@@ -283,7 +332,7 @@ struct PlacesVisitedView: View {
                     placesScrollContent
                 }
                 .padding(.horizontal, horizontalPadding)
-                .padding(.bottom, 12)
+                .padding(.bottom, isSelectMode ? 88 : 12)
             }
             .scrollDismissesKeyboard(.immediately)
             .onChange(of: selectedPlaceForModal) { _, newValue in
@@ -344,9 +393,27 @@ struct PlacesVisitedView: View {
 
     private var placesChromeLayer: some View {
         placesMainZStack
-            .modifier(PlacesVisitedBottomChromeInset(isHidden: shouldHidePlacesVisitedNavigationBar) {
+            .modifier(PlacesVisitedBottomChromeInset(isHidden: shouldHidePlacesVisitedNavigationBar || isSelectMode) {
                 placesBottomChrome
             })
+            .alert("Create trip blog?", isPresented: $showCreateBlogFromSelectionAlert) {
+                Button("Cancel", role: .cancel) {}
+                Button("Create Blog") {
+                    createTripBlogFromSelectedPlaces()
+                }
+            } message: {
+                Text("Selected places will become a trip blog in My Blogs.")
+            }
+            .alert("Hide selected places?", isPresented: $showHidePlacesConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Hide", role: .destructive) {
+                    hideSelectedPlaces()
+                }
+            } message: {
+                Text(selectedPlaceIds.count == 1
+                     ? "This place will be hidden from My Places. You can restore it anytime from Manage."
+                     : "These places will be hidden from My Places. You can restore them anytime from Manage.")
+            }
             .alert("Create trip blog?", isPresented: $showPromoteToBlogConfirmation) {
                 Button("Cancel", role: .cancel) { placePendingPromote = nil }
                 Button("Create Blog") {
@@ -373,11 +440,15 @@ struct PlacesVisitedView: View {
 
     private var placesShareSheetsLayer: some View {
         placesChromeLayer
+            .sheet(isPresented: $showHiddenPlacesSheet) {
+                HiddenMyPlacesSheet()
+                    .environmentObject(createdRecapStore)
+            }
             .sheet(isPresented: $showShareYourPlacesSheet) {
                 ShareYourPlacesSheet(
                     onPickDestination: { destination in
                         showShareYourPlacesSheet = false
-                        let placeCount = filteredPlaces.count
+                        let placeCount = selectedPlaces.count
                         let cap = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
                         if placeCount > cap {
                             placesShareBlockedPlaceCount = placeCount
@@ -478,13 +549,40 @@ struct PlacesVisitedView: View {
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
             if !isSearchActive, !filteredPlaces.isEmpty {
-                Button {
-                    showShareYourPlacesSheet = true
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .foregroundStyle(.primary)
+                if isSelectMode {
+                    Button("Done") {
+                        exitPlacesSelectMode()
+                    }
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                } else {
+                    if hiddenMyPlacesStore.hiddenCount > 0 {
+                        Menu {
+                            Button {
+                                isSelectMode = true
+                            } label: {
+                                Label("Select Places", systemImage: "checkmark.circle")
+                            }
+                            Button {
+                                showHiddenPlacesSheet = true
+                            } label: {
+                                Label("Hidden Places (\(hiddenMyPlacesStore.hiddenCount))", systemImage: "eye.slash")
+                            }
+                        } label: {
+                            Image(systemName: "checklist")
+                                .foregroundStyle(.primary)
+                        }
+                        .accessibilityLabel("Manage places")
+                    } else {
+                        Button {
+                            isSelectMode = true
+                        } label: {
+                            Image(systemName: "checklist")
+                                .foregroundStyle(.primary)
+                        }
+                        .accessibilityLabel("Manage places")
+                    }
                 }
-                .accessibilityLabel("Share places")
             }
             if isSearchActive {
                 Button("Done") {
@@ -531,13 +629,159 @@ struct PlacesVisitedView: View {
     /// Matches blog share: pick a format, then open the export UI directly. Uses current My Places filters as the place set; trim slides in Social Post Studio.
 
     private func beginPlacesShare(destination: PlacesShareDestination) {
-        guard let draft = PlacesShareDraftBuilder.makeShareDraft(selectedPlaces: filteredPlaces) else { return }
+        let places = isSelectMode ? selectedPlaces : filteredPlaces
+        guard !places.isEmpty else { return }
+        guard let draft = PlacesShareDraftBuilder.makeShareDraft(selectedPlaces: places) else { return }
         placesShareDraft = draft
         switch destination {
         case .socialCarousel, .pdf:
             showPlacesSocialStudio = true
         case .video:
             showPlacesVideoExport = true
+        }
+        if isSelectMode {
+            exitPlacesSelectMode()
+        }
+    }
+
+    private var placesSelectModeBottomBar: some View {
+        HStack {
+            Button {
+                saveSelectedPlacesToPhotoLibrary()
+            } label: {
+                Image(systemName: "square.and.arrow.down")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(selectedPlaceIds.isEmpty ? .gray : .primary)
+                    .frame(width: 56, height: 56)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+            }
+            .disabled(selectedPlaceIds.isEmpty)
+            .accessibilityLabel("Save selected photos to Photos")
+
+            Button {
+                showCreateBlogFromSelectionAlert = true
+            } label: {
+                Image(systemName: "book.closed.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(selectedPlaceIds.isEmpty ? .gray : .primary)
+                    .frame(width: 56, height: 56)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+            }
+            .disabled(selectedPlaceIds.isEmpty)
+            .accessibilityLabel("Create trip blog from selection")
+
+            Menu {
+                Button {
+                    showShareYourPlacesSheet = true
+                } label: {
+                    Label("Share Places", systemImage: "square.and.arrow.up")
+                }
+                .disabled(selectedPlaceIds.isEmpty)
+                if hiddenMyPlacesStore.hiddenCount > 0 {
+                    Divider()
+                    Button {
+                        showHiddenPlacesSheet = true
+                    } label: {
+                        Label("Hidden Places (\(hiddenMyPlacesStore.hiddenCount))", systemImage: "eye.slash")
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 56, height: 56)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+            }
+            .accessibilityLabel("More actions")
+
+            Spacer()
+
+            Text("\(selectedPlaceIds.count) Selected")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            Button {
+                showHidePlacesConfirmation = true
+            } label: {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(selectedPlaceIds.isEmpty ? .gray : .orange)
+                    .frame(width: 56, height: 56)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+            }
+            .disabled(selectedPlaceIds.isEmpty)
+            .accessibilityLabel("Hide selected places")
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 8)
+    }
+
+    private func togglePlaceSelection(_ placeId: String) {
+        if selectedPlaceIds.contains(placeId) {
+            selectedPlaceIds.remove(placeId)
+        } else {
+            selectedPlaceIds.insert(placeId)
+        }
+    }
+
+    private func exitPlacesSelectMode() {
+        isSelectMode = false
+        selectedPlaceIds = []
+    }
+
+    private func hideSelectedPlaces() {
+        hiddenMyPlacesStore.hide(placeIds: selectedPlaceIds)
+        exitPlacesSelectMode()
+    }
+
+    private func createTripBlogFromSelectedPlaces() {
+        let photos = selectedPlaces.flatMap(\.photos)
+        guard !photos.isEmpty else { return }
+        let title = selectedPlaces.count == 1 ? selectedPlaces[0].displayName : nil
+        _ = createdRecapStore.createTripBlogFromEverydayPhotos(photos, preferredTitle: title)
+        exitPlacesSelectMode()
+    }
+
+    private func saveSelectedPlacesToPhotoLibrary() {
+        let captureIds: [UUID] = selectedPlaces.flatMap(\.photos).compactMap { photo in
+            guard let lid = photo.localIdentifier else { return nil }
+            return AppCapturePhotoService.uuid(from: lid)
+        }
+        guard !captureIds.isEmpty else {
+            placesDownloadToast = "No downloadable photos in selection"
+            schedulePlacesDownloadToastDismiss()
+            return
+        }
+
+        Task {
+            var auth = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+            if auth == .notDetermined {
+                auth = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            }
+            guard auth == .authorized || auth == .limited else {
+                await MainActor.run {
+                    placesDownloadToast = "Allow Photos access to save"
+                    schedulePlacesDownloadToastDismiss()
+                }
+                return
+            }
+
+            AppCapturePhotoService.shared.saveCapturesToPhotoLibrary(captureIds: captureIds) { count, success in
+                if success, count > 0 {
+                    placesDownloadToast = "\(count) photo\(count == 1 ? "" : "s") saved to Photos"
+                } else {
+                    placesDownloadToast = "Couldn't save to Photos"
+                }
+                schedulePlacesDownloadToastDismiss()
+            }
+        }
+    }
+
+    private func schedulePlacesDownloadToastDismiss() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            placesDownloadToast = nil
         }
     }
 
@@ -697,7 +941,7 @@ struct PlacesVisitedView: View {
 /// Stateful wrapper around PlacePhotoModalView for the Places Visited full-screen overlay.
 /// Holds live per-photo caption state so the binding getter always reflects the latest value,
 /// and calls updatePhotoCaption on the store whenever a caption is committed.
-private struct PlaceVisitedPhotoModalWrapper: View {
+struct PlaceVisitedPhotoModalWrapper: View {
     @EnvironmentObject private var store: CreatedRecapBlogStore
 
     let place: VisitedPlaceSummary
@@ -796,6 +1040,8 @@ private struct PlaceVisitedPhotoModalWrapper: View {
 
 struct PlaceVisitedCard: View {
     let place: VisitedPlaceSummary
+    var isSelectMode: Bool = false
+    var isSelected: Bool = false
     var onTap: (() -> Void)? = nil
     var onAddCategoryTap: (() -> Void)? = nil
 
@@ -867,8 +1113,19 @@ struct PlaceVisitedCard: View {
         .clipShape(RoundedRectangle(appChromeBaseRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                .strokeBorder(isSelectMode && isSelected ? Color.blue : Color.primary.opacity(0.06), lineWidth: isSelectMode && isSelected ? 2 : 1)
         }
+        .overlay(alignment: .topTrailing) {
+            if isSelectMode {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .foregroundStyle(isSelected ? .blue : .white)
+                    .shadow(color: .black.opacity(0.5), radius: 2)
+                    .padding(10)
+                    .allowsHitTesting(false)
+            }
+        }
+        .opacity(isSelectMode && isSelected ? 0.85 : 1)
     }
 
     @ViewBuilder

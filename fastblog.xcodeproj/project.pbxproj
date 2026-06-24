@@ -267,6 +267,8 @@
 		BB00F007 /* ForgotUsernameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F008 /* ForgotUsernameView.swift */; };
 		BB00F00A /* PlacesShareDraftBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F009 /* PlacesShareDraftBuilder.swift */; };
 		BB00F00C /* PlacesShareViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F00B /* PlacesShareViews.swift */; };
+		BB00F00E /* HiddenMyPlacesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F00D /* HiddenMyPlacesStore.swift */; };
+		BB00F010 /* HiddenMyPlacesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F00F /* HiddenMyPlacesSheet.swift */; };
 		BB00M001 /* BackendDashboardAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00M002 /* BackendDashboardAnalytics.swift */; };
 		BBA0B001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA0B002 /* SettingsView.swift */; };
 		BBA0B003 /* BottomNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA0B004 /* BottomNavBar.swift */; };
@@ -554,6 +556,8 @@
 		BB00F008 /* ForgotUsernameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotUsernameView.swift; sourceTree = "<group>"; };
 		BB00F009 /* PlacesShareDraftBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesShareDraftBuilder.swift; sourceTree = "<group>"; };
 		BB00F00B /* PlacesShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesShareViews.swift; sourceTree = "<group>"; };
+		BB00F00D /* HiddenMyPlacesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenMyPlacesStore.swift; sourceTree = "<group>"; };
+		BB00F00F /* HiddenMyPlacesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenMyPlacesSheet.swift; sourceTree = "<group>"; };
 		BB00M002 /* BackendDashboardAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendDashboardAnalytics.swift; sourceTree = "<group>"; };
 		BBA0B002 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		BBA0B004 /* BottomNavBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomNavBar.swift; sourceTree = "<group>"; };
@@ -755,6 +759,7 @@
 				BB00013F /* MyBlogsProfileView.swift */,
 				BB00F001 /* PlacesVisitedView.swift */,
 				BB00F00B /* PlacesShareViews.swift */,
+				BB00F00F /* HiddenMyPlacesSheet.swift */,
 				BB00F003 /* PlaceVisitedDetailView.swift */,
 				BB000141 /* MyMapView.swift */,
 				BB000143 /* PhotoSelectView.swift */,
@@ -865,6 +870,7 @@
 				BB0001F6 /* AuthStateManager.swift */,
 				BB00017F /* CreatedRecapBlogStore.swift */,
 				BB00F009 /* PlacesShareDraftBuilder.swift */,
+				BB00F00D /* HiddenMyPlacesStore.swift */,
 				BB0003D2 /* BlogBackupService.swift */,
 				BB0003D4 /* MomentVideoTransfer.swift */,
 				BB000404 /* BlogDropService.swift */,
@@ -1076,6 +1082,8 @@
 				BB000104 /* fastblogApp.swift in Sources */,
 				BB00F002 /* PlacesVisitedView.swift in Sources */,
 				BB00F00C /* PlacesShareViews.swift in Sources */,
+				BB00F00E /* HiddenMyPlacesStore.swift in Sources */,
+				BB00F010 /* HiddenMyPlacesSheet.swift in Sources */,
 				BB00F004 /* PlaceVisitedDetailView.swift in Sources */,
 				BB00F00A /* PlacesShareDraftBuilder.swift in Sources */,
 				BB000106 /* MyBlogsProfileViewModel.swift in Sources */,

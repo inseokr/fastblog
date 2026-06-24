@@ -2899,6 +2899,8 @@ struct CameraCaptureView: View {
     @State private var zoomBaseScale: CGFloat = 1.0
     @State private var showZoomIndicator: Bool = false
     @State private var zoomIndicatorTask: Task<Void, Never>? = nil
+    @State private var captureDestinationOverlayMode: CaptureDestinationMode?
+    @State private var captureDestinationOverlayTask: Task<Void, Never>? = nil
     // Vibe recording
     @StateObject private var vibeRecorder = VibeRecorder()
     /// Photo / Vibe / Reel — persisted across camera sessions.
@@ -3534,7 +3536,7 @@ struct CameraCaptureView: View {
             .animation(.easeInOut(duration: 0.2), value: showZoomIndicator)
         }
 
-        // Reel stop mode (Auto / Manual) — top-center when in Reel mode
+        captureDestinationModeOverlay
         if isReelCaptureMode && !cameraController.isRecordingMomentVideo {
             VStack {
                 reelStopModePicker
@@ -4755,6 +4757,9 @@ struct CameraCaptureView: View {
             }
             pendingCameraTooltipTask?.cancel()
             pendingCameraTooltipTask = nil
+            captureDestinationOverlayTask?.cancel()
+            captureDestinationOverlayTask = nil
+            captureDestinationOverlayMode = nil
             cameraController.stopRunning()
             cameraController.cancelMomentVideoRecording()
             vibeRecorder.cancelAndDelete()
@@ -5087,6 +5092,62 @@ struct CameraCaptureView: View {
             .padding(.bottom, 24)
         }
         .padding(.top, 24)
+    }
+
+    @ViewBuilder private var captureDestinationModeOverlay: some View {
+        if let mode = captureDestinationOverlayMode {
+            ZStack {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        dismissCaptureDestinationOverlay()
+                    }
+
+                VStack(spacing: 12) {
+                    Image(systemName: mode.iconName)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 52, height: 52)
+                        .background(.ultraThinMaterial)
+                        .background(mode.usesTripAccent ? Color.cyan.opacity(0.22) : Color.clear)
+                        .clipShape(Circle())
+                        .overlay(
+                            Circle().stroke(
+                                mode.usesTripAccent ? Color.cyan.opacity(0.5) : Color.white.opacity(0.12),
+                                lineWidth: 1
+                            )
+                        )
+
+                    Text(mode.modeEnabledTitle)
+                        .font(.headline.weight(.semibold))
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+
+                    Text(mode.modeEnabledSubtitle)
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.72))
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 28)
+                .padding(.vertical, 24)
+                .frame(maxWidth: 280)
+                .background(
+                    RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
+                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        )
+                )
+                .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(mode.modeEnabledTitle). \(mode.modeEnabledSubtitle)")
+            }
+            .transition(.scale(scale: 0.92).combined(with: .opacity))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.easeInOut(duration: 0.25), value: captureDestinationOverlayMode)
+        }
     }
 
     @ViewBuilder private var toastOverlay: some View {
@@ -6017,6 +6078,7 @@ extension CameraCaptureView {
     private func handleCaptureDestinationToggle() {
         let switchingToDaily = isTripsCaptureDestination
         captureDestinationRaw = captureDestinationMode.toggled.rawValue
+        presentCaptureDestinationOverlay(for: captureDestinationMode)
         if switchingToDaily {
             clearTripBlogSessionRouting()
         } else {
@@ -6281,6 +6343,29 @@ extension CameraCaptureView {
             withAnimation(.easeInOut(duration: 0.2)) {
                 isShowingToast = false
             }
+        }
+    }
+
+    private func presentCaptureDestinationOverlay(for mode: CaptureDestinationMode) {
+        captureDestinationOverlayTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.25)) {
+            captureDestinationOverlayMode = mode
+        }
+        UIAccessibility.post(notification: .announcement, argument: mode.modeEnabledTitle)
+        captureDestinationOverlayTask = Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                dismissCaptureDestinationOverlay()
+            }
+        }
+    }
+
+    private func dismissCaptureDestinationOverlay() {
+        captureDestinationOverlayTask?.cancel()
+        captureDestinationOverlayTask = nil
+        withAnimation(.easeOut(duration: 0.2)) {
+            captureDestinationOverlayMode = nil
         }
     }
 

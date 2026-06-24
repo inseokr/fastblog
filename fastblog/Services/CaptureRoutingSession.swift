@@ -34,6 +34,22 @@ enum CaptureDestinationMode: String, CaseIterable {
     var toggled: CaptureDestinationMode {
         self == .daily ? .trips : .daily
     }
+
+    var modeEnabledTitle: String {
+        switch self {
+        case .daily: return "Daily captures enabled"
+        case .trips: return "Trip mode enabled"
+        }
+    }
+
+    var modeEnabledSubtitle: String {
+        switch self {
+        case .daily: return "Everyday moments save to My Places"
+        case .trips: return "Starts trip blogs when you travel"
+        }
+    }
+
+    var usesTripAccent: Bool { self == .trips }
 }
 
 /// Tracks per-outing capture routing (resets after 24h gap).
