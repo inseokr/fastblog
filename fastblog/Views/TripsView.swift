@@ -2102,19 +2102,14 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         }
     }
 
-    /// Records up to five seconds of video+audio to a temp file. Completion is called on the main queue.
+    /// Records up to five seconds of video (+ mic audio when permitted) to a temp file. Completion is called on the main queue.
     func recordMomentVideo(completion: @escaping (URL?) -> Void) {
-        ensureMicrophoneAuthorized { [weak self] granted in
+        ensureMicrophoneAuthorized { [weak self] _ in
             guard let self else {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
             self.sessionQueue.async {
-                guard granted else {
-                    print("[Reel Audio] recordMomentVideo: mic permission denied ✗")
-                    DispatchQueue.main.async { completion(nil) }
-                    return
-                }
                 self.recordMomentVideoLocked(completion: completion)
             }
         }
@@ -2138,10 +2133,8 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             DispatchQueue.main.async { completion(nil) }
             return
         }
-        guard hasAudioInput else {
-            print("[Reel Audio] startRecording: mic input missing — aborting ✗")
-            DispatchQueue.main.async { completion(nil) }
-            return
+        if !hasAudioInput {
+            print("[Reel Audio] startRecording: mic input missing — recording video without audio")
         }
 
         let url = FileManager.default.temporaryDirectory
@@ -2966,8 +2959,13 @@ struct CameraCaptureView: View {
     /// (those checks were stacking every layout pass and could freeze UI for seconds).
     @State private var previewChromeHasVibe = false
     @State private var previewChromeHasMomentVideo = false
-    @State private var showMomentVideoTrimSheet = false
+    @State private var momentVideoPreviewItem: MomentVideoPreviewItem?
     @State private var previewChromeHasVoiceMemo = false
+
+    private struct MomentVideoPreviewItem: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
 
@@ -3044,9 +3042,14 @@ struct CameraCaptureView: View {
     }
 
     private var latestCaptureWithPreview: CapturedMoment? {
-        let active: [CapturedMoment] = sessionMoments.isEmpty ? sessionCapturesForDisplay : sessionMoments
-        guard let last = active.last, last.previewImage != nil else { return nil }
+        guard let last = sessionCapturesForDisplay.last, last.previewImage != nil else { return nil }
         return last
+    }
+
+    /// Live reel attachment check for the frozen caption preview (avoids stale `@State` chrome flags).
+    private var captionPreviewHasMomentVideo: Bool {
+        guard let moment = captionModeResolvedMoment else { return false }
+        return resolvedMomentVideoURL(for: moment) != nil
     }
 
     private var captionModeResolvedMoment: CapturedMoment? {
@@ -3105,6 +3108,10 @@ struct CameraCaptureView: View {
         captionModeWantsKeyboard = false
         captionModePlaceTitle = "Captured Moment"
         captionModePlaceSubtitle = nil
+        if let resolved = sessionCapturesForDisplay.first(where: { $0.id == moment.id })
+            ?? sessionMoments.first(where: { $0.id == moment.id }) {
+            refreshPreviewChromeAttachmentFlags(for: resolved)
+        }
         withAnimation(.easeOut(duration: 0.2)) {
             isCaptionModeActive = true
         }
@@ -3151,7 +3158,7 @@ struct CameraCaptureView: View {
         previewCaptionFocused = false
         previewVibePlayer.stop()
         previewVoiceMemoPlayer.stop()
-        showMomentVideoTrimSheet = false
+        momentVideoPreviewItem = nil
         cameraController.startRunning()
         syncInAppCameraAudioSession()
 
@@ -3817,56 +3824,17 @@ struct CameraCaptureView: View {
 
                 Spacer()
 
-                if previewChromeHasMomentVideo || cameraController.isRecordingMomentVideo,
-                   let moment = captionModeResolvedMoment {
-                    Button {
-                        presentMomentVideoTrim(for: moment)
-                    } label: {
-                        Image(systemName: cameraController.isRecordingMomentVideo ? "video.fill" : "slider.horizontal.3")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 44, height: 44)
-                            .background(.ultraThinMaterial)
-                            .background(Color.orange.opacity(0.22))
-                            .clipShape(Circle())
-                            .overlay(Circle().stroke(Color.orange.opacity(0.55), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(cameraController.isRecordingMomentVideo && resolvedMomentVideoURL(for: moment) == nil)
-                    .accessibilityLabel(
-                        cameraController.isRecordingMomentVideo ? "Recording video clip" : "Trim video clip"
-                    )
-                }
-
-                if previewChromeHasVibe, let moment = captionModeResolvedMoment {
-                    let isPlaying = previewVibePlayer.isPlaying
-                    VStack(spacing: 10) {
-                        Button {
-                            if isPlaying {
-                                previewVibePlayer.stop()
-                            } else if let url = resolvedVibeURL(for: moment) {
-                                previewVibePlayer.play(url: url)
-                            }
-                        } label: {
-                            AtmosphericWaveformView(isActive: isPlaying)
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial)
-                                .background(isPlaying ? Color.cyan.opacity(0.32) : Color.white.opacity(0.06))
-                                .clipShape(Circle())
-                                .overlay(
-                                    Circle().stroke(
-                                        isPlaying
-                                            ? LinearGradient(colors: [.cyan, .green], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                            : LinearGradient(colors: [Color.white.opacity(0.2)], startPoint: .top, endPoint: .bottom),
-                                        lineWidth: isPlaying ? 2 : 1
-                                    )
-                                )
-                                .shadow(color: isPlaying ? .cyan.opacity(0.55) : .clear, radius: isPlaying ? 10 : 0)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(isPlaying ? "Stop vibe playback" : "Play vibe")
-
-                    }
+                if cameraController.isRecordingMomentVideo,
+                   captionModeResolvedMoment != nil {
+                    Image(systemName: "video.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial)
+                        .background(Color.orange.opacity(0.22))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.orange.opacity(0.55), lineWidth: 1))
+                        .accessibilityLabel("Recording video clip")
                 }
             }
             .padding(.horizontal, 16)
@@ -3898,10 +3866,14 @@ struct CameraCaptureView: View {
 
     /// Resolves the on-disk moment video URL for a captured moment (in-memory or persisted).
     private func resolvedMomentVideoURL(for moment: CapturedMoment) -> URL? {
-        if let url = moment.momentVideoURL { return url }
         if let lid = moment.localIdentifier,
-           let captureId = AppCapturePhotoService.uuid(from: lid) {
-            return AppCapturePhotoService.shared.momentVideoFileURL(for: captureId)
+           let captureId = AppCapturePhotoService.uuid(from: lid),
+           let persisted = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId) {
+            return persisted
+        }
+        if let url = moment.momentVideoURL,
+           FileManager.default.fileExists(atPath: url.path) {
+            return url
         }
         return nil
     }
@@ -3910,13 +3882,22 @@ struct CameraCaptureView: View {
         func persist(into moment: inout CapturedMoment) {
             if let lid = moment.localIdentifier,
                let captureId = AppCapturePhotoService.uuid(from: lid) {
-                try? AppCapturePhotoService.shared.saveMomentVideo(captureId: captureId, from: videoURL)
-                if let persisted = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId),
-                   videoURL.path != persisted.path {
-                    try? FileManager.default.removeItem(at: videoURL)
+                if AppCapturePhotoService.shared.momentVideoFileURL(for: captureId) == nil {
+                    do {
+                        try AppCapturePhotoService.shared.saveMomentVideo(captureId: captureId, from: videoURL)
+                    } catch {
+                        print("[Reel] saveMomentVideo failed for \(captureId): \(error)")
+                    }
                 }
-                moment.momentVideoURL = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId)
-            } else {
+                if let persisted = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId) {
+                    if videoURL.path != persisted.path {
+                        try? FileManager.default.removeItem(at: videoURL)
+                    }
+                    moment.momentVideoURL = persisted
+                } else if FileManager.default.fileExists(atPath: videoURL.path) {
+                    moment.momentVideoURL = videoURL
+                }
+            } else if FileManager.default.fileExists(atPath: videoURL.path) {
                 moment.momentVideoURL = videoURL
             }
         }
@@ -3939,89 +3920,15 @@ struct CameraCaptureView: View {
         }
     }
 
-    private var previewMomentVideoChipLabel: String {
-        guard let moment = captionModeResolvedMoment,
-              let url = resolvedMomentVideoURL(for: moment) else {
-            return "Video clip · tap to trim"
+    private func presentMomentVideoPlayer(for moment: CapturedMoment) {
+        guard let url = resolvedMomentVideoURL(for: moment) else {
+            showToast("Couldn't find this reel. Try recording again.")
+            return
         }
-        let seconds = AVURLAsset(url: url).duration.seconds
-        guard seconds.isFinite, seconds > 0 else {
-            return "Video clip · tap to trim"
-        }
-        return "\(MomentVideoTrimmer.formattedDuration(seconds)) clip · tap to trim"
-    }
-
-    private func presentMomentVideoTrim(for moment: CapturedMoment) {
-        guard resolvedMomentVideoURL(for: moment) != nil else { return }
         previewVibePlayer.stop()
         previewVoiceMemoPlayer.stop()
         InAppCameraAudioSession.deactivateForReelPlayback()
-        showMomentVideoTrimSheet = true
-    }
-
-    private func applyTrimmedMomentVideo(_ trimmedURL: URL) {
-        guard let moment = captionModeResolvedMoment,
-              let currentURL = resolvedMomentVideoURL(for: moment) else { return }
-        if trimmedURL.path == currentURL.path {
-            syncInAppCameraAudioSession()
-            return
-        }
-        attachMomentVideo(trimmedURL, toMomentId: moment.id)
-        updatePreviewImageFromTrimmedVideo(trimmedURL, momentId: moment.id)
-        syncInAppCameraAudioSession()
-    }
-
-    private func removeMomentVideoForCurrentPreview() {
-        guard let moment = captionModeResolvedMoment else { return }
-        removeMomentVideo(for: moment)
-        syncInAppCameraAudioSession()
-    }
-
-    private func removeMomentVideo(for moment: CapturedMoment) {
-        if let lid = moment.localIdentifier,
-           let captureId = AppCapturePhotoService.uuid(from: lid) {
-            AppCapturePhotoService.shared.deleteMomentVideo(captureId: captureId)
-        } else if let url = moment.momentVideoURL {
-            try? FileManager.default.removeItem(at: url)
-        }
-
-        func clear(into moment: inout CapturedMoment) {
-            moment.momentVideoURL = nil
-        }
-
-        if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == moment.id }) {
-            clear(into: &sessionCapturesForDisplay[idx])
-        }
-        if let idx = sessionMoments.firstIndex(where: { $0.id == moment.id }) {
-            clear(into: &sessionMoments[idx])
-        }
-
-        if captionModeMomentId == moment.id {
-            previewChromeHasMomentVideo = false
-            lastCaptureHasMomentVideo = false
-        }
-    }
-
-    private func updatePreviewImageFromTrimmedVideo(_ videoURL: URL, momentId: UUID) {
-        guard let image = thumbnailImage(fromVideoAt: videoURL) else { return }
-
-        func apply(into moment: inout CapturedMoment) {
-            moment.previewImage = image
-            if let lid = moment.localIdentifier,
-               let captureId = AppCapturePhotoService.uuid(from: lid) {
-                try? AppCapturePhotoService.shared.replaceCaptureImage(captureId: captureId, image: image)
-            }
-        }
-
-        if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) {
-            apply(into: &sessionCapturesForDisplay[idx])
-        }
-        if let idx = sessionMoments.firstIndex(where: { $0.id == momentId }) {
-            apply(into: &sessionMoments[idx])
-        }
-        if captionModeMomentId == momentId {
-            captionModeFrozenImage = image
-        }
+        momentVideoPreviewItem = MomentVideoPreviewItem(url: url)
     }
 
     /// Hold-to-record reel capture. Saves a still thumbnail + video clip, then opens caption preview.
@@ -4086,7 +3993,7 @@ struct CameraCaptureView: View {
     }
 
     private var captionModeCaptionPrompt: String {
-        if previewChromeHasMomentVideo {
+        if captionPreviewHasMomentVideo {
             return "Caption this moment — photo and 5s video clip"
         }
         return "Tap to write a story behind this photo"
@@ -4156,26 +4063,6 @@ struct CameraCaptureView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel(previewVoiceMemoPlayer.isPlaying ? "Pause voice memo" : "Play voice memo")
-                            }
-                            if previewChromeHasMomentVideo {
-                                Button {
-                                    guard let moment = captionModeResolvedMoment else { return }
-                                    presentMomentVideoTrim(for: moment)
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "video.fill")
-                                            .font(.system(size: 10, weight: .semibold))
-                                        Text(previewMomentVideoChipLabel)
-                                            .font(.system(size: 11, weight: .medium))
-                                    }
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(Color.orange.opacity(0.92), in: Capsule())
-                                    .shadow(color: .black.opacity(0.22), radius: 2, y: 1)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Trim short video clip")
                             }
                         }
                     }
@@ -4249,6 +4136,30 @@ struct CameraCaptureView: View {
             }
             .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
 
+            if previewChromeHasVibe, let moment = captionModeResolvedMoment {
+                let isPlaying = previewVibePlayer.isPlaying
+                previewVibeActionButton(isPlaying: isPlaying) {
+                    if isPlaying {
+                        previewVibePlayer.stop()
+                    } else if let url = resolvedVibeURL(for: moment) {
+                        previewVibePlayer.play(url: url)
+                    }
+                }
+                .accessibilityLabel(isPlaying ? "Stop vibe playback" : "Play vibe")
+            }
+
+            if captionPreviewHasMomentVideo, !cameraController.isRecordingMomentVideo {
+                previewActionCircleButton(
+                    systemImage: "play.fill",
+                    tint: .white,
+                    accent: .orange
+                ) {
+                    guard let moment = captionModeResolvedMoment else { return }
+                    presentMomentVideoPlayer(for: moment)
+                }
+                .accessibilityLabel("Play video clip")
+            }
+
             Spacer(minLength: 8)
 
             Button {
@@ -4282,6 +4193,7 @@ struct CameraCaptureView: View {
     private func previewActionCircleButton(
         systemImage: String,
         tint: Color,
+        accent: Color? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -4289,13 +4201,48 @@ struct CameraCaptureView: View {
                 Circle()
                     .fill(Color.black.opacity(0.52))
                     .frame(width: 50, height: 50)
+                if let accent {
+                    Circle()
+                        .fill(accent.opacity(0.28))
+                        .frame(width: 50, height: 50)
+                }
                 Circle()
-                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    .stroke((accent ?? .white).opacity(accent == nil ? 0.2 : 0.55), lineWidth: 1)
                     .frame(width: 50, height: 50)
                 Image(systemName: systemImage)
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(tint)
             }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func previewVibeActionButton(
+        isPlaying: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(Color.black.opacity(0.52))
+                    .frame(width: 50, height: 50)
+                if isPlaying {
+                    Circle()
+                        .fill(Color.cyan.opacity(0.28))
+                        .frame(width: 50, height: 50)
+                }
+                AtmosphericWaveformView(isActive: isPlaying)
+                    .frame(width: 50, height: 50)
+                Circle()
+                    .stroke(
+                        isPlaying
+                            ? LinearGradient(colors: [.cyan, .green], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            : LinearGradient(colors: [Color.white.opacity(0.2)], startPoint: .top, endPoint: .bottom),
+                        lineWidth: isPlaying ? 2 : 1
+                    )
+                    .frame(width: 50, height: 50)
+            }
+            .shadow(color: isPlaying ? .cyan.opacity(0.55) : .clear, radius: isPlaying ? 10 : 0)
         }
         .buttonStyle(.plain)
     }
@@ -4977,18 +4924,10 @@ struct CameraCaptureView: View {
             } message: {
                 Text("This removes only the vibe audio and keeps the photo.")
             }
-            .fullScreenCover(isPresented: $showMomentVideoTrimSheet) {
-                if let moment = captionModeResolvedMoment,
-                   let url = resolvedMomentVideoURL(for: moment) {
-                    MomentVideoTrimSheet(
-                        sourceURL: url,
-                        onApply: { trimmedURL in
-                            applyTrimmedMomentVideo(trimmedURL)
-                        },
-                        onCancel: {
-                            syncInAppCameraAudioSession()
-                        }
-                    )
+            .fullScreenCover(item: $momentVideoPreviewItem) { item in
+                MomentVideoFullScreenPlayer(url: item.url) {
+                    momentVideoPreviewItem = nil
+                    syncInAppCameraAudioSession()
                 }
             }
     }
@@ -5884,7 +5823,8 @@ extension CameraCaptureView {
         image: UIImage,
         timestamp: Date,
         vibeURL: URL?,
-        isContinuousReel: Bool = false
+        isContinuousReel: Bool = false,
+        momentVideoSourceURL: URL? = nil
     ) -> String? {
         let location = cameraController.currentLocation
         guard let captureId = try? AppCapturePhotoService.shared.saveCapture(
@@ -5893,6 +5833,17 @@ extension CameraCaptureView {
         if let url = vibeURL {
             try? AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: url)
             try? FileManager.default.removeItem(at: url)
+        }
+        if let videoURL = momentVideoSourceURL {
+            do {
+                try AppCapturePhotoService.shared.saveMomentVideo(captureId: captureId, from: videoURL)
+                if let persisted = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId),
+                   videoURL.path != persisted.path {
+                    try? FileManager.default.removeItem(at: videoURL)
+                }
+            } catch {
+                print("[Reel] persistInAppCameraCapture saveMomentVideo failed for \(captureId): \(error)")
+            }
         }
         if isContinuousReel {
             try? AppCapturePhotoService.shared.markAsContinuousReel(captureId: captureId)
@@ -5948,18 +5899,33 @@ extension CameraCaptureView {
         }
         var persistedLocalId: String?
         var remainingVibeURL = vibeURL
-        if let image = image, let lid = persistInAppCameraCapture(image: image, timestamp: timestamp, vibeURL: vibeURL, isContinuousReel: isContinuousReel) {
+        if let image = image, let lid = persistInAppCameraCapture(
+            image: image,
+            timestamp: timestamp,
+            vibeURL: vibeURL,
+            isContinuousReel: isContinuousReel,
+            momentVideoSourceURL: preattachedMomentVideoURL
+        ) {
             persistedLocalId = lid
             remainingVibeURL = nil
         }
         let location = cameraController.currentLocation.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
+        var initialMomentVideoURL: URL?
+        if let lid = persistedLocalId,
+           let captureId = AppCapturePhotoService.uuid(from: lid) {
+            initialMomentVideoURL = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId)
+                ?? preattachedMomentVideoURL
+        } else {
+            initialMomentVideoURL = preattachedMomentVideoURL
+        }
         let displayMoment = CapturedMoment(
             localIdentifier: persistedLocalId,
             timestamp: timestamp,
             caption: nil,
             previewImage: image,
             location: location,
-            vibeURL: remainingVibeURL
+            vibeURL: remainingVibeURL,
+            momentVideoURL: initialMomentVideoURL
         )
 
         routingSession.resetOutingIfNeeded(for: timestamp)

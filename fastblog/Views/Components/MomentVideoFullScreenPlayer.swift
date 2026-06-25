@@ -17,6 +17,7 @@ struct MomentVideoFullScreenPlayer: View {
 
     @State private var player: AVPlayer?
     @State private var itemObserver: AnyCancellable?
+    @State private var loadError: String?
 
     var body: some View {
         ZStack {
@@ -24,13 +25,20 @@ struct MomentVideoFullScreenPlayer: View {
 
             if let player {
                 FillVideoPlayerView(player: player)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .ignoresSafeArea()
+            } else if let loadError {
+                Text(loadError)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
             }
 
             VStack {
                 HStack {
                     Spacer()
-                    Button(action: onDismiss) {
+                    Button(action: dismissPlayer) {
                         Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.white)
@@ -44,22 +52,32 @@ struct MomentVideoFullScreenPlayer: View {
             }
         }
         .task(id: url) {
-            startPlayback()
+            await startPlayback()
         }
-        .onDisappear(perform: stopPlayback)
     }
 
-    private func startPlayback() {
+    @MainActor
+    private func startPlayback() async {
         stopPlayback()
+        loadError = nil
 
         guard FileManager.default.fileExists(atPath: url.path) else {
+            loadError = "This reel file is missing."
             print("[ReelPlay] file missing: \(url.path)")
             return
         }
 
         configureAudioSessionForMomentVideoPlayback()
 
-        let item = AVPlayerItem(url: url)
+        let asset = AVURLAsset(url: url)
+        let playable = (try? await asset.load(.isPlayable)) ?? false
+        guard playable else {
+            loadError = "Couldn't play this reel."
+            print("[ReelPlay] asset not playable: \(url.path)")
+            return
+        }
+
+        let item = AVPlayerItem(asset: asset)
         let p = AVPlayer(playerItem: item)
         p.isMuted = false
         p.volume = 1.0
@@ -73,6 +91,7 @@ struct MomentVideoFullScreenPlayer: View {
                 case .readyToPlay:
                     p.play()
                 case .failed:
+                    loadError = "Couldn't play this reel."
                     print("[ReelPlay] item failed: \(item.error?.localizedDescription ?? "unknown")")
                 case .unknown:
                     break
@@ -86,6 +105,11 @@ struct MomentVideoFullScreenPlayer: View {
         }
     }
 
+    private func dismissPlayer() {
+        stopPlayback()
+        onDismiss()
+    }
+
     private func stopPlayback() {
         player?.pause()
         player = nil
@@ -93,30 +117,19 @@ struct MomentVideoFullScreenPlayer: View {
     }
 
     /// Routes reel audio to the speaker for playback.
-    /// The AVCaptureSession is always stopped by `enterInPlaceCaptionMode()` before this view
-    /// appears, so `.playback` is always available. We do NOT stay in `.playAndRecord` here —
-    /// AVPlayer's audio output works correctly in `.playback` mode.
     private func configureAudioSessionForMomentVideoPlayback() {
         let session = AVAudioSession.sharedInstance()
-        // Release the camera's `.playAndRecord` session before switching to playback.
         try? session.setActive(false, options: .notifyOthersOnDeactivation)
         do {
             try session.setCategory(.playback, mode: .moviePlayback, options: [.defaultToSpeaker])
-            print("[ReelPlay] setCategory(.playback, .moviePlayback, .defaultToSpeaker) ✓")
         } catch {
-            print("[ReelPlay] setCategory(.playback) FAILED: \(error) — falling back to playAndRecord")
             try? session.setCategory(
                 .playAndRecord,
                 mode: .default,
                 options: [.defaultToSpeaker, .allowBluetooth]
             )
         }
-        do {
-            try session.setActive(true)
-            print("[ReelPlay] setActive(true) ✓")
-        } catch {
-            print("[ReelPlay] setActive(true) FAILED: \(error)")
-        }
+        try? session.setActive(true)
     }
 }
 
@@ -147,4 +160,9 @@ private final class FillPlayerUIView: UIView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        playerLayer.frame = bounds
+    }
 }

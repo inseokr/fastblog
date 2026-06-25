@@ -613,7 +613,6 @@ enum BlogVideoExportService {
 
     /// One stitched reel segment on the composition timeline (for per-clip portrait transforms).
     private struct StitchedClipSegment {
-        let track: AVMutableCompositionTrack
         let start: CMTime
         let duration: CMTime
         let layerTransform: CGAffineTransform
@@ -703,7 +702,6 @@ enum BlogVideoExportService {
 
             layerSegments.append(
                 StitchedClipSegment(
-                    track: videoTrack,
                     start: segmentStart,
                     duration: clip.duration,
                     layerTransform: clip.layerTransform
@@ -728,6 +726,7 @@ enum BlogVideoExportService {
 
         let videoComposition = makePortraitFillVideoComposition(
             renderSize: renderSize,
+            compositionTrack: videoTrack,
             segments: layerSegments,
             timelineDuration: cursor
         )
@@ -763,6 +762,7 @@ enum BlogVideoExportService {
 
     private static func makePortraitFillVideoComposition(
         renderSize: CGSize,
+        compositionTrack: AVCompositionTrack,
         segments: [StitchedClipSegment],
         timelineDuration: CMTime
     ) -> AVMutableVideoComposition {
@@ -770,26 +770,28 @@ enum BlogVideoExportService {
         videoComposition.renderSize = renderSize
         videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
 
-        let instruction = AVMutableVideoCompositionInstruction()
-        instruction.timeRange = CMTimeRange(start: .zero, duration: timelineDuration)
-
-        var layerInstructions = [AVMutableVideoCompositionLayerInstruction]()
-        layerInstructions.reserveCapacity(segments.count)
+        var instructions = [AVMutableVideoCompositionInstruction]()
+        instructions.reserveCapacity(segments.count)
 
         for segment in segments {
-            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: segment.track)
+            let instruction = AVMutableVideoCompositionInstruction()
+            instruction.timeRange = CMTimeRange(start: segment.start, duration: segment.duration)
+            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
             layer.setTransform(segment.layerTransform, at: segment.start)
-            layer.setOpacity(1, at: segment.start)
-            layerInstructions.append(layer)
+            instruction.layerInstructions = [layer]
+            instructions.append(instruction)
         }
 
-        if layerInstructions.isEmpty {
-            instruction.layerInstructions = []
-        } else {
-            instruction.layerInstructions = layerInstructions
+        if instructions.isEmpty {
+            let fallback = AVMutableVideoCompositionInstruction()
+            fallback.timeRange = CMTimeRange(start: .zero, duration: timelineDuration)
+            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
+            layer.setTransform(.identity, at: .zero)
+            fallback.layerInstructions = [layer]
+            instructions = [fallback]
         }
 
-        videoComposition.instructions = [instruction]
+        videoComposition.instructions = instructions
         return videoComposition
     }
 

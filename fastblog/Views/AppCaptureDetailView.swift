@@ -44,8 +44,13 @@ struct AppCaptureDetailView: View {
     // MARK: - Voice memo (separate player so it can play simultaneously with vibe is undesirable;
     // we explicitly stop vibe when starting voice memo playback and vice-versa).
     @StateObject private var voiceMemoPlayer = VibePlayer()
-    @State private var showMomentVideoTrimSheet = false
     @State private var downloadToast: String?
+
+    private struct MomentVideoPlaybackItem: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
+    @State private var momentVideoPlaybackItem: MomentVideoPlaybackItem?
 
     /// Restrict writing assist in full-screen gallery to iPhone 15+ hardware.
     private var supportsFullScreenWritingAssist: Bool {
@@ -219,81 +224,31 @@ struct AppCaptureDetailView: View {
                 )
             }
         }
-        .fullScreenCover(isPresented: $showMomentVideoTrimSheet) {
-            if let url = currentItem?.localMomentVideoURL {
-                MomentVideoTrimSheet(
-                    sourceURL: url,
-                    onApply: { trimmedURL in
-                        applyTrimmedMomentVideo(trimmedURL)
-                    },
-                    onCancel: { }
-                )
+        .fullScreenCover(item: $momentVideoPlaybackItem) { item in
+            MomentVideoFullScreenPlayer(url: item.url) {
+                momentVideoPlaybackItem = nil
             }
         }
     }
 
-    private func presentMomentVideoTrim() {
-        guard currentItem?.localMomentVideoURL != nil else { return }
+    private func resolvedMomentVideoURL(for item: AppCaptureItem) -> URL? {
+        if let persisted = AppCapturePhotoService.shared.momentVideoFileURL(for: item.id) {
+            return persisted
+        }
+        if let url = item.localMomentVideoURL,
+           FileManager.default.fileExists(atPath: url.path) {
+            return url
+        }
+        return nil
+    }
+
+    private func presentMomentVideoPlayer() {
+        guard let item = currentItem,
+              let url = resolvedMomentVideoURL(for: item) else { return }
         vibePlayer.stop()
         voiceMemoPlayer.stop()
         isVibeEnabled = false
-        showMomentVideoTrimSheet = true
-    }
-
-    private func applyTrimmedMomentVideo(_ trimmedURL: URL) {
-        guard items.indices.contains(currentIndex) else { return }
-        let captureId = items[currentIndex].id
-        if let currentURL = items[currentIndex].localMomentVideoURL,
-           trimmedURL.path == currentURL.path {
-            return
-        }
-        do {
-            try AppCapturePhotoService.shared.saveMomentVideo(captureId: captureId, from: trimmedURL)
-            if let persisted = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId),
-               trimmedURL.path != persisted.path {
-                try? FileManager.default.removeItem(at: trimmedURL)
-            }
-            items[currentIndex].localMomentVideoURL = AppCapturePhotoService.shared.momentVideoFileURL(for: captureId)
-            if let image = thumbnailImage(fromVideoAt: items[currentIndex].localMomentVideoURL ?? trimmedURL) {
-                try? AppCapturePhotoService.shared.replaceCaptureImage(captureId: captureId, image: image)
-                items[currentIndex].image = image
-            }
-            downloadToast = "Reel updated"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                if downloadToast == "Reel updated" {
-                    downloadToast = nil
-                }
-            }
-        } catch {
-            downloadToast = "Couldn't save trimmed reel"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                if downloadToast == "Couldn't save trimmed reel" {
-                    downloadToast = nil
-                }
-            }
-        }
-    }
-
-    private func removeMomentVideoForCurrentItem() {
-        guard items.indices.contains(currentIndex) else { return }
-        let captureId = items[currentIndex].id
-        AppCapturePhotoService.shared.deleteMomentVideo(captureId: captureId)
-        items[currentIndex].localMomentVideoURL = nil
-        downloadToast = "Reel removed"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if downloadToast == "Reel removed" {
-                downloadToast = nil
-            }
-        }
-    }
-
-    private func thumbnailImage(fromVideoAt url: URL) -> UIImage? {
-        let asset = AVURLAsset(url: url)
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        let time = CMTime(seconds: 0, preferredTimescale: 600)
-        guard let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) else { return nil }
-        return UIImage(cgImage: cgImage)
+        momentVideoPlaybackItem = MomentVideoPlaybackItem(url: url)
     }
 
     private var currentItem: AppCaptureItem? {
@@ -333,6 +288,7 @@ struct AppCaptureDetailView: View {
             }
             vibePlayer.stop()
             voiceMemoPlayer.stop()
+            momentVideoPlaybackItem = nil
             if isVibeEnabled, let url = items[safe: newIdx]?.localVibeURL {
                 vibePlayer.play(url: url)
             }
@@ -375,11 +331,11 @@ struct AppCaptureDetailView: View {
                     Spacer()
 
                     HStack(spacing: 10) {
-                        if currentItem?.localMomentVideoURL != nil {
+                        if currentItem.flatMap({ resolvedMomentVideoURL(for: $0) }) != nil {
                             Button {
-                                presentMomentVideoTrim()
+                                presentMomentVideoPlayer()
                             } label: {
-                                Image(systemName: "slider.horizontal.3")
+                                Image(systemName: "play.fill")
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(.white)
                                     .frame(width: 44, height: 44)
@@ -389,7 +345,7 @@ struct AppCaptureDetailView: View {
                                     .overlay(Circle().stroke(Color.orange.opacity(0.55), lineWidth: 1))
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Trim moment video")
+                            .accessibilityLabel("Play moment video")
                         }
                         if currentItem?.localVibeURL != nil {
                             let audioPlaying = vibePlayer.isPlaying
@@ -853,6 +809,7 @@ struct AppCaptureDetailView: View {
     private func deleteCurrentPhoto() {
         guard let item = currentItem else { return }
 
+        momentVideoPlaybackItem = nil
         vibePlayer.stop()
         voiceMemoPlayer.stop()
 
