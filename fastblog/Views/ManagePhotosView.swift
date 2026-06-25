@@ -813,17 +813,25 @@ private struct ManagePhotoDetailView: View {
             .offset(panOffset)
 
             if photo.isIncluded {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
-                    Text("Photo included in blog")
-                        .font(.system(size: 12, weight: .semibold))
+                VStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue)
+                            .frame(width: 72, height: 72)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 32, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .shadow(color: .black.opacity(0.35), radius: 6, x: 0, y: 2)
+
+                    Text("Photo Included in Blog")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(Color.blue, in: Capsule())
+                        .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
                 }
-                .foregroundColor(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Color.blue.opacity(0.85))
-                .appChromeCornerRadius(12)
                 .allowsHitTesting(false)
                 .transaction { $0.animation = nil }
             }

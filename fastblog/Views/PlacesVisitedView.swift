@@ -8,6 +8,31 @@ enum PlacesVisitedPlaceGrid {
         GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 12, alignment: .top),
         GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 12, alignment: .top)
     ]
+
+    /// Toolbar row in select mode (56pt buttons + vertical padding).
+    static let selectModeBottomBarHeight: CGFloat = 76
+
+    /// Pairs places for a fixed 2-column eager layout (avoids LazyVGrid stale selection chrome).
+    static func pairedRows<T>(_ items: [T]) -> [[T]] {
+        guard !items.isEmpty else { return [] }
+        return stride(from: 0, to: items.count, by: 2).map { index in
+            if index + 1 < items.count {
+                return [items[index], items[index + 1]]
+            }
+            return [items[index]]
+        }
+    }
+}
+
+/// Stable identity for a 2-column select-mode row.
+private struct PlaceSelectRow: Identifiable {
+    let id: String
+    let places: [VisitedPlaceSummary]
+
+    init(places: [VisitedPlaceSummary]) {
+        self.places = places
+        self.id = places.map(\.placeId).joined(separator: "|")
+    }
 }
 
 /// Hides map + search inset while the place viewer or share studio is full-screen.
@@ -20,6 +45,20 @@ private struct PlacesVisitedBottomChromeInset<Chrome: View>: ViewModifier {
             content
         } else {
             content.homeTabFloatingSearchInset(chrome: chrome)
+        }
+    }
+}
+
+/// Dismisses the search field when active — only installed while focused so it cannot steal grid taps.
+private struct PlacesVisitedSearchDismissTapModifier: ViewModifier {
+    let isActive: Bool
+    let onDismiss: () -> Void
+
+    func body(content: Content) -> some View {
+        if isActive {
+            content.onTapGesture(perform: onDismiss)
+        } else {
+            content
         }
     }
 }
@@ -233,9 +272,85 @@ struct PlacesVisitedView: View {
     }
 
     @ViewBuilder
+    private func placesSelectModeGrid(for places: [VisitedPlaceSummary]) -> some View {
+        let rowModels = PlacesVisitedPlaceGrid.pairedRows(places).map { row in
+            PlaceSelectRow(places: row)
+        }
+        VStack(spacing: 12) {
+            ForEach(rowModels) { rowModel in
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(rowModel.places) { place in
+                        placesSelectModeCell(for: place)
+                            .frame(maxWidth: .infinity)
+                    }
+                    if rowModel.places.count == 1 {
+                        Color.clear
+                            .frame(maxWidth: .infinity)
+                            .accessibilityHidden(true)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func placesSelectModeCell(for place: VisitedPlaceSummary) -> some View {
+        let isSelected = selectedPlaceIds.contains(place.placeId)
+        Button {
+            if selectedPlaceIds.contains(place.placeId) {
+                selectedPlaceIds.remove(place.placeId)
+            } else {
+                selectedPlaceIds.insert(place.placeId)
+            }
+        } label: {
+            PlaceVisitedCard(
+                place: place,
+                isSelectMode: true,
+                isSelected: isSelected
+            )
+            .overlay {
+                if isSelected {
+                    RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
+                        .strokeBorder(Color.blue, lineWidth: 3)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                placesSelectModeCheckmark(isSelected: isSelected)
+                    .padding(10)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .id("\(place.placeId)-\(isSelected)")
+        .accessibilityLabel(place.displayName)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private func placesSelectModeCheckmark(isSelected: Bool) -> some View {
+        if isSelected {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.title2)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, .blue)
+                .shadow(color: .black.opacity(0.55), radius: 3, y: 1)
+        } else {
+            ZStack {
+                Circle()
+                    .fill(Color.black.opacity(0.35))
+                Circle()
+                    .strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
+            }
+            .frame(width: 26, height: 26)
+            .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+        }
+    }
+
+    @ViewBuilder
     private func placesYearMonthList(for places: [VisitedPlaceSummary]) -> some View {
         let yearGroups = groupedByYearThenMonth(places)
-        LazyVStack(alignment: .leading, spacing: 0) {
+        // Eager VStack avoids LazyVStack + LazyVGrid hit-testing glitches on edge rows in select mode.
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(yearGroups, id: \.year) { yearGroup in
                 Text(String(yearGroup.year))
                     .font(.title)
@@ -245,37 +360,35 @@ struct PlacesVisitedView: View {
                     .padding(.bottom, 4)
 
                 ForEach(yearGroup.months, id: \.month) { monthGroup in
-                    Text(monthGroup.monthName)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 10)
-                        .padding(.bottom, 6)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(monthGroup.monthName)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 10)
+                            .padding(.bottom, 6)
 
-                    LazyVGrid(columns: PlacesVisitedPlaceGrid.columns, spacing: 12) {
-                        ForEach(monthGroup.places) { place in
-                            let isSelected = selectedPlaceIds.contains(place.placeId)
-                            PlaceVisitedCard(
-                                place: place,
-                                isSelectMode: isSelectMode,
-                                isSelected: isSelected,
-                                onTap: {
-                                    if isSelectMode {
-                                        togglePlaceSelection(place.placeId)
-                                    } else {
-                                        scrollRestorationPlaceId = place.id
-                                        openCategoryPickerWhenPlaceModalOpens = false
-                                        selectedPlaceForModal = place
-                                    }
-                                },
-                                onAddCategoryTap: {
-                                    guard !isSelectMode else { return }
-                                    scrollRestorationPlaceId = place.id
-                                    openCategoryPickerWhenPlaceModalOpens = true
-                                    selectedPlaceForModal = place
+                        if isSelectMode {
+                            placesSelectModeGrid(for: monthGroup.places)
+                        } else {
+                            LazyVGrid(columns: PlacesVisitedPlaceGrid.columns, spacing: 12) {
+                                ForEach(monthGroup.places) { place in
+                                    PlaceVisitedCard(
+                                        place: place,
+                                        onTap: {
+                                            scrollRestorationPlaceId = place.id
+                                            openCategoryPickerWhenPlaceModalOpens = false
+                                            selectedPlaceForModal = place
+                                        },
+                                        onAddCategoryTap: {
+                                            scrollRestorationPlaceId = place.id
+                                            openCategoryPickerWhenPlaceModalOpens = true
+                                            selectedPlaceForModal = place
+                                        }
+                                    )
+                                    .id(place.id)
                                 }
-                            )
-                            .id(place.id)
+                            }
                         }
                     }
                     .padding(.bottom, 12)
@@ -298,9 +411,6 @@ struct PlacesVisitedView: View {
         ZStack(alignment: .bottom) {
             placesListColumn
             placesSelectedPlaceOverlay
-            if isSelectMode && !filteredPlaces.isEmpty {
-                placesSelectModeBottomBar
-            }
             if let toast = placesDownloadToast {
                 Text(toast)
                     .font(.subheadline.weight(.medium))
@@ -308,10 +418,13 @@ struct PlacesVisitedView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
-                    .padding(.bottom, isSelectMode ? 88 : 120)
+                    .padding(.bottom, isSelectMode
+                        ? PlacesVisitedPlaceGrid.selectModeBottomBarHeight + 12
+                        : 120)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var placesListColumn: some View {
@@ -322,6 +435,7 @@ struct PlacesVisitedView: View {
             }
             placesScrollReader
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .dynamicTypeSize(.large)
     }
 
@@ -332,7 +446,15 @@ struct PlacesVisitedView: View {
                     placesScrollContent
                 }
                 .padding(.horizontal, horizontalPadding)
-                .padding(.bottom, isSelectMode ? 88 : 12)
+                .padding(.top, isSelectMode ? 16 : 0)
+                .padding(.bottom, isSelectMode ? PlacesVisitedPlaceGrid.selectModeBottomBarHeight + 24 : 12)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .scrollClipDisabled(isSelectMode)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if isSelectMode && !filteredPlaces.isEmpty {
+                    placesSelectModeBottomBar
+                }
             }
             .scrollDismissesKeyboard(.immediately)
             .onChange(of: selectedPlaceForModal) { _, newValue in
@@ -429,12 +551,10 @@ struct PlacesVisitedView: View {
             } message: {
                 Text("These everyday moments will become a trip blog in My Blogs.")
             }
-            .onTapGesture {
-                if isSearchFocused {
-                    isSearchFocused = false
-                    isSearchActive = false
-                }
-            }
+            .modifier(PlacesVisitedSearchDismissTapModifier(isActive: isSearchFocused) {
+                isSearchFocused = false
+                isSearchActive = false
+            })
             .animation(.easeInOut(duration: 0.38), value: selectedPlaceForModal?.id)
     }
 
@@ -532,7 +652,13 @@ struct PlacesVisitedView: View {
         .onChange(of: selectedPlaceForModal?.id) { _, _ in syncHomeBottomNavSuppression() }
         .onChange(of: revealNavDuringModalDismiss) { _, _ in syncHomeBottomNavSuppression() }
         .onChange(of: showPlacesSocialStudio) { _, _ in syncHomeBottomNavSuppression() }
-        .onChange(of: isSelectMode) { _, _ in syncHomeBottomNavSuppression() }
+        .onChange(of: isSelectMode) { _, active in
+            if active {
+                isSearchFocused = false
+                isSearchActive = false
+            }
+            syncHomeBottomNavSuppression()
+        }
         .onAppear { syncHomeBottomNavSuppression() }
         .onDisappear { suppressHomeBottomNav = false }
     }
@@ -717,15 +843,9 @@ struct PlacesVisitedView: View {
             .accessibilityLabel("Hide selected places")
         }
         .padding(.horizontal, 20)
+        .padding(.top, 8)
         .padding(.bottom, 8)
-    }
-
-    private func togglePlaceSelection(_ placeId: String) {
-        if selectedPlaceIds.contains(placeId) {
-            selectedPlaceIds.remove(placeId)
-        } else {
-            selectedPlaceIds.insert(placeId)
-        }
+        .safeAreaPadding(.bottom, 4)
     }
 
     private func exitPlacesSelectMode() {
@@ -816,7 +936,11 @@ struct PlacesVisitedView: View {
                     let date = cal.date(from: comps) ?? Date()
                     return formatter.string(from: date)
                 }()
-                return MonthGroup(month: month, monthName: name, places: byMonth[month]!)
+                return MonthGroup(
+                    month: month,
+                    monthName: name,
+                    places: byMonth[month]!.sorted(by: { $0.latestVisitDate > $1.latestVisitDate })
+                )
             }
             return YearGroup(year: year, months: monthGroups)
         }
@@ -1072,10 +1196,56 @@ struct PlaceVisitedCard: View {
                 .fill(Color.secondary.opacity(0.12))
         )
         .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Capsule(style: .continuous))
     }
 
     var body: some View {
+        Group {
+            if isSelectMode {
+                selectModeCardContent
+            } else {
+                interactiveCardContent
+            }
+        }
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .frame(height: Self.layoutHeight, alignment: .topLeading)
+        .padding(Self.cardPadding)
+        .background {
+            if isSelectMode && isSelected {
+                RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
+                    .fill(Color.blue.opacity(0.28))
+            }
+        }
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 18, style: .continuous))
+        .overlay {
+            if !isSelectMode || !isSelected {
+                RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+            }
+        }
+    }
+
+    private var selectModeCardContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            heroThumbnail
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .frame(height: Self.heroHeight)
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
+                .overlay(alignment: .topLeading) {
+                    heroDateBadge
+                }
+
+            VStack(alignment: .leading, spacing: 4) {
+                titleLabels
+                    .frame(height: Self.titleBlockHeight, alignment: .topLeading)
+
+                categoryRow
+                    .frame(height: Self.categoryRowHeight, alignment: .leading)
+                    .clipped()
+            }
+        }
+    }
+
+    private var interactiveCardContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button { onTap?() } label: {
                 heroThumbnail
@@ -1088,16 +1258,7 @@ struct PlaceVisitedCard: View {
             .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
             .contentShape(Rectangle())
             .overlay(alignment: .topLeading) {
-                Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
-                    .font(.caption2)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.black.opacity(0.55))
-                    .clipShape(Capsule())
-                    .padding(10)
-                    .allowsHitTesting(false)
+                heroDateBadge
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -1109,30 +1270,23 @@ struct PlaceVisitedCard: View {
                     .clipped()
             }
         }
-        .frame(minWidth: 0, maxWidth: .infinity)
-        .frame(height: Self.layoutHeight, alignment: .topLeading)
-        .padding(Self.cardPadding)
-        .clipShape(RoundedRectangle(appChromeBaseRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
-                .strokeBorder(isSelectMode && isSelected ? Color.blue : Color.primary.opacity(0.06), lineWidth: isSelectMode && isSelected ? 2 : 1)
-        }
-        .overlay(alignment: .topTrailing) {
-            if isSelectMode {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title2)
-                    .foregroundStyle(isSelected ? .blue : .white)
-                    .shadow(color: .black.opacity(0.5), radius: 2)
-                    .padding(10)
-                    .allowsHitTesting(false)
-            }
-        }
-        .opacity(isSelectMode && isSelected ? 0.85 : 1)
     }
 
-    @ViewBuilder
-    private var titleBlock: some View {
-        let labels = VStack(alignment: .leading, spacing: 4) {
+    private var heroDateBadge: some View {
+        Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
+            .font(.caption2)
+            .fontWeight(.semibold)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.black.opacity(0.55))
+            .clipShape(Capsule())
+            .padding(10)
+            .allowsHitTesting(false)
+    }
+
+    private var titleLabels: some View {
+        VStack(alignment: .leading, spacing: 4) {
             Text(place.displayName)
                 .font(.headline)
                 .foregroundStyle(.primary)
@@ -1146,15 +1300,18 @@ struct PlaceVisitedCard: View {
                 .truncationMode(.tail)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
+    @ViewBuilder
+    private var titleBlock: some View {
         if let onTap {
             Button(action: onTap) {
-                labels
+                titleLabels
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         } else {
-            labels
+            titleLabels
         }
     }
 
@@ -1164,9 +1321,13 @@ struct PlaceVisitedCard: View {
             PlacePOICategoryBadge(rawCategory: raw)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
+        } else if isSelectMode {
+            addCategoryPillLabel
+                .allowsHitTesting(false)
         } else if let onAddCategoryTap {
             Button(action: onAddCategoryTap) {
                 addCategoryPillLabel
+                    .contentShape(Capsule(style: .continuous))
             }
             .buttonStyle(.plain)
         } else {
