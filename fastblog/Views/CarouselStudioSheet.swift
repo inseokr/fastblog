@@ -12886,7 +12886,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
     }
 
     private var slidesManagementNavigationSubtitle: String {
-        "Tap a card to edit or remove from the carousel"
+        "Edit slides and choose what appears in your post"
     }
 
     /// Day index (1-based) for grouping rows in Slides Management, when derivable from the slide or stop.
@@ -13055,7 +13055,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
                     .foregroundStyle(.tertiary)
             }
             if removedPlaceCount > 0 {
-                Text("\(removedPlaceCount) photo\(removedPlaceCount == 1 ? "" : "s") removed from the carousel — restore from dimmed cards below.")
+                Text("\(removedPlaceCount) photo\(removedPlaceCount == 1 ? "" : "s") hidden from your post — tap a faded card below to add \(removedPlaceCount == 1 ? "it" : "them") back.")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -13375,11 +13375,11 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
     private var slidesManagementTipBody: String {
         if onRestoreExcludedPlacePhoto != nil, hasSlideRemovalActions {
-            "Cards look like the Download slide picker. Tap the preview to open that slide, or tap the check in the corner to remove. Dimmed cards: tap the card to add a photo back. A remove confirmation may still appear."
+            "Tap a slide to edit it in the carousel. Tap the checkmark on a place or map to hide it from your post—your photos stay in the trip. Faded slides are hidden; tap one to add it back."
         } else if hasSlideRemovalActions {
-            "Same card style as Download. Tap a preview to open in the editor; tap the check in the corner to remove a place or map. A confirmation may appear."
+            "Tap a slide to edit it in the carousel. Tap the checkmark on a place or map to hide it from your post. Hidden slides stay on this page—tap a faded card to add it back."
         } else {
-            "Tap a preview to open that slide in the editor."
+            "Tap any slide to open it in the editor."
         }
     }
 
