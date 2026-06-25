@@ -835,7 +835,10 @@ struct BlogVideoExportOptionsSheet: View {
                 progress = 0
             } catch {
                 isExporting = false
-                exportError = error.localizedDescription
+                let ns = error as NSError
+                let message = "[\(ns.domain) \(ns.code)] \(ns.localizedDescription)"
+                exportError = message
+                print("[VideoExportSheet] export error: \(message)\nUserInfo: \(ns.userInfo)")
                 showError = true
             }
         }

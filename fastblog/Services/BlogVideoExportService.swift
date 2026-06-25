@@ -301,14 +301,6 @@ enum BlogVideoExportService {
             throw ExportError.noReelsToExport
         }
 
-        if effective.videoStyle == .simpleStitch {
-            return try await exportSimpleStitchVideo(
-                draft: draft,
-                options: effective,
-                progressHandler: progressHandler
-            )
-        }
-
         let logicalSize = SocialVerticalVideoExportMetrics.logicalSize
         let pixelSize = CGSize(width: logicalSize.width * 2, height: logicalSize.height * 2)
 
@@ -414,14 +406,14 @@ enum BlogVideoExportService {
         try await CinematicBlogVideoBuilder.buildFrames(
             from: draft,
             logicalSize: logicalSize,
-            secondsPerPhoto: options.secondsPerSlide,
-            showPhotoCaptions: options.showPhotoCaptions,
-            maxPhotosPerPlace: options.maxPhotosPerPlace,
-            includedPlaceIDs: options.includedPlaceIDs,
-            includedReelPhotoIDs: options.includedReelPhotoIDs,
-            showDayItineraryCards: options.showDayItineraryCards,
-            showMapFrames: options.showMapFrames,
-            videoStyle: options.videoStyle,
+            secondsPerPhoto: effective.secondsPerSlide,
+            showPhotoCaptions: effective.showPhotoCaptions,
+            maxPhotosPerPlace: effective.maxPhotosPerPlace,
+            includedPlaceIDs: effective.includedPlaceIDs,
+            includedReelPhotoIDs: effective.includedReelPhotoIDs,
+            showDayItineraryCards: effective.showDayItineraryCards,
+            showMapFrames: effective.showMapFrames,
+            videoStyle: effective.videoStyle,
             reelsOnly: true,
             progressHandler: { p in progressHandler?(p * 0.85) },
             momentAudioHandler: { url, transitionSeconds, clipSeconds in
@@ -464,7 +456,7 @@ enum BlogVideoExportService {
         try? FileManager.default.removeItem(at: finalURL)
 
         let musicURL: URL? = {
-            guard let filename = options.resolvedMusicFilenameForMix(),
+            guard let filename = effective.resolvedMusicFilenameForMix(),
                   let track = SlideshowBundledMusicLibrary.tracksInAppBundle().first(where: { $0.filename == filename })
             else { return nil }
             return track.fileURL
@@ -476,7 +468,7 @@ enum BlogVideoExportService {
                     videoURL: tempVideoURL,
                     musicURL: musicURL,
                     momentSegments: momentAudioSegments,
-                    musicVolume: options.musicVolume,
+                    musicVolume: effective.musicVolume,
                     outputURL: finalURL,
                     progressHandler: { muxProgress in
                         progressHandler?(0.85 + muxProgress * 0.14)
@@ -485,7 +477,12 @@ enum BlogVideoExportService {
             } catch {
                 // Prefer a silent video over failing the whole export if audio mux fails.
                 try? FileManager.default.removeItem(at: finalURL)
-                try FileManager.default.moveItem(at: tempVideoURL, to: finalURL)
+                if !FileManager.default.fileExists(atPath: finalURL.path) {
+                    try? FileManager.default.copyItem(at: tempVideoURL, to: finalURL)
+                }
+                guard FileManager.default.fileExists(atPath: finalURL.path) else {
+                    throw ExportError.writerFailed("Video was encoded but could not be saved.")
+                }
             }
             removeTempVideoOnExit = false
             try? FileManager.default.removeItem(at: tempVideoURL)
@@ -497,302 +494,6 @@ enum BlogVideoExportService {
         momentAudioSegments.removeAll(keepingCapacity: false)
         progressHandler?(1.0)
         return finalURL
-    }
-
-    // MARK: - Simple stitch (native clip composition)
-
-    /// Ordered moment-reel file URLs matching export filter / selection (same order as `buildSimpleStitchFrames`).
-    private static func orderedMomentClipURLs(
-        draft: RecapBlogDetail,
-        includedPlaceIDs: Set<UUID>?,
-        includedReelPhotoIDs: Set<UUID>?
-    ) -> [URL] {
-        let days: [RecapBlogDay] = draft.days.compactMap { day in
-            let filteredStops: [PlaceStop]
-            if let ids = includedPlaceIDs {
-                filteredStops = day.placeStops.filter { ids.contains($0.id) }
-            } else {
-                filteredStops = day.placeStops
-            }
-            let stops = filteredStops.filter {
-                !CinematicBlogVideoBuilder.exportableReelPhotos(
-                    for: $0,
-                    includedReelPhotoIDs: includedReelPhotoIDs
-                ).isEmpty
-            }
-            guard !stops.isEmpty else { return nil }
-            var filtered = day
-            filtered.placeStops = stops
-            return filtered
-        }
-
-        return days.flatMap { day in
-            day.placeStops.flatMap { stop in
-                CinematicBlogVideoBuilder.exportableReelPhotos(
-                    for: stop,
-                    includedReelPhotoIDs: includedReelPhotoIDs
-                ).compactMap { MomentVideoTransfer.momentVideoURL(for: $0) }
-            }
-        }
-    }
-
-    /// Stitches selected reels back-to-back via `AVMutableComposition` (no frame re-encode) for smooth playback.
-    @MainActor
-    private static func exportSimpleStitchVideo(
-        draft: RecapBlogDetail,
-        options: BlogVideoExportOptions,
-        progressHandler: ((Double) -> Void)? = nil
-    ) async throws -> URL {
-        defer { releaseExportWorkingSet() }
-
-        let clipURLs = orderedMomentClipURLs(
-            draft: draft,
-            includedPlaceIDs: options.includedPlaceIDs,
-            includedReelPhotoIDs: options.includedReelPhotoIDs
-        )
-        guard !clipURLs.isEmpty else { throw ExportError.noReelsToExport }
-
-        progressHandler?(0.05)
-
-        let tempVideoURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString + ".mp4")
-
-        var removeTempVideoOnExit = true
-        defer {
-            if removeTempVideoOnExit {
-                try? FileManager.default.removeItem(at: tempVideoURL)
-            }
-        }
-
-        try await composeMomentClipsIntoVideo(
-            clipURLs: clipURLs,
-            outputURL: tempVideoURL,
-            progressHandler: { p in progressHandler?(0.05 + p * 0.80) }
-        )
-        progressHandler?(0.85)
-        try Task.checkCancellation()
-
-        let safeTitle = draft.title.replacingOccurrences(of: "/", with: "-")
-        let finalURL = URL.documentsDirectory
-            .appendingPathComponent("\(safeTitle) | Blog Video.mp4")
-        try? FileManager.default.removeItem(at: finalURL)
-
-        let musicURL: URL? = {
-            guard let filename = options.resolvedMusicFilenameForMix(),
-                  let track = SlideshowBundledMusicLibrary.tracksInAppBundle().first(where: { $0.filename == filename })
-            else { return nil }
-            return track.fileURL
-        }()
-
-        if musicURL != nil {
-            do {
-                try await muxAudioOntoVideo(
-                    videoURL: tempVideoURL,
-                    musicURL: musicURL,
-                    momentSegments: [],
-                    musicVolume: options.musicVolume,
-                    outputURL: finalURL,
-                    progressHandler: { muxProgress in
-                        progressHandler?(0.85 + muxProgress * 0.14)
-                    }
-                )
-            } catch {
-                try? FileManager.default.removeItem(at: finalURL)
-                try FileManager.default.moveItem(at: tempVideoURL, to: finalURL)
-            }
-            removeTempVideoOnExit = false
-            try? FileManager.default.removeItem(at: tempVideoURL)
-        } else {
-            try FileManager.default.moveItem(at: tempVideoURL, to: finalURL)
-            removeTempVideoOnExit = false
-        }
-
-        progressHandler?(1.0)
-        return finalURL
-    }
-
-    /// One stitched reel segment on the composition timeline (for per-clip portrait transforms).
-    private struct StitchedClipSegment {
-        let start: CMTime
-        let duration: CMTime
-        let layerTransform: CGAffineTransform
-    }
-
-    private struct LoadedMomentClip {
-        let url: URL
-        let duration: CMTime
-        let sourceVideo: AVAssetTrack
-        let sourceAudio: AVAssetTrack?
-        let layerTransform: CGAffineTransform
-    }
-
-    /// Inserts each clip’s video (and clip audio when present) back-to-back with hard cuts — no opacity ramps.
-    private static func composeMomentClipsIntoVideo(
-        clipURLs: [URL],
-        outputURL: URL,
-        progressHandler: ((Double) -> Void)? = nil
-    ) async throws {
-        try? FileManager.default.removeItem(at: outputURL)
-
-        let renderSize = SocialVerticalVideoExportMetrics.exportPixelSize
-
-        var loadedClips = [LoadedMomentClip]()
-        loadedClips.reserveCapacity(clipURLs.count)
-
-        for (index, url) in clipURLs.enumerated() {
-            try Task.checkCancellation()
-            let asset = AVURLAsset(
-                url: url,
-                options: [AVURLAssetPreferPreciseDurationAndTimingKey: true]
-            )
-            _ = try await asset.load(.isReadable)
-            let duration = try await asset.load(.duration)
-            guard CMTimeCompare(duration, .zero) > 0 else { continue }
-
-            let sourceVideoTracks = try await asset.loadTracks(withMediaType: .video)
-            guard let sourceVideo = sourceVideoTracks.first else { continue }
-
-            let naturalSize = try await sourceVideo.load(.naturalSize)
-            let preferredTransform = try await sourceVideo.load(.preferredTransform)
-            let layerTransform = layerTransformFillingVerticalCanvas(
-                naturalSize: naturalSize,
-                preferredTransform: preferredTransform,
-                renderSize: renderSize
-            )
-            let sourceAudioTracks = try await asset.loadTracks(withMediaType: .audio)
-            loadedClips.append(
-                LoadedMomentClip(
-                    url: url,
-                    duration: duration,
-                    sourceVideo: sourceVideo,
-                    sourceAudio: sourceAudioTracks.first,
-                    layerTransform: layerTransform
-                )
-            )
-            progressHandler?(Double(index + 1) / Double(clipURLs.count) * 0.35)
-            if index % 4 == 3 { await Task.yield() }
-        }
-
-        guard !loadedClips.isEmpty else { throw ExportError.noReelsToExport }
-
-        let composition = AVMutableComposition()
-        guard let videoTrack = composition.addMutableTrack(
-            withMediaType: .video,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-        ) else { throw ExportError.writerSetupFailed }
-
-        let audioTrack = composition.addMutableTrack(
-            withMediaType: .audio,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-        )
-
-        var layerSegments = [StitchedClipSegment]()
-        layerSegments.reserveCapacity(loadedClips.count)
-        var cursor = CMTime.zero
-
-        for (index, clip) in loadedClips.enumerated() {
-            try Task.checkCancellation()
-
-            let segmentStart = cursor
-            try videoTrack.insertTimeRange(
-                CMTimeRange(start: .zero, duration: clip.duration),
-                of: clip.sourceVideo,
-                at: cursor
-            )
-
-            layerSegments.append(
-                StitchedClipSegment(
-                    start: segmentStart,
-                    duration: clip.duration,
-                    layerTransform: clip.layerTransform
-                )
-            )
-
-            if let audioTrack, let sourceAudio = clip.sourceAudio {
-                try audioTrack.insertTimeRange(
-                    CMTimeRange(start: .zero, duration: clip.duration),
-                    of: sourceAudio,
-                    at: cursor
-                )
-            }
-
-            cursor = CMTimeAdd(cursor, clip.duration)
-            progressHandler?(0.35 + Double(index + 1) / Double(loadedClips.count) * 0.40)
-            if index % 4 == 3 { await Task.yield() }
-        }
-
-        guard CMTimeCompare(cursor, .zero) > 0 else { throw ExportError.noReelsToExport }
-        progressHandler?(0.75)
-
-        let videoComposition = makePortraitFillVideoComposition(
-            renderSize: renderSize,
-            compositionTrack: videoTrack,
-            segments: layerSegments,
-            timelineDuration: cursor
-        )
-
-        try await runAssetExportSession(
-            asset: composition,
-            outputURL: outputURL,
-            fileType: .mp4,
-            presetName: AVAssetExportPresetHighestQuality,
-            videoComposition: videoComposition
-        )
-        progressHandler?(1.0)
-    }
-
-    /// Aspect-fills source video into a fixed 9:16 canvas, honoring `preferredTransform`.
-    private static func layerTransformFillingVerticalCanvas(
-        naturalSize: CGSize,
-        preferredTransform: CGAffineTransform,
-        renderSize: CGSize
-    ) -> CGAffineTransform {
-        var displayRect = CGRect(origin: .zero, size: naturalSize).applying(preferredTransform)
-        let displayW = abs(displayRect.width)
-        let displayH = abs(displayRect.height)
-        guard displayW > 0, displayH > 0 else { return preferredTransform }
-
-        let scale = max(renderSize.width / displayW, renderSize.height / displayH)
-        var transform = preferredTransform.concatenating(CGAffineTransform(scaleX: scale, y: scale))
-        displayRect = CGRect(origin: .zero, size: naturalSize).applying(transform)
-        let dx = (renderSize.width - abs(displayRect.width)) / 2 - displayRect.minX
-        let dy = (renderSize.height - abs(displayRect.height)) / 2 - displayRect.minY
-        return transform.concatenating(CGAffineTransform(translationX: dx, y: dy))
-    }
-
-    private static func makePortraitFillVideoComposition(
-        renderSize: CGSize,
-        compositionTrack: AVCompositionTrack,
-        segments: [StitchedClipSegment],
-        timelineDuration: CMTime
-    ) -> AVMutableVideoComposition {
-        let videoComposition = AVMutableVideoComposition()
-        videoComposition.renderSize = renderSize
-        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
-
-        var instructions = [AVMutableVideoCompositionInstruction]()
-        instructions.reserveCapacity(segments.count)
-
-        for segment in segments {
-            let instruction = AVMutableVideoCompositionInstruction()
-            instruction.timeRange = CMTimeRange(start: segment.start, duration: segment.duration)
-            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
-            layer.setTransform(segment.layerTransform, at: segment.start)
-            instruction.layerInstructions = [layer]
-            instructions.append(instruction)
-        }
-
-        if instructions.isEmpty {
-            let fallback = AVMutableVideoCompositionInstruction()
-            fallback.timeRange = CMTimeRange(start: .zero, duration: timelineDuration)
-            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
-            layer.setTransform(.identity, at: .zero)
-            fallback.layerInstructions = [layer]
-            instructions = [fallback]
-        }
-
-        videoComposition.instructions = instructions
-        return videoComposition
     }
 
     private static func runAssetExportSession(
@@ -822,6 +523,8 @@ enum BlogVideoExportService {
                 case .completed:
                     continuation.resume()
                 case .failed:
+                    let avErr = sessionBox.session.error as NSError?
+                    print("[VideoExport] AVAssetExportSession failed — domain: \(avErr?.domain ?? "nil"), code: \(avErr?.code ?? -1), description: \(avErr?.localizedDescription ?? "nil"), underlying: \(avErr?.userInfo[NSUnderlyingErrorKey] ?? "nil")")
                     continuation.resume(throwing: sessionBox.session.error ?? ExportError.writerFailed("Export failed."))
                 case .cancelled:
                     continuation.resume(throwing: CancellationError())
