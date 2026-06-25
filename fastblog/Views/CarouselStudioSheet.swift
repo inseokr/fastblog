@@ -1993,7 +1993,7 @@ private struct CarouselStudioDownloadStylePickCard: View {
                         onToggleSelection: {},
                         showsSelectionChrome: false,
                         clipsFloatingContentToRoundedSlideOutline: false,
-                        showsBackgroundOnly: true
+                        isStaticThumbnail: true
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     if !isInCarousel {
@@ -2016,7 +2016,7 @@ private struct CarouselStudioDownloadStylePickCard: View {
                         onToggleSelection: {},
                         showsSelectionChrome: false,
                         clipsFloatingContentToRoundedSlideOutline: false,
-                        showsBackgroundOnly: true
+                        isStaticThumbnail: true
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
@@ -2199,6 +2199,7 @@ private struct DraggableTextBlock<Content: View>: View {
     /// Pinch to resize typography when the block is selected; `nil` disables.
     var onUpdateTextSizeScale: ((SlideBlockID, CGFloat) -> Void)? = nil
     var onTextPinchBegan: () -> Void = {}
+    var isStaticThumbnail: Bool = false
 
     @GestureState private var liveDrag: CGSize = .zero
     /// Block frame at its natural (anchor-based) position in the slide coord space,
@@ -2244,6 +2245,16 @@ private struct DraggableTextBlock<Content: View>: View {
     }
 
     var body: some View {
+        if isStaticThumbnail {
+            content()
+                .offset(x: savedPointOffset.width, y: savedPointOffset.height)
+        } else {
+            interactiveBody
+        }
+    }
+
+    @ViewBuilder
+    private var interactiveBody: some View {
         content()
             .background(naturalRectCapture)
             .overlay(editingRing)
@@ -2630,6 +2641,7 @@ struct CarouselSlideView: View {
     /// When `true`, draws only imagery (hero, map snapshot, split slots) without title, captions, PIPs, or text legibility gradients.
     /// Used by the Carousel Studio download picker; export keeps the default `false` so saves include all overlays.
     var showsBackgroundOnly: Bool = false
+    var isStaticThumbnail: Bool = false
     /// Carousel Studio: show the Bloggo watermark only on the first map slide (`false` for later day maps / place-intro maps).
     var showPoweredByBloggoMapWatermark: Bool = true
     /// Editor-only: stack positions (0,1,2) still awaiting Vision background removal.
@@ -2928,7 +2940,8 @@ struct CarouselSlideView: View {
                     },
                     textSizeScaleForPinch: slide.textStyle.primary.sizeScale,
                     onUpdateTextSizeScale: onUpdateTextSizeScale,
-                    onTextPinchBegan: onTextPinchBegan
+                    onTextPinchBegan: onTextPinchBegan,
+                    isStaticThumbnail: isStaticThumbnail
                 )
             }
         }
@@ -2989,7 +3002,8 @@ struct CarouselSlideView: View {
                     },
                     textSizeScaleForPinch: slide.textStyle.primary.sizeScale,
                     onUpdateTextSizeScale: onUpdateTextSizeScale,
-                    onTextPinchBegan: onTextPinchBegan
+                    onTextPinchBegan: onTextPinchBegan,
+                    isStaticThumbnail: isStaticThumbnail
                 )
                 // Nudge the block inward by the same amount the clamp enforces,
                 // so a fresh `savedOffset == .zero` already renders at the
@@ -3032,7 +3046,8 @@ struct CarouselSlideView: View {
                     },
                     textSizeScaleForPinch: slide.textStyle.secondary.sizeScale,
                     onUpdateTextSizeScale: onUpdateTextSizeScale,
-                    onTextPinchBegan: onTextPinchBegan
+                    onTextPinchBegan: onTextPinchBegan,
+                    isStaticThumbnail: isStaticThumbnail
                 )
                 .padding(studioTextBlockEdgeInset)
             }
@@ -3160,7 +3175,8 @@ struct CarouselSlideView: View {
                         },
                         textSizeScaleForPinch: slide.textStyle.primary.sizeScale,
                         onUpdateTextSizeScale: onUpdateTextSizeScale,
-                        onTextPinchBegan: onTextPinchBegan
+                        onTextPinchBegan: onTextPinchBegan,
+                        isStaticThumbnail: isStaticThumbnail
                     )
                     .padding(studioTextBlockEdgeInset)
             } else if !showsBackgroundOnly, slide.kind == .placeStop {
@@ -3225,7 +3241,8 @@ struct CarouselSlideView: View {
                     },
                     textSizeScaleForPinch: slide.textStyle.primary.sizeScale,
                     onUpdateTextSizeScale: onUpdateTextSizeScale,
-                    onTextPinchBegan: onTextPinchBegan
+                    onTextPinchBegan: onTextPinchBegan,
+                    isStaticThumbnail: isStaticThumbnail
                 )
                 .padding(studioTextBlockEdgeInset)
                 .frame(width: width, height: photoH, alignment: .topLeading)
@@ -3271,7 +3288,8 @@ struct CarouselSlideView: View {
                     },
                     textSizeScaleForPinch: slide.textStyle.secondary.sizeScale,
                     onUpdateTextSizeScale: onUpdateTextSizeScale,
-                    onTextPinchBegan: onTextPinchBegan
+                    onTextPinchBegan: onTextPinchBegan,
+                    isStaticThumbnail: isStaticThumbnail
                 )
                 .padding(studioTextBlockEdgeInset)
             }
@@ -3396,7 +3414,8 @@ struct CarouselSlideView: View {
                     onClusterPinchScale: (isEditingText && selectedBlockID == .pipCluster
                         ? { scale, isCommit in onPIPClusterPinchScale?(scale, isCommit) }
                         : nil),
-                    onClusterPinchBegan: onPIPClusterPinchBegan
+                    onClusterPinchBegan: onPIPClusterPinchBegan,
+                    isStaticThumbnail: isStaticThumbnail
                 )
                 .padding(.horizontal, studioPIPClusterEdgeInset)
                 .padding(.bottom, studioPIPClusterEdgeInset)
@@ -3932,6 +3951,7 @@ private struct DraggablePIPCluster: View {
     /// Second bool: `true` when committing the snapped scale at gesture end.
     var onClusterPinchScale: ((CGFloat, Bool) -> Void)? = nil
     var onClusterPinchBegan: () -> Void = {}
+    var isStaticThumbnail: Bool = false
 
     @GestureState private var liveDrag: CGSize = .zero
     @State private var naturalRect: CGRect?
@@ -3956,6 +3976,27 @@ private struct DraggablePIPCluster: View {
     }
 
     var body: some View {
+        if isStaticThumbnail {
+            PIPClusterView(
+                images: images,
+                pipPhotoIDs: pipPhotoIDs,
+                slideWidth: slideWidth,
+                borderColor: borderColor,
+                pipBorderEnabled: pipBorderEnabled,
+                visibleCount: visibleCount,
+                stackStyle: stackStyle,
+                sizeScale: pipSizeScale,
+                thumbMaskStyle: thumbMaskStyle,
+                thumbnailFramings: thumbnailFramings
+            )
+            .offset(x: savedPointOffset.width, y: savedPointOffset.height)
+        } else {
+            interactiveBody
+        }
+    }
+
+    @ViewBuilder
+    private var interactiveBody: some View {
         PIPClusterView(images: images,
                        pipPhotoIDs: pipPhotoIDs,
                        slideWidth: slideWidth,
