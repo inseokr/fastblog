@@ -63,6 +63,59 @@ private struct PlacesVisitedSearchDismissTapModifier: ViewModifier {
     }
 }
 
+// MARK: - Agent debug logging (session 6af5cd)
+private enum PlacesVisitedAgentDebug {
+    private static let ingestURL = URL(string: "http://127.0.0.1:7720/ingest/6788f1c9-d047-4e46-82ba-585a06955b83")!
+
+    static func log(hypothesisId: String, location: String, message: String, data: [String: String] = [:], runId: String = "pre-fix") {
+        // #region agent log
+        let ts = Int(Date().timeIntervalSince1970 * 1000)
+        func esc(_ s: String) -> String {
+            s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        }
+        let dataPairs = data.map { "\"\(esc($0.key))\":\"\(esc($0.value))\"" }.joined(separator: ",")
+        let line = "{\"sessionId\":\"6af5cd\",\"runId\":\"\(esc(runId))\",\"timestamp\":\(ts),\"location\":\"\(esc(location))\",\"message\":\"\(esc(message))\",\"hypothesisId\":\"\(hypothesisId)\",\"data\":{\(dataPairs)}}"
+        guard let body = line.data(using: .utf8) else { return }
+        var request = URLRequest(url: ingestURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("6af5cd", forHTTPHeaderField: "X-Debug-Session-Id")
+        request.httpBody = body
+        URLSession.shared.dataTask(with: request).resume()
+        #if DEBUG
+        print("[AgentDebug6af5cd] \(line)")
+        #endif
+        // #endregion
+    }
+}
+
+/// Select-mode checkmark overlay (drawn outside the card for reliable SwiftUI updates).
+private struct PlacesSelectModeChrome: View {
+    let isSelected: Bool
+
+    var body: some View {
+        Group {
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .blue)
+                    .shadow(color: .black.opacity(0.55), radius: 3, y: 1)
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(Color.black.opacity(0.35))
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
+                }
+                .frame(width: 26, height: 26)
+                .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 /// Unselected filter chip fill: `systemGray5` blended ~15% toward white (lighter tone).
 private func filterChipUnselectedFill() -> Color {
     Color(uiColor: UIColor { traits in
@@ -135,7 +188,7 @@ struct PlacesVisitedView: View {
     @State private var scrollRestorationPlaceId: String?
 
     @State private var isSelectMode = false
-    @State private var selectedPlaceIds: Set<String> = []
+    @State private var selectedPlaceKeys: Set<String> = []
     @State private var showHidePlacesConfirmation = false
     @State private var showCreateBlogFromSelectionAlert = false
     @State private var showHiddenPlacesSheet = false
@@ -159,7 +212,14 @@ struct PlacesVisitedView: View {
     }
 
     private var selectedPlaces: [VisitedPlaceSummary] {
-        visiblePlaces.filter { selectedPlaceIds.contains($0.placeId) }
+        visiblePlaces.filter { selectedPlaceKeys.contains(placeSelectionKey(for: $0)) }
+    }
+
+    /// Stable across `placeId` churn (everyday cluster rebuilds, blog `local_` → `cloud_` migration).
+    private func placeSelectionKey(for place: VisitedPlaceSummary) -> String {
+        let photoIds = place.photos.map(\.id.uuidString).sorted()
+        guard !photoIds.isEmpty else { return "place:\(place.placeId)" }
+        return "photos:\(photoIds.joined(separator: ","))"
     }
 
     private var availableYears: [Int] {
@@ -271,78 +331,94 @@ struct PlacesVisitedView: View {
         .padding(.vertical, 44)
     }
 
+    private func togglePlaceSelection(selectionKey: String, place: VisitedPlaceSummary, wasSelected: Bool) {
+        if wasSelected {
+            selectedPlaceKeys = selectedPlaceKeys.subtracting([selectionKey])
+        } else {
+            selectedPlaceKeys = selectedPlaceKeys.union([selectionKey])
+        }
+        let nowSelected = selectedPlaceKeys.contains(selectionKey)
+        // #region agent log
+        PlacesVisitedAgentDebug.log(
+            hypothesisId: "H",
+            location: "PlacesVisitedView:togglePlaceSelection",
+            message: "place_tapped",
+            data: [
+                "selectionKey": selectionKey,
+                "placeId": place.placeId,
+                "selectionKeyInSet": "\(nowSelected)",
+                "displayName": place.displayName,
+                "isEverydayOnly": "\(place.isEverydayOnly)",
+                "wasSelected": "\(wasSelected)",
+                "nowSelected": "\(nowSelected)",
+                "selectedCount": "\(selectedPlaceKeys.count)"
+            ],
+            runId: "post-fix-v4"
+        )
+        // #endregion
+    }
+
     @ViewBuilder
     private func placesSelectModeGrid(for places: [VisitedPlaceSummary]) -> some View {
         let rowModels = PlacesVisitedPlaceGrid.pairedRows(places).map { row in
             PlaceSelectRow(places: row)
         }
+        // #region agent log
+        let _ = {
+            let rowIds = rowModels.map(\.id)
+            let dupeRowIds = Dictionary(grouping: rowIds, by: { $0 }).filter { $1.count > 1 }.map(\.key)
+            if !dupeRowIds.isEmpty {
+                PlacesVisitedAgentDebug.log(
+                    hypothesisId: "E",
+                    location: "placesSelectModeGrid",
+                    message: "duplicate_row_ids",
+                    data: ["dupeRowIds": dupeRowIds.joined(separator: ";"), "placeCount": "\(places.count)"]
+                )
+            }
+        }()
+        // #endregion
         VStack(spacing: 12) {
             ForEach(rowModels) { rowModel in
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(rowModel.places) { place in
-                        placesSelectModeCell(for: place)
-                            .frame(maxWidth: .infinity)
+                        let selectionKey = placeSelectionKey(for: place)
+                        let isSelected = selectedPlaceKeys.contains(selectionKey)
+                        ZStack(alignment: .bottomTrailing) {
+                            PlaceVisitedCard(
+                                place: place,
+                                isSelectMode: true,
+                                isSelected: isSelected
+                            )
+                            PlacesSelectModeChrome(isSelected: isSelected)
+                                .padding(10)
+                        }
+                        .overlay {
+                            RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
+                                .strokeBorder(
+                                    isSelected ? Color.blue : Color.primary.opacity(0.06),
+                                    lineWidth: isSelected ? 3 : 1
+                                )
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            togglePlaceSelection(
+                                selectionKey: selectionKey,
+                                place: place,
+                                wasSelected: isSelected
+                            )
+                        }
+                        .accessibilityLabel(place.displayName)
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                        .frame(maxWidth: .infinity)
                     }
                     if rowModel.places.count == 1 {
                         Color.clear
                             .frame(maxWidth: .infinity)
                             .accessibilityHidden(true)
+                            .allowsHitTesting(false)
                     }
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func placesSelectModeCell(for place: VisitedPlaceSummary) -> some View {
-        let isSelected = selectedPlaceIds.contains(place.placeId)
-        Button {
-            if selectedPlaceIds.contains(place.placeId) {
-                selectedPlaceIds.remove(place.placeId)
-            } else {
-                selectedPlaceIds.insert(place.placeId)
-            }
-        } label: {
-            PlaceVisitedCard(
-                place: place,
-                isSelectMode: true,
-                isSelected: isSelected
-            )
-            .overlay {
-                if isSelected {
-                    RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
-                        .strokeBorder(Color.blue, lineWidth: 3)
-                }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                placesSelectModeCheckmark(isSelected: isSelected)
-                    .padding(10)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .id("\(place.placeId)-\(isSelected)")
-        .accessibilityLabel(place.displayName)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    @ViewBuilder
-    private func placesSelectModeCheckmark(isSelected: Bool) -> some View {
-        if isSelected {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.title2)
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(.white, .blue)
-                .shadow(color: .black.opacity(0.55), radius: 3, y: 1)
-        } else {
-            ZStack {
-                Circle()
-                    .fill(Color.black.opacity(0.35))
-                Circle()
-                    .strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
-            }
-            .frame(width: 26, height: 26)
-            .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
         }
     }
 
@@ -532,7 +608,7 @@ struct PlacesVisitedView: View {
                     hideSelectedPlaces()
                 }
             } message: {
-                Text(selectedPlaceIds.count == 1
+                Text(selectedPlaceKeys.count == 1
                      ? "This place will be hidden from My Places. You can restore it anytime from Manage."
                      : "These places will be hidden from My Places. You can restore them anytime from Manage.")
             }
@@ -656,6 +732,24 @@ struct PlacesVisitedView: View {
             if active {
                 isSearchFocused = false
                 isSearchActive = false
+                // #region agent log
+                let ids = filteredPlaces.map(\.placeId)
+                let dupes = Dictionary(grouping: ids, by: { $0 }).filter { $1.count > 1 }.map(\.key)
+                let keys = filteredPlaces.map { placeSelectionKey(for: $0) }
+                let dupeKeys = Dictionary(grouping: keys, by: { $0 }).filter { $1.count > 1 }.map(\.key)
+                PlacesVisitedAgentDebug.log(
+                    hypothesisId: "A",
+                    location: "PlacesVisitedView:isSelectMode",
+                    message: "select_mode_entered",
+                    data: [
+                        "placeCount": "\(ids.count)",
+                        "uniqueCount": "\(Set(ids).count)",
+                        "duplicateIds": dupes.isEmpty ? "none" : dupes.joined(separator: ";"),
+                        "duplicateSelectionKeys": dupeKeys.isEmpty ? "none" : dupeKeys.joined(separator: ";")
+                    ],
+                    runId: "post-fix-v4"
+                )
+                // #endregion
             }
             syncHomeBottomNavSuppression()
         }
@@ -779,11 +873,11 @@ struct PlacesVisitedView: View {
             } label: {
                 Image(systemName: "square.and.arrow.down")
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(selectedPlaceIds.isEmpty ? .gray : .primary)
+                    .foregroundStyle(selectedPlaceKeys.isEmpty ? .gray : .primary)
                     .frame(width: 56, height: 56)
                     .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
             }
-            .disabled(selectedPlaceIds.isEmpty)
+            .disabled(selectedPlaceKeys.isEmpty)
             .accessibilityLabel("Save selected photos to Photos")
 
             Button {
@@ -791,11 +885,11 @@ struct PlacesVisitedView: View {
             } label: {
                 Image(systemName: "book.closed.fill")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(selectedPlaceIds.isEmpty ? .gray : .primary)
+                    .foregroundStyle(selectedPlaceKeys.isEmpty ? .gray : .primary)
                     .frame(width: 56, height: 56)
                     .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
             }
-            .disabled(selectedPlaceIds.isEmpty)
+            .disabled(selectedPlaceKeys.isEmpty)
             .accessibilityLabel("Create trip blog from selection")
 
             Menu {
@@ -804,7 +898,7 @@ struct PlacesVisitedView: View {
                 } label: {
                     Label("Share Places", systemImage: "square.and.arrow.up")
                 }
-                .disabled(selectedPlaceIds.isEmpty)
+                .disabled(selectedPlaceKeys.isEmpty)
                 if hiddenMyPlacesStore.hiddenCount > 0 {
                     Divider()
                     Button {
@@ -824,7 +918,7 @@ struct PlacesVisitedView: View {
 
             Spacer()
 
-            Text("\(selectedPlaceIds.count) Selected")
+            Text("\(selectedPlaceKeys.count) Selected")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -835,11 +929,11 @@ struct PlacesVisitedView: View {
             } label: {
                 Image(systemName: "eye.slash")
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(selectedPlaceIds.isEmpty ? .gray : .orange)
+                    .foregroundStyle(selectedPlaceKeys.isEmpty ? .gray : .orange)
                     .frame(width: 56, height: 56)
                     .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
             }
-            .disabled(selectedPlaceIds.isEmpty)
+            .disabled(selectedPlaceKeys.isEmpty)
             .accessibilityLabel("Hide selected places")
         }
         .padding(.horizontal, 20)
@@ -850,11 +944,11 @@ struct PlacesVisitedView: View {
 
     private func exitPlacesSelectMode() {
         isSelectMode = false
-        selectedPlaceIds = []
+        selectedPlaceKeys = []
     }
 
     private func hideSelectedPlaces() {
-        hiddenMyPlacesStore.hide(placeIds: selectedPlaceIds)
+        hiddenMyPlacesStore.hide(placeIds: Set(selectedPlaces.map(\.placeId)))
         exitPlacesSelectMode()
     }
 
@@ -1217,7 +1311,7 @@ struct PlaceVisitedCard: View {
         }
         .clipShape(RoundedRectangle(appChromeBaseRadius: 18, style: .continuous))
         .overlay {
-            if !isSelectMode || !isSelected {
+            if !isSelectMode {
                 RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
             }

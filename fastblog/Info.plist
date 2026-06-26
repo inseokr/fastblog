@@ -85,6 +85,8 @@
 				<true/>
 			</dict>
 		</dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
 	</dict>
 </dict>
 </plist>

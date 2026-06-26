@@ -224,7 +224,9 @@ final class EverydayMomentsStore: ObservableObject {
                 let loc = groupRows.compactMap(\.location).first
                 let latest = groupRows.map(\.timestamp).max() ?? Date()
                 let ids = groupRows.map(\.identifier)
+                let stableClusterID = Self.stableClusterID(for: groupRows.map(\.uuid))
                 allClusters.append(EverydayPlaceCluster(
+                    id: stableClusterID,
                     placeTitle: placeTitle,
                     placeSubtitle: subtitle,
                     placeCategory: category,
@@ -237,6 +239,12 @@ final class EverydayMomentsStore: ObservableObject {
         }
 
         return allClusters.sorted(by: { $0.latestVisitDate > $1.latestVisitDate })
+    }
+
+    /// Stable across cluster rebuilds so My Places select mode keeps the same `everyday_*` placeId.
+    private static func stableClusterID(for captureUUIDs: [UUID]) -> UUID {
+        captureUUIDs.min(by: { $0.uuidString < $1.uuidString })
+            ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
     }
 
     private func recapPhotos(for identifiers: [String]) -> [RecapPhoto] {
