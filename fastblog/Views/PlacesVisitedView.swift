@@ -63,32 +63,6 @@ private struct PlacesVisitedSearchDismissTapModifier: ViewModifier {
     }
 }
 
-// MARK: - Agent debug logging (session 6af5cd)
-private enum PlacesVisitedAgentDebug {
-    private static let ingestURL = URL(string: "http://127.0.0.1:7720/ingest/6788f1c9-d047-4e46-82ba-585a06955b83")!
-
-    static func log(hypothesisId: String, location: String, message: String, data: [String: String] = [:], runId: String = "pre-fix") {
-        // #region agent log
-        let ts = Int(Date().timeIntervalSince1970 * 1000)
-        func esc(_ s: String) -> String {
-            s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        }
-        let dataPairs = data.map { "\"\(esc($0.key))\":\"\(esc($0.value))\"" }.joined(separator: ",")
-        let line = "{\"sessionId\":\"6af5cd\",\"runId\":\"\(esc(runId))\",\"timestamp\":\(ts),\"location\":\"\(esc(location))\",\"message\":\"\(esc(message))\",\"hypothesisId\":\"\(hypothesisId)\",\"data\":{\(dataPairs)}}"
-        guard let body = line.data(using: .utf8) else { return }
-        var request = URLRequest(url: ingestURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("6af5cd", forHTTPHeaderField: "X-Debug-Session-Id")
-        request.httpBody = body
-        URLSession.shared.dataTask(with: request).resume()
-        #if DEBUG
-        print("[AgentDebug6af5cd] \(line)")
-        #endif
-        // #endregion
-    }
-}
-
 /// Select-mode checkmark overlay (drawn outside the card for reliable SwiftUI updates).
 private struct PlacesSelectModeChrome: View {
     let isSelected: Bool
@@ -331,31 +305,12 @@ struct PlacesVisitedView: View {
         .padding(.vertical, 44)
     }
 
-    private func togglePlaceSelection(selectionKey: String, place: VisitedPlaceSummary, wasSelected: Bool) {
+    private func togglePlaceSelection(selectionKey: String, wasSelected: Bool) {
         if wasSelected {
             selectedPlaceKeys = selectedPlaceKeys.subtracting([selectionKey])
         } else {
             selectedPlaceKeys = selectedPlaceKeys.union([selectionKey])
         }
-        let nowSelected = selectedPlaceKeys.contains(selectionKey)
-        // #region agent log
-        PlacesVisitedAgentDebug.log(
-            hypothesisId: "H",
-            location: "PlacesVisitedView:togglePlaceSelection",
-            message: "place_tapped",
-            data: [
-                "selectionKey": selectionKey,
-                "placeId": place.placeId,
-                "selectionKeyInSet": "\(nowSelected)",
-                "displayName": place.displayName,
-                "isEverydayOnly": "\(place.isEverydayOnly)",
-                "wasSelected": "\(wasSelected)",
-                "nowSelected": "\(nowSelected)",
-                "selectedCount": "\(selectedPlaceKeys.count)"
-            ],
-            runId: "post-fix-v4"
-        )
-        // #endregion
     }
 
     @ViewBuilder
@@ -363,20 +318,6 @@ struct PlacesVisitedView: View {
         let rowModels = PlacesVisitedPlaceGrid.pairedRows(places).map { row in
             PlaceSelectRow(places: row)
         }
-        // #region agent log
-        let _ = {
-            let rowIds = rowModels.map(\.id)
-            let dupeRowIds = Dictionary(grouping: rowIds, by: { $0 }).filter { $1.count > 1 }.map(\.key)
-            if !dupeRowIds.isEmpty {
-                PlacesVisitedAgentDebug.log(
-                    hypothesisId: "E",
-                    location: "placesSelectModeGrid",
-                    message: "duplicate_row_ids",
-                    data: ["dupeRowIds": dupeRowIds.joined(separator: ";"), "placeCount": "\(places.count)"]
-                )
-            }
-        }()
-        // #endregion
         VStack(spacing: 12) {
             ForEach(rowModels) { rowModel in
                 HStack(alignment: .top, spacing: 12) {
@@ -401,11 +342,7 @@ struct PlacesVisitedView: View {
                         }
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            togglePlaceSelection(
-                                selectionKey: selectionKey,
-                                place: place,
-                                wasSelected: isSelected
-                            )
+                            togglePlaceSelection(selectionKey: selectionKey, wasSelected: isSelected)
                         }
                         .accessibilityLabel(place.displayName)
                         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -732,24 +669,6 @@ struct PlacesVisitedView: View {
             if active {
                 isSearchFocused = false
                 isSearchActive = false
-                // #region agent log
-                let ids = filteredPlaces.map(\.placeId)
-                let dupes = Dictionary(grouping: ids, by: { $0 }).filter { $1.count > 1 }.map(\.key)
-                let keys = filteredPlaces.map { placeSelectionKey(for: $0) }
-                let dupeKeys = Dictionary(grouping: keys, by: { $0 }).filter { $1.count > 1 }.map(\.key)
-                PlacesVisitedAgentDebug.log(
-                    hypothesisId: "A",
-                    location: "PlacesVisitedView:isSelectMode",
-                    message: "select_mode_entered",
-                    data: [
-                        "placeCount": "\(ids.count)",
-                        "uniqueCount": "\(Set(ids).count)",
-                        "duplicateIds": dupes.isEmpty ? "none" : dupes.joined(separator: ";"),
-                        "duplicateSelectionKeys": dupeKeys.isEmpty ? "none" : dupeKeys.joined(separator: ";")
-                    ],
-                    runId: "post-fix-v4"
-                )
-                // #endregion
             }
             syncHomeBottomNavSuppression()
         }
