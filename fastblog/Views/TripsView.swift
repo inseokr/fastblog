@@ -1636,6 +1636,29 @@ struct CapturedMoment: Identifiable {
     }
 }
 
+extension CapturedMoment {
+    /// True when pixels are in memory or a persisted app-capture file exists (no decode).
+    var hasPersistedPreviewSource: Bool {
+        if previewImage != nil { return true }
+        guard let localId = localIdentifier else { return false }
+        return AppCapturePhotoService.shared.imageExists(identifier: localId)
+    }
+
+    /// Full-resolution preview — memory first, then disk.
+    func resolvedPreviewImage() -> UIImage? {
+        if let preview = previewImage { return preview }
+        guard let localId = localIdentifier else { return nil }
+        return AppCapturePhotoService.shared.loadImage(identifier: localId)
+    }
+
+    /// Downsampled decode for session gallery / shutter badge.
+    func resolvedSessionThumbnail(maxPixelSize: CGFloat) -> UIImage? {
+        if let preview = previewImage { return preview }
+        guard let localId = localIdentifier else { return nil }
+        return AppCapturePhotoService.shared.loadThumbnail(identifier: localId, maxPixelSize: maxPixelSize)
+    }
+}
+
 // MARK: - In-app camera still → 16:9 framing
 
 /// Full-sensor captures are typically ~4:3 while the live preview is aspect-filled on a tall screen.
@@ -1718,16 +1741,98 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
     private var hasStartedSessionSetup = false
     private var pendingLocationCaptureCompletion: (() -> Void)?
+    /// True while the UI wants the capture session running (tab active, not in caption preview, etc.).
+    private var wantsSessionRunning = false
 
     override init() {
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        registerSessionObservers()
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .denied, .restricted:
             authorizationDenied = true
         default:
             break
+        }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    private func registerSessionObservers() {
+        let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(sessionWasInterrupted(_:)),
+            name: .AVCaptureSessionWasInterrupted,
+            object: session
+        )
+        center.addObserver(
+            self,
+            selector: #selector(sessionInterruptionEnded(_:)),
+            name: .AVCaptureSessionInterruptionEnded,
+            object: session
+        )
+        center.addObserver(
+            self,
+            selector: #selector(sessionRuntimeError(_:)),
+            name: .AVCaptureSessionRuntimeError,
+            object: session
+        )
+    }
+
+    @objc private func sessionWasInterrupted(_ notification: Notification) {
+        sessionQueue.async {
+            if self.movieOutput.isRecording {
+                self.cancelMomentVideoRecordingLocked()
+            }
+        }
+    }
+
+    @objc private func sessionInterruptionEnded(_ notification: Notification) {
+        sessionQueue.async {
+            self.resumeSessionIfNeededLocked()
+        }
+    }
+
+    @objc private func sessionRuntimeError(_ notification: Notification) {
+        let avError = (notification.userInfo?[AVCaptureSessionErrorKey] as? AVError)
+        sessionQueue.async {
+            if let avError, avError.code == .mediaServicesWereReset {
+                self.recoverFromMediaServicesResetLocked()
+            }
+            if self.movieOutput.isRecording {
+                self.cancelMomentVideoRecordingLocked()
+            }
+            self.resumeSessionIfNeededLocked()
+        }
+    }
+
+    /// Rebuilds mic + movie output after iOS resets media services (common after memory pressure).
+    private func recoverFromMediaServicesResetLocked() {
+        session.beginConfiguration()
+        if session.outputs.contains(movieOutput) {
+            session.removeOutput(movieOutput)
+        }
+        removeAudioCaptureInputsLocked()
+        if session.canSetSessionPreset(.photo) {
+            session.sessionPreset = .photo
+        }
+        session.commitConfiguration()
+        hasMovieOutput = false
+        hasAudioInput = false
+    }
+
+    /// Restarts the session and re-attaches reel outputs when the UI still expects the camera to run.
+    private func resumeSessionIfNeededLocked() {
+        guard wantsSessionRunning, isConfigured else { return }
+        if hasMovieOutput {
+            ensureMovieOutputConfiguredLocked()
+        }
+        if !session.isRunning {
+            session.startRunning()
         }
     }
 
@@ -1989,9 +2094,13 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     }
 
     func startRunning() {
+        wantsSessionRunning = true
         prepareSessionIfNeeded()
         sessionQueue.async {
             guard self.isConfigured else { return }
+            if self.hasMovieOutput {
+                self.ensureMovieOutputConfiguredLocked()
+            }
             if !self.session.isRunning {
                 self.session.startRunning()
             }
@@ -2000,6 +2109,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     }
 
     func stopRunning() {
+        wantsSessionRunning = false
         sessionQueue.async {
             if self.session.isRunning {
                 self.session.stopRunning()
@@ -3000,6 +3110,23 @@ struct CameraCaptureView: View {
         }
     }
 
+    /// Stops capture when the app backgrounds so reel state and AVFoundation routes don't go stale.
+    private func pauseCameraForBackground() {
+        cameraController.cancelMomentVideoRecording()
+        vibeRecorder.cancelAndDelete()
+        cameraController.stopRunning()
+    }
+
+    /// Restarts capture after foreground return or session interruption (skipped in caption preview).
+    private func resumeCameraIfNeeded() {
+        guard isTabActive, !isCaptionModeActive else { return }
+        cameraController.startRunning()
+        syncInAppCameraAudioSession()
+        if isVibeCaptureEnabled, hasSeenVibeTooltip {
+            vibeRecorder.start()
+        }
+    }
+
     private func migrateLegacyCaptureModeIfNeeded() {
         guard UserDefaults.standard.object(forKey: "bloggo.camera.captureMode") == nil else { return }
         if UserDefaults.standard.bool(forKey: "bloggo.camera.momentVideoEnabled") {
@@ -3042,7 +3169,7 @@ struct CameraCaptureView: View {
     }
 
     private var latestCaptureWithPreview: CapturedMoment? {
-        guard let last = sessionCapturesForDisplay.last, last.previewImage != nil else { return nil }
+        guard let last = sessionCapturesForDisplay.last, last.hasPersistedPreviewSource else { return nil }
         return last
     }
 
@@ -3169,15 +3296,7 @@ struct CameraCaptureView: View {
 
     /// Resolves a usable still for caption mode. Falls back to persisted app-capture storage.
     private func resolvedFrozenImage(for moment: CapturedMoment) -> UIImage? {
-        if let preview = moment.previewImage {
-            return preview
-        }
-        if let localId = moment.localIdentifier,
-           let captureId = AppCapturePhotoService.uuid(from: localId),
-           let persisted = AppCapturePhotoService.shared.loadImage(captureId: captureId) {
-            return persisted
-        }
-        return nil
+        moment.resolvedPreviewImage()
     }
 
     private func refreshCaptionModePlaceChrome() {
@@ -4626,7 +4745,7 @@ struct CameraCaptureView: View {
             if active {
                 activateCameraIfNeeded()
             } else {
-                cameraController.stopRunning()
+                pauseCameraForBackground()
             }
             }
             .onChange(of: cameraController.isConfigured) { _, configured in
@@ -4702,9 +4821,18 @@ struct CameraCaptureView: View {
             .presentationDragIndicator(.visible)
             }
             .onChange(of: scenePhase) { _, phase in
-                if phase != .active {
+                switch phase {
+                case .active:
+                    resumeCameraIfNeeded()
+                case .background:
                     isShowingCapturesGallery = false
                     isShowingSessionGallery = false
+                    pauseCameraForBackground()
+                case .inactive:
+                    isShowingCapturesGallery = false
+                    isShowingSessionGallery = false
+                @unknown default:
+                    break
                 }
             }
             .onDisappear {
@@ -5702,7 +5830,7 @@ struct CameraCaptureView: View {
     private var shutterBarCurrentPhotosButton: some View {
         let previewSize: CGFloat = 56
         let effectiveList = sessionMoments.isEmpty ? sessionCapturesForDisplay : sessionMoments
-        let latestSessionImage = effectiveList.last?.previewImage
+        let latestSessionImage = effectiveList.last?.resolvedSessionThumbnail(maxPixelSize: 112)
         let count = effectiveList.count
         return ZStack {
             if let image = latestSessionImage {
@@ -5862,7 +5990,7 @@ extension CameraCaptureView {
         if let lid = moment.localIdentifier, lid.hasPrefix(AppCapturePhotoService.prefix) {
             return lid
         }
-        guard let image = moment.previewImage else { return nil }
+        guard let image = moment.resolvedPreviewImage() else { return nil }
         // Shutter path may have persisted already while this moment lost its id — avoid a second on-disk copy.
         if let existing = recentAppCaptureIdentifier(near: moment.timestamp) {
             return existing
@@ -6045,6 +6173,17 @@ extension CameraCaptureView {
     private func appendSessionCapture(_ displayMoment: CapturedMoment) {
         sessionCapturesForDisplay.append(displayMoment)
         photosCapturedThisSession += 1
+        trimInMemorySessionPreviews(keepingLatestId: displayMoment.id)
+    }
+
+    /// Drops full-resolution UIImages from older captures; disk + downsampled loads cover gallery UI.
+    private func trimInMemorySessionPreviews(keepingLatestId latestId: UUID) {
+        for index in sessionCapturesForDisplay.indices where sessionCapturesForDisplay[index].id != latestId {
+            sessionCapturesForDisplay[index].previewImage = nil
+        }
+        for index in sessionMoments.indices where sessionMoments[index].id != latestId {
+            sessionMoments[index].previewImage = nil
+        }
     }
 
     private func routeCaptureToEverydayPlaces(_ moment: CapturedMoment) {
@@ -6140,7 +6279,7 @@ extension CameraCaptureView {
 
     private func acceptTripBlogPrompt() {
         showTripBlogPrompt = false
-        let momentsWithImages = sessionMoments.filter { $0.previewImage != nil }
+        let momentsWithImages = sessionMoments.filter(\.hasPersistedPreviewSource)
         guard !momentsWithImages.isEmpty else { return }
         createBlogFromSessionMomentsOnly(momentsWithImages: momentsWithImages)
         captureDestinationRaw = CaptureDestinationMode.trips.rawValue
@@ -6421,7 +6560,7 @@ extension CameraCaptureView {
             currentTrip = allTrips.first
         }
 
-        let momentsWithImages = sessionMoments.filter { $0.previewImage != nil }
+        let momentsWithImages = sessionMoments.filter(\.hasPersistedPreviewSource)
 
         // Validate that the selected trip is related to the camera session's timestamps.
         // If the capture is more than 24 hours past the trip's last photo, treat it as a new trip
@@ -6586,10 +6725,16 @@ extension CameraCaptureView {
         }
         attachedCountThisSession = momentCount(from: sessionCapturesForDisplay)
         // Any captures that arrived while this run was in flight (e.g. queued events) still land in `sessionMoments`.
-        let lateArrivals = sessionMoments.filter { $0.previewImage != nil }
+        let lateArrivals = sessionMoments.filter(\.hasPersistedPreviewSource)
         sessionMoments = []
         for pending in lateArrivals {
-            injectCapturedImageIntoBlog(pending.previewImage, at: pending.timestamp, sourceTripId: tripId, momentId: pending.id, vibeURL: pending.vibeURL)
+            injectCapturedImageIntoBlog(
+                pending.resolvedPreviewImage(),
+                at: pending.timestamp,
+                sourceTripId: tripId,
+                momentId: pending.id,
+                vibeURL: pending.vibeURL
+            )
         }
     }
 
@@ -6608,7 +6753,7 @@ extension CameraCaptureView {
     /// Called when user closes the camera with unsaved session moments (e.g. before blog creation completed).
     /// Uses the same grouping as the trip scanner: merge only when within maxGapDaysToBridge of an existing draft; otherwise group days by gap into one or more trips to avoid duplicates.
     private func saveSessionAsTripDraftOnly() {
-        let momentsWithImages = sessionMoments.filter { $0.previewImage != nil }
+        let momentsWithImages = sessionMoments.filter(\.hasPersistedPreviewSource)
         guard !momentsWithImages.isEmpty else { return }
 
         let earliestTimestamp = momentsWithImages.map(\.timestamp).min() ?? Date()
@@ -7255,6 +7400,75 @@ private struct InAppGalleryCellFramePreferenceKey: PreferenceKey {
 
 // MARK: - Session Gallery
 
+/// Session gallery / shutter-bar thumbnail — uses in-memory preview when present, otherwise a downsampled disk decode.
+private struct SessionMomentThumbnail: View {
+    let moment: CapturedMoment
+    var width: CGFloat = 70
+    var height: CGFloat = 110
+    var maxPixelSize: CGFloat = 140
+
+    @State private var loadedThumbnail: UIImage?
+
+    private var displayImage: UIImage? {
+        moment.previewImage ?? loadedThumbnail
+    }
+
+    var body: some View {
+        Group {
+            if let image = displayImage {
+                ZStack(alignment: .topTrailing) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: width, height: height)
+                        .clipped()
+                        .appChromeCornerRadius(8)
+                    HStack(spacing: 4) {
+                        if moment.voiceMemoURL != nil {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(5)
+                                .background(Color.black.opacity(0.55))
+                                .clipShape(Circle())
+                        }
+                        if moment.vibeURL != nil {
+                            Image(systemName: "waveform")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(
+                                    LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                )
+                                .padding(5)
+                                .background(Color.black.opacity(0.55))
+                                .clipShape(Circle())
+                        }
+                    }
+                    .padding(4)
+                }
+                .frame(width: width, height: height)
+            } else {
+                ZStack {
+                    RoundedRectangle(appChromeBaseRadius: 8)
+                        .fill(Color.gray.opacity(0.3))
+                    Image(systemName: "photo")
+                        .foregroundColor(.white.opacity(0.8))
+                }
+                .frame(width: width, height: height)
+            }
+        }
+        .onAppear(perform: loadThumbnailIfNeeded)
+        .onChange(of: moment.localIdentifier) { _, _ in
+            loadedThumbnail = nil
+            loadThumbnailIfNeeded()
+        }
+    }
+
+    private func loadThumbnailIfNeeded() {
+        guard moment.previewImage == nil, loadedThumbnail == nil else { return }
+        loadedThumbnail = moment.resolvedSessionThumbnail(maxPixelSize: maxPixelSize)
+    }
+}
+
 /// Session photos pull-up: list of captured photos with thumbnails and caption field.
 /// Used for both "new trip" (allowRemove: true) and "added to blog/trip" (allowRemove: false, savedToTitle: "…").
 private struct SessionGalleryView: View {
@@ -7285,189 +7499,23 @@ private struct SessionGalleryView: View {
                     }
                     Text("No photos captured yet.")
                         .foregroundColor(.secondary)
-                } else if let title = savedToTitle {
-                    Section {
-                        Text("Saved to \"\(title)\"")
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 4)
-                            .padding(.bottom, 2)
-                        ForEach(moments.indices, id: \.self) { index in
-                        let moment = moments[index]
-                        let rowHeight: CGFloat = 110
-                        HStack(alignment: .top, spacing: 12) {
-                            // Photo preview — same height as timestamp + caption block
-                            if let image = moment.previewImage {
-                                ZStack(alignment: .topTrailing) {
-                                    Image(uiImage: image)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 70, height: rowHeight)
-                                        .clipped()
-                                        .appChromeCornerRadius(8)
-                                    // Attachment badges cluster in top-right:
-                                    // Voice memo on the left, Vibe on the right.
-                                    HStack(spacing: 4) {
-                                        if moment.voiceMemoURL != nil {
-                                            Image(systemName: "mic.fill")
-                                                .font(.system(size: 9, weight: .semibold))
-                                                .foregroundColor(.white)
-                                                .padding(5)
-                                                .background(Color.black.opacity(0.55))
-                                                .clipShape(Circle())
-                                        }
-                                        if moment.vibeURL != nil {
-                                            Image(systemName: "waveform")
-                                                .font(.system(size: 9, weight: .semibold))
-                                                .foregroundStyle(
-                                                    LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                                                )
-                                                .padding(5)
-                                                .background(Color.black.opacity(0.55))
-                                                .clipShape(Circle())
-                                        }
-                                    }
-                                    .padding(4)
-                                }
-                                .frame(width: 70, height: rowHeight)
-                            } else {
-                                ZStack {
-                                    RoundedRectangle(appChromeBaseRadius: 8)
-                                        .fill(Color.gray.opacity(0.3))
-                                    Image(systemName: "photo")
-                                        .foregroundColor(.white.opacity(0.8))
-                                }
-                                .frame(width: 70, height: rowHeight)
-                            }
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                // Timestamp row with Trash on the right (above caption box)
-                                HStack {
-                                    Text(moment.timestamp.formatted(date: .omitted, time: .shortened))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    Spacer(minLength: 8)
-                                    Button {
-                                        let moment = moments[index]
-                                        deleteFromStorage(moment)
-                                        onRemoveAttachedMoment?(moment)
-                                        moments.remove(at: index)
-                                    } label: {
-                                        Image(systemName: "trash")
-                                            .font(.subheadline)
-                                            .foregroundColor(.red)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-
-                                TextField("Add a caption…", text: Binding(
-                                    get: { moments[index].caption ?? "" },
-                                    set: { moments[index].caption = $0.isEmpty ? nil : $0 }
-                                ), axis: .vertical)
-                                .focused($isCaptionFocused)
-                                .font(.subheadline)
-                                .lineLimit(3...6)
-                                .padding(.horizontal, 10)
-                                .padding(.top, 14)
-                                .padding(.bottom, 10)
-                                .frame(maxWidth: .infinity, minHeight: 72, maxHeight: .infinity)
-                                .background(Color(uiColor: .secondarySystemFill))
-                                .appChromeCornerRadius(8)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .frame(height: rowHeight)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    }
                 } else {
-                    ForEach(moments.indices, id: \.self) { index in
-                        let moment = moments[index]
-                        let rowHeight: CGFloat = 110
-                        HStack(alignment: .top, spacing: 12) {
-                            // Photo preview — same height as timestamp + caption block
-                            if let image = moment.previewImage {
-                                ZStack(alignment: .topTrailing) {
-                                    Image(uiImage: image)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 70, height: rowHeight)
-                                        .clipped()
-                                        .appChromeCornerRadius(8)
-                                    // Attachment badges cluster in top-right:
-                                    // Voice memo on the left, Vibe on the right.
-                                    HStack(spacing: 4) {
-                                        if moment.voiceMemoURL != nil {
-                                            Image(systemName: "mic.fill")
-                                                .font(.system(size: 9, weight: .semibold))
-                                                .foregroundColor(.white)
-                                                .padding(5)
-                                                .background(Color.black.opacity(0.55))
-                                                .clipShape(Circle())
-                                        }
-                                        if moment.vibeURL != nil {
-                                            Image(systemName: "waveform")
-                                                .font(.system(size: 9, weight: .semibold))
-                                                .foregroundStyle(
-                                                    LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                                                )
-                                                .padding(5)
-                                                .background(Color.black.opacity(0.55))
-                                                .clipShape(Circle())
-                                        }
-                                    }
-                                    .padding(4)
-                                }
-                                .frame(width: 70, height: rowHeight)
-                            } else {
-                                ZStack {
-                                    RoundedRectangle(appChromeBaseRadius: 8)
-                                        .fill(Color.gray.opacity(0.3))
-                                    Image(systemName: "photo")
-                                        .foregroundColor(.white.opacity(0.8))
-                                }
-                                .frame(width: 70, height: rowHeight)
+                    if let title = savedToTitle {
+                        Section {
+                            Text("Saved to \"\(title)\"")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, 4)
+                                .padding(.bottom, 2)
+                            ForEach(moments.indices, id: \.self) { index in
+                                sessionGalleryRow(at: index)
                             }
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                // Timestamp row with Trash on the right (above caption box)
-                                HStack {
-                                    Text(moment.timestamp.formatted(date: .omitted, time: .shortened))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    Spacer(minLength: 8)
-                                    Button {
-                                        let moment = moments[index]
-                                        deleteFromStorage(moment)
-                                        onRemoveAttachedMoment?(moment)
-                                        moments.remove(at: index)
-                                    } label: {
-                                        Image(systemName: "trash")
-                                            .font(.subheadline)
-                                            .foregroundColor(.red)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-
-                                TextField("Add a caption…", text: Binding(
-                                    get: { moments[index].caption ?? "" },
-                                    set: { moments[index].caption = $0.isEmpty ? nil : $0 }
-                                ), axis: .vertical)
-                                .focused($isCaptionFocused)
-                                .font(.subheadline)
-                                .lineLimit(3...6)
-                                .padding(.horizontal, 10)
-                                .padding(.top, 14)
-                                .padding(.bottom, 10)
-                                .frame(maxWidth: .infinity, minHeight: 72, maxHeight: .infinity)
-                                .background(Color(uiColor: .secondarySystemFill))
-                                .appChromeCornerRadius(8)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .frame(height: rowHeight)
                         }
-                        .padding(.vertical, 4)
+                    } else {
+                        ForEach(moments.indices, id: \.self) { index in
+                            sessionGalleryRow(at: index)
+                        }
                     }
                 }
             }
@@ -7507,6 +7555,52 @@ private struct SessionGalleryView: View {
                 .environment(\.colorScheme, .dark)
         }
         .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private func sessionGalleryRow(at index: Int) -> some View {
+        let moment = moments[index]
+        let rowHeight: CGFloat = 110
+        HStack(alignment: .top, spacing: 12) {
+            SessionMomentThumbnail(moment: moment, height: rowHeight)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(moment.timestamp.formatted(date: .omitted, time: .shortened))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer(minLength: 8)
+                    Button {
+                        let moment = moments[index]
+                        deleteFromStorage(moment)
+                        onRemoveAttachedMoment?(moment)
+                        moments.remove(at: index)
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.subheadline)
+                            .foregroundColor(.red)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                TextField("Add a caption…", text: Binding(
+                    get: { moments[index].caption ?? "" },
+                    set: { moments[index].caption = $0.isEmpty ? nil : $0 }
+                ), axis: .vertical)
+                .focused($isCaptionFocused)
+                .font(.subheadline)
+                .lineLimit(3...6)
+                .padding(.horizontal, 10)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+                .frame(maxWidth: .infinity, minHeight: 72, maxHeight: .infinity)
+                .background(Color(uiColor: .secondarySystemFill))
+                .appChromeCornerRadius(8)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: rowHeight)
+        }
+        .padding(.vertical, 4)
     }
 
     private func deleteFromStorage(_ moment: CapturedMoment) {
