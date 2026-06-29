@@ -114,6 +114,7 @@ struct HomeTabSearchFieldRow<Trailing: View>: View {
             Image(systemName: "magnifyingglass")
                 .font(HomeChromeMetrics.homeSearchFieldFont)
                 .foregroundStyle(HomeChromeMetrics.homeSearchPlaceholderColor)
+                .onTapGesture { focus.wrappedValue = true }
             ZStack(alignment: .leading) {
                 // Overlay placeholder — UITextField `prompt:` auto-shrinks long strings but not short ones,
                 // so "Search city or blog title" looked larger than "Search place, city, or country".
@@ -128,6 +129,7 @@ struct HomeTabSearchFieldRow<Trailing: View>: View {
                     .font(HomeChromeMetrics.homeSearchFieldFont)
                     .foregroundStyle(.white)
                     .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
                     .focused(focus)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

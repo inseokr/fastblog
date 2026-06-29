@@ -49,20 +49,6 @@ private struct PlacesVisitedBottomChromeInset<Chrome: View>: ViewModifier {
     }
 }
 
-/// Dismisses the search field when active — only installed while focused so it cannot steal grid taps.
-private struct PlacesVisitedSearchDismissTapModifier: ViewModifier {
-    let isActive: Bool
-    let onDismiss: () -> Void
-
-    func body(content: Content) -> some View {
-        if isActive {
-            content.onTapGesture(perform: onDismiss)
-        } else {
-            content
-        }
-    }
-}
-
 /// Select-mode checkmark overlay (drawn outside the card for reliable SwiftUI updates).
 private struct PlacesSelectModeChrome: View {
     let isSelected: Bool
@@ -423,6 +409,14 @@ struct PlacesVisitedView: View {
     private var placesMainZStack: some View {
         ZStack(alignment: .bottom) {
             placesListColumn
+                .opacity(isSearchActive ? 0 : 1)
+                .animation(.easeInOut(duration: 0.22), value: isSearchActive)
+
+            if isSearchActive {
+                placesSearchOverlay
+                    .transition(.opacity)
+            }
+
             placesSelectedPlaceOverlay
             if let toast = placesDownloadToast {
                 Text(toast)
@@ -438,6 +432,41 @@ struct PlacesVisitedView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var placesSearchOverlay: some View {
+        Color(red: 5/255, green: 10/255, blue: 48/255)
+            .ignoresSafeArea()
+            .overlay {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if filteredPlaces.isEmpty {
+                            VStack(spacing: 10) {
+                                Text("No matches")
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.white)
+
+                                Text(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                     ? "Start typing to search by place, city, or country."
+                                     : "Try a different place, city, or country.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white.opacity(0.7))
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 20)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 44)
+                        } else {
+                            placesYearMonthList(for: filteredPlaces)
+                        }
+                    }
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.top, 8)
+                    .padding(.bottom, 12)
+                }
+                .scrollDismissesKeyboard(.interactively)
+            }
     }
 
     private var placesListColumn: some View {
@@ -469,7 +498,7 @@ struct PlacesVisitedView: View {
                     placesSelectModeBottomBar
                 }
             }
-            .scrollDismissesKeyboard(.immediately)
+            .scrollDismissesKeyboard(isSearchFocused ? .never : .immediately)
             .onChange(of: selectedPlaceForModal) { _, newValue in
                 restoreScrollAfterPlaceModalDismiss(newValue: newValue, scrollProxy: scrollProxy)
             }
@@ -564,10 +593,6 @@ struct PlacesVisitedView: View {
             } message: {
                 Text("These everyday moments will become a trip blog in My Blogs.")
             }
-            .modifier(PlacesVisitedSearchDismissTapModifier(isActive: isSearchFocused) {
-                isSearchFocused = false
-                isSearchActive = false
-            })
             .animation(.easeInOut(duration: 0.38), value: selectedPlaceForModal?.id)
     }
 
@@ -727,15 +752,11 @@ struct PlacesVisitedView: View {
             }
             if isSearchActive {
                 Button("Done") {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        isSearchActive = false
+                    }
                     searchText = ""
                     isSearchFocused = false
-                    isSearchActive = false
-                    UIApplication.shared.sendAction(
-                        #selector(UIResponder.resignFirstResponder),
-                        to: nil,
-                        from: nil,
-                        for: nil
-                    )
                 }
                 .fontWeight(.semibold)
                 .foregroundStyle(.primary)
@@ -1032,7 +1053,9 @@ struct PlacesVisitedView: View {
             }
         }
         .onChange(of: isSearchFocused) { _, focused in
-            isSearchActive = focused
+            withAnimation(.easeInOut(duration: 0.22)) {
+                isSearchActive = focused
+            }
         }
     }
 
@@ -1196,12 +1219,13 @@ struct PlaceVisitedCard: View {
     var onAddCategoryTap: (() -> Void)? = nil
 
     private static let heroHeight: CGFloat = 108
-    private static let titleBlockHeight: CGFloat = 44
-    private static let categoryRowHeight: CGFloat = 28
+    private static let titleBlockHeight: CGFloat = 52
+    private static let titleCategorySpacing: CGFloat = 8
+    private static let categoryRowHeight: CGFloat = 30
     private static let cardPadding: CGFloat = 12
     /// Same on every card so 2-column rows stay aligned (hero + text + category are fixed).
     private static var layoutHeight: CGFloat {
-        cardPadding * 2 + heroHeight + 10 + titleBlockHeight + 4 + categoryRowHeight
+        cardPadding * 2 + heroHeight + 10 + titleBlockHeight + titleCategorySpacing + categoryRowHeight
     }
 
     @ViewBuilder
@@ -1258,9 +1282,10 @@ struct PlaceVisitedCard: View {
                     heroDateBadge
                 }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Self.titleCategorySpacing) {
                 titleLabels
                     .frame(height: Self.titleBlockHeight, alignment: .topLeading)
+                    .clipped()
 
                 categoryRow
                     .frame(height: Self.categoryRowHeight, alignment: .leading)
@@ -1285,9 +1310,10 @@ struct PlaceVisitedCard: View {
                 heroDateBadge
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Self.titleCategorySpacing) {
                 titleBlock
                     .frame(height: Self.titleBlockHeight, alignment: .topLeading)
+                    .clipped()
 
                 categoryRow
                     .frame(height: Self.categoryRowHeight, alignment: .leading)
