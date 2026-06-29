@@ -105,12 +105,20 @@ struct TripDraft: Identifiable, Equatable, Hashable, Codable, Sendable {
         return count.max(by: { $0.value < $1.value })?.key ?? "New Place"
     }
 
-    /// Country that has the most photos in this trip (from photo countryName). Nil if none.
+    /// Country that has the most photos in this trip (from day or photo countryName). Nil if none.
     var primaryCountryDisplayName: String? {
-        let allPhotos = days.flatMap(\.photos)
-        let withCountry = allPhotos.compactMap { p -> String? in
-            let name = p.countryName?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (name != nil && !name!.isEmpty && name != "Unknown") ? name : nil
+        var withCountry: [String] = []
+        for day in days {
+            if let name = day.countryName?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !name.isEmpty, name != "Unknown" {
+                withCountry.append(name)
+            }
+            for photo in day.photos {
+                if let name = photo.countryName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !name.isEmpty, name != "Unknown" {
+                    withCountry.append(name)
+                }
+            }
         }
         if withCountry.isEmpty { return nil }
         var count: [String: Int] = [:]

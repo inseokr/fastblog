@@ -337,7 +337,8 @@ struct CountryBlogsView: View {
     // MARK: – Helpers
 
     private func displayCountryName(_ name: String) -> String {
-        name.isEmpty || name == "Unknown" ? "Other" : name
+        if name.isEmpty || name == "Unknown" || name.hasPrefix("Unknown-") { return "Other" }
+        return name
     }
 
     private func filterPill(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {

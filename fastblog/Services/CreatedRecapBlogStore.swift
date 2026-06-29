@@ -386,6 +386,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         if didMigrateCommittedSave { persistRecents() }
 
         refreshRecentsDateMetadataFromBlogDetails()
+        refreshRecentsCountryFromBlogDetails()
+        backfillMissingCountriesIfNeeded()
     }
 
     /// Merges blog days that share the same EXIF digitized calendar date (fixes duplicate "May 22" rows after flights).
@@ -563,7 +565,10 @@ final class CreatedRecapBlogStore: ObservableObject {
     func addCreatedBlog(trip: TripDraft) {
         let startDate = trip.earliestDate
         let endDate = trip.latestDate
-        let tempDetail = buildBlogDetail(from: trip)
+        var tempDetail = buildBlogDetail(from: trip)
+        if let country = trip.primaryCountryDisplayName, isValidCountryName(country) {
+            tempDetail.countryName = country
+        }
         let placeCount = tempDetail.days.reduce(0) { $0 + $1.placeStops.count }
         let duration = trip.days.count
 
@@ -1156,6 +1161,10 @@ final class CreatedRecapBlogStore: ObservableObject {
                 .flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
             recents[idx].totalPlaceVisitCount = savedDetail.days.reduce(0) { $0 + $1.placeStops.count }
             recents[idx].tripDurationDays = savedDetail.days.count
+            if !isValidCountryName(recents[idx].countryName),
+               let country = resolvedCountryName(for: recents[idx]) {
+                recents[idx].countryName = country
+            }
             // Mark as edited so the blog appears in "My blogs" / Latest (e.g. "Edited Today").
             recents[idx].lastEditedAt = Date()
             recents[idx].syncStatus = .needsUpload
@@ -1215,7 +1224,14 @@ final class CreatedRecapBlogStore: ObservableObject {
         syncAppCaptureCaptionsFromBlogDetail(sanitized)
         guard let idx = recents.firstIndex(where: { $0.sourceTripId == detail.id }) else { return false }
         let old = recents[idx]
-        let country = (detail.countryName.flatMap { $0.isEmpty || $0 == "Unknown" ? nil : $0 }) ?? old.countryName
+        let country = primaryCountryFromDetail(sanitized, trip: tripDraftsBySourceId[sanitized.id])
+            ?? countryNameFromBlogTitle(sanitized.title)
+            ?? old.countryName
+        if isValidCountryName(country) {
+            var detailWithCountry = sanitized
+            detailWithCountry.countryName = country
+            blogDetailsBySourceId[sanitized.id] = detailWithCountry
+        }
 
         // Use EXIF-aligned dates so recents / scan ranges match day row headers.
         let newStart = RecapBlogDay.alignedTripStartDate(from: detail.days) ?? old.tripStartDate
@@ -1252,7 +1268,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                 properties: [
                     "sourceTripId": detail.id.uuidString,
                     "blogTitle": detail.title,
-                    "countryName": detail.countryName ?? "",
+                    "countryName": country ?? "",
                     "locationLabel": locationLabel,
                 ],
                 context: AnalyticsContext(blogId: detail.id.uuidString)
@@ -1647,6 +1663,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             coordinate: coordinate,
             caption: nil
         )
+        objectWillChange.send()
     }
 
     /// Updates every blog stop / photo row for this `bloggo-capture:` identifier.
@@ -1712,6 +1729,24 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
+    /// My Places everyday captures are not in blog details; mirror place edits into capture `meta.json`.
+    private func syncPlacesVisitedEditToAppCaptureMetadata(
+        photoId: UUID,
+        newName: String,
+        category: String?,
+        coordinate: CLLocationCoordinate2D?,
+        subtitle: String
+    ) {
+        guard AppCapturePhotoService.shared.metadata(captureId: photoId) != nil else { return }
+        updatePlaceStopFromAppCapture(
+            captureId: photoId,
+            newName: newName,
+            category: category,
+            coordinate: coordinate,
+            subtitle: subtitle
+        )
+    }
+
     /// Updates the place stop name, category, coordinate, and subtitle for the stop that contains the given photo.
     /// Called when the user saves a place name edit from the Places Visited photo modal (via `EditPlaceStopNameSheet`).
     func updatePlaceStopFromPlacesVisited(photoId: UUID, newName: String, category: String?, coordinate: CLLocationCoordinate2D?, subtitle: String) {
@@ -1757,6 +1792,13 @@ final class CreatedRecapBlogStore: ObservableObject {
             persistBlogDetails()
             objectWillChange.send()
         }
+        syncPlacesVisitedEditToAppCaptureMetadata(
+            photoId: photoId,
+            newName: trimmed,
+            category: category,
+            coordinate: coordinate,
+            subtitle: subTrimmed
+        )
     }
 
     /// Updates only `placeCategory` for the stop that contains the given photo (Places Visited category chip / picker).
@@ -1826,6 +1868,15 @@ final class CreatedRecapBlogStore: ObservableObject {
         if changed {
             persistBlogDetails()
             objectWillChange.send()
+        }
+        if let meta = AppCapturePhotoService.shared.metadata(captureId: photoId) {
+            syncPlacesVisitedEditToAppCaptureMetadata(
+                photoId: photoId,
+                newName: trimmed,
+                category: meta.placeCategory,
+                coordinate: meta.location?.clCoordinate,
+                subtitle: meta.placeSubtitle ?? ""
+            )
         }
     }
 
@@ -2726,7 +2777,7 @@ final class CreatedRecapBlogStore: ObservableObject {
     func buildBlogDetailAsync(from trip: TripDraft) async -> RecapBlogDetail {
         var detail = buildBlogDetail(from: trip)
         var cityCandidates: [(city: String, order: Int)] = []
-        var countryCandidates: [(country: String, order: Int)] = []
+        var countryCandidates: [(country: String, weight: Int, order: Int)] = []
         var order = 0
 
         for dayIdx in detail.days.indices {
@@ -2739,7 +2790,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                     // timeZone is now in cache (place() populates it) — grab it and persist it
                     let tz = await GeocodingService.shared.timeZone(for: loc)
                     cityCandidates.append((place.cityName, order))
-                    countryCandidates.append((place.countryName, order))
+                    let weight = max(1, stop.photos.filter(\.isIncluded).count)
+                    countryCandidates.append((place.countryName, weight, order))
                     order += 1
                     var updated = detail.days[dayIdx]
                     var stopCopy = updated.placeStops[stopIdx]
@@ -2761,7 +2813,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         if Task.isCancelled { return detail }
 
         let primaryCity = primaryCityFromCandidates(cityCandidates)
-        let primaryCountry = primaryFromCandidates(countryCandidates)
+        let primaryCountry = primaryFromWeightedCandidates(countryCandidates)
         let season = seasonFromDetail(detail)
         let cityPart: String
         if primaryCity.isEmpty || primaryCity == "Unknown Place" {
@@ -2774,7 +2826,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         } else {
             detail.title = "Trip To \(cityPart)"
         }
-        if !primaryCountry.isEmpty && primaryCountry != "Unknown" {
+        if let primaryCountry, !primaryCountry.isEmpty && primaryCountry != "Unknown" {
             detail.countryName = primaryCountry
         }
 
@@ -2919,7 +2971,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
         // Process only day 0: geocode, then title/country from day 0, visitedTime for day 0, photo quality for day 0.
         var cityCandidates: [(city: String, order: Int)] = []
-        var countryCandidates: [(country: String, order: Int)] = []
+        var countryCandidates: [(country: String, weight: Int, order: Int)] = []
         var order = 0
         let geocodableStops = detail.days[firstDayIdx].placeStops.indices.filter {
             detail.days[firstDayIdx].placeStops[$0].representativeLocation != nil
@@ -2934,7 +2986,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                 let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                 let place = await GeocodingService.shared.place(for: loc)
                 cityCandidates.append((place.cityName, order))
-                countryCandidates.append((place.countryName, order))
+                let weight = max(1, stop.photos.filter(\.isIncluded).count)
+                countryCandidates.append((place.countryName, weight, order))
                 order += 1
                 var dayCopy = detail.days[firstDayIdx]
                 var stopCopy = dayCopy.placeStops[stopIdx]
@@ -2956,7 +3009,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         detail.days[firstDayIdx].isPlaceNamesResolved = true
 
         let primaryCity = primaryCityFromCandidates(cityCandidates)
-        let primaryCountry = primaryFromCandidates(countryCandidates)
+        let primaryCountry = primaryFromWeightedCandidates(countryCandidates)
         let season = seasonFromDetail(detail)
         let cityPart = (primaryCity.isEmpty || primaryCity == "Unknown Place") ? "New Place" : primaryCity
         if let s = season, !s.isEmpty {
@@ -2964,8 +3017,13 @@ final class CreatedRecapBlogStore: ObservableObject {
         } else {
             detail.title = "Trip To \(cityPart)"
         }
-        if !primaryCountry.isEmpty && primaryCountry != "Unknown" {
-            detail.countryName = primaryCountry
+        // Multi-day blogs: defer country until all days are geocoded (avoids day-0-only bias).
+        if detail.days.count == 1 {
+            if let primaryCountry, !primaryCountry.isEmpty && primaryCountry != "Unknown" {
+                detail.countryName = primaryCountry
+            }
+        } else if let tripCountry = trip.primaryCountryDisplayName, isValidCountryName(tripCountry) {
+            detail.countryName = tripCountry
         }
 
         detail = await applyVisitedTimeDigitized(to: detail, dayIndices: [firstDayIdx])
@@ -3021,13 +3079,15 @@ final class CreatedRecapBlogStore: ObservableObject {
             return
         }
         updatedDetail.days[dayIdx].isPlaceNamesResolved = true
+        updatedDetail = applyResolvedCountry(to: updatedDetail)
         // Update cover only after all days are fully scored so we pick the globally best photo.
         if updatedDetail.days.allSatisfy(\.isPlaceNamesResolved) {
             updateCoverPhotoFromQualityScores(&updatedDetail)
             updatedDetail = updatedDetail.consolidatingDuplicateCalendarDays()
+            updatedDetail = applyResolvedCountry(to: updatedDetail)
         }
         blogDetailsBySourceId[blogId] = updatedDetail
-        persistBlogDetails()
+        saveBlogDetail(updatedDetail, asDraft: true)
         processingDayIndexByBlogId.removeValue(forKey: blogId)
         objectWillChange.send()
 
@@ -3666,7 +3726,275 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
+    // MARK: - Country backfill
+
+    private var isBackfillingCountries = false
+
+    /// Reverse-geocodes blogs missing a country so My Blogs groups them correctly.
+    func backfillMissingCountriesIfNeeded() {
+        guard !isBackfillingCountries else { return }
+        Task { await backfillMissingCountries() }
+    }
+
+    private func backfillMissingCountries() async {
+        let blogsNeedingCountry = recents.filter { blog in
+            if let detail = blogDetailsBySourceId[blog.sourceTripId],
+               let expected = primaryCountryFromDetail(detail, trip: tripDraftsBySourceId[blog.sourceTripId]) {
+                return blog.countryName != expected
+            }
+            return !isValidCountryName(resolvedCountryName(for: blog))
+        }
+        guard !blogsNeedingCountry.isEmpty else { return }
+        isBackfillingCountries = true
+        defer {
+            isBackfillingCountries = false
+            objectWillChange.send()
+        }
+
+        var recentsChanged = false
+        var detailsChanged = false
+
+        for blog in blogsNeedingCountry {
+            if Task.isCancelled { return }
+
+            if let detail = blogDetailsBySourceId[blog.sourceTripId],
+               let country = primaryCountryFromDetail(detail, trip: tripDraftsBySourceId[blog.sourceTripId]),
+               let idx = recents.firstIndex(where: { $0.sourceTripId == blog.sourceTripId }) {
+                recents[idx].countryName = country
+                recentsChanged = true
+                var updated = detail
+                updated.countryName = country
+                blogDetailsBySourceId[blog.sourceTripId] = updated
+                detailsChanged = true
+                continue
+            }
+
+            guard let detail = blogDetailsBySourceId[blog.sourceTripId] else { continue }
+            let stopCount = detail.days.flatMap(\.placeStops).filter { stop in
+                stop.representativeLocation != nil || stop.photos.contains { $0.location != nil }
+            }.count
+            if stopCount > 0 {
+                let delay = await GeocodingService.shared.recommendedDelayBeforeNextBatch(estimatedNewCalls: min(stopCount, 5))
+                if delay > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+            }
+
+            let (updatedDetail, country) = await resolveCountryByGeocodingDetail(detail)
+            guard let country, isValidCountryName(country) else { continue }
+
+            blogDetailsBySourceId[blog.sourceTripId] = updatedDetail
+            detailsChanged = true
+            if let idx = recents.firstIndex(where: { $0.sourceTripId == blog.sourceTripId }) {
+                recents[idx].countryName = country
+                recentsChanged = true
+            }
+        }
+
+        if detailsChanged { persistBlogDetails() }
+        if recentsChanged { persistRecents() }
+    }
+
+    private func resolveCountryByGeocodingDetail(_ detail: RecapBlogDetail) async -> (RecapBlogDetail, String?) {
+        var detail = detail
+        var candidates: [(country: String, weight: Int, order: Int)] = []
+        var geocodeCache: [String: String] = [:]
+        var order = 0
+
+        for dayIdx in detail.days.indices {
+            for stopIdx in detail.days[dayIdx].placeStops.indices {
+                var stop = detail.days[dayIdx].placeStops[stopIdx]
+                if stop.representativeLocation == nil {
+                    stop.representativeLocation = stop.photos.compactMap(\.location).first
+                    detail.days[dayIdx].placeStops[stopIdx].representativeLocation = stop.representativeLocation
+                }
+                let weight = max(1, stop.photos.filter(\.isIncluded).count)
+
+                if let subtitle = stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !subtitle.isEmpty,
+                   let country = countryFromPlaceSubtitle(subtitle),
+                   isValidCountryName(country) {
+                    candidates.append((country, weight, order))
+                    order += 1
+                    continue
+                }
+
+                guard let coord = stop.representativeLocation else { continue }
+                let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+                let cacheKey = geocodeCacheKey(for: loc)
+
+                let countryName: String?
+                if let cached = geocodeCache[cacheKey] {
+                    countryName = cached.isEmpty ? nil : cached
+                } else {
+                    let place = await GeocodingService.shared.place(for: loc)
+                    countryName = isValidCountryName(place.countryName) ? place.countryName : nil
+                    geocodeCache[cacheKey] = countryName ?? ""
+                    if detail.days[dayIdx].placeStops[stopIdx].placeSubtitle == nil, !place.subtitle.isEmpty {
+                        detail.days[dayIdx].placeStops[stopIdx].placeSubtitle = place.subtitle
+                    }
+                }
+
+                if let countryName, isValidCountryName(countryName) {
+                    candidates.append((countryName, weight, order))
+                    order += 1
+                }
+            }
+        }
+
+        let country = primaryFromWeightedCandidates(candidates)
+            ?? primaryCountryFromDetail(detail)
+        if let country, isValidCountryName(country) {
+            detail.countryName = country
+            return (detail, country)
+        }
+        return (detail, nil)
+    }
+
+    private func applyResolvedCountry(to detail: RecapBlogDetail) -> RecapBlogDetail {
+        var detail = detail
+        if let country = primaryCountryFromDetail(detail, trip: tripDraftsBySourceId[detail.id])
+            ?? countryNameFromBlogTitle(detail.title) {
+            detail.countryName = country
+        }
+        return detail
+    }
+
     // MARK: - Private Helpers
+
+    private func isValidCountryName(_ name: String?) -> Bool {
+        guard let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return false }
+        return trimmed != "Unknown"
+    }
+
+    /// Best available country for grouping/display — photo-weighted majority across all place stops.
+    func resolvedCountryName(for blog: CreatedRecapBlog) -> String? {
+        if let detail = blogDetailsBySourceId[blog.sourceTripId],
+           let fromDetail = primaryCountryFromDetail(detail, trip: tripDraftsBySourceId[blog.sourceTripId]) {
+            return fromDetail
+        }
+        if let trip = tripDraftsBySourceId[blog.sourceTripId],
+           isValidCountryName(trip.primaryCountryDisplayName),
+           let name = trip.primaryCountryDisplayName {
+            return name.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if isValidCountryName(blog.countryName), let name = blog.countryName {
+            return name.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return countryNameFromBlogTitle(blog.title)
+    }
+
+    private func countryGroupingKey(for blog: CreatedRecapBlog) -> String {
+        if let country = resolvedCountryName(for: blog) { return country }
+        if let label = interimLocationLabel(for: blog) { return label }
+        return "Unknown-\(blog.sourceTripId.uuidString)"
+    }
+
+    private func interimLocationLabel(for blog: CreatedRecapBlog) -> String? {
+        if let detail = blogDetailsBySourceId[blog.sourceTripId] {
+            for day in detail.days {
+                for stop in day.placeStops {
+                    let title = stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !title.isEmpty, !title.hasPrefix("Stop "), title != "Captured Moment" {
+                        return title
+                    }
+                    if let subtitle = stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !subtitle.isEmpty {
+                        let city = subtitle.components(separatedBy: ", ").first?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let city, !city.isEmpty { return city }
+                    }
+                }
+            }
+        }
+        if let city = cityFromTripToTitle(blog.title) { return city }
+        if let trip = tripDraftsBySourceId[blog.sourceTripId] {
+            let city = trip.cityWithMostPhotosDisplayName
+            if !city.isEmpty, city != "New Place" { return city }
+        }
+        return nil
+    }
+
+    private func cityFromTripToTitle(_ title: String) -> String? {
+        guard title.hasPrefix("Trip To ") else { return nil }
+        var rest = String(title.dropFirst("Trip To ".count))
+        if let inRange = rest.range(of: " in ") {
+            rest = String(rest[..<inRange.lowerBound])
+        }
+        let trimmed = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || trimmed == "New Place" ? nil : trimmed
+    }
+
+    private func countryFromPlaceSubtitle(_ subtitle: String) -> String? {
+        let parts = subtitle.components(separatedBy: ", ").map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty }
+        guard let last = parts.last else { return nil }
+        return last
+    }
+
+    /// Photo-weighted majority country from geocoded place subtitles across all stops.
+    private func primaryCountryFromDetail(_ detail: RecapBlogDetail, trip: TripDraft? = nil) -> String? {
+        var candidates: [(country: String, weight: Int, order: Int)] = []
+        var order = 0
+        for day in detail.days {
+            for stop in day.placeStops {
+                let weight = max(1, stop.photos.filter(\.isIncluded).count)
+                if let subtitle = stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !subtitle.isEmpty,
+                   let country = countryFromPlaceSubtitle(subtitle),
+                   isValidCountryName(country) {
+                    candidates.append((country, weight, order))
+                    order += 1
+                }
+            }
+        }
+        if let fromStops = primaryFromWeightedCandidates(candidates) { return fromStops }
+        if let trip, let country = trip.primaryCountryDisplayName, isValidCountryName(country) {
+            return country
+        }
+        return nil
+    }
+
+    /// Backfills and corrects `countryName` on saved blogs from photo-weighted place data.
+    private func refreshRecentsCountryFromBlogDetails() {
+        var recentsChanged = false
+        var detailsChanged = false
+        for idx in recents.indices {
+            let sourceTripId = recents[idx].sourceTripId
+            guard let detail = blogDetailsBySourceId[sourceTripId] else { continue }
+            guard let resolved = primaryCountryFromDetail(detail, trip: tripDraftsBySourceId[sourceTripId])
+                ?? countryNameFromBlogTitle(detail.title) else { continue }
+            if recents[idx].countryName != resolved {
+                recents[idx].countryName = resolved
+                recentsChanged = true
+            }
+            if detail.countryName != resolved {
+                var updated = detail
+                updated.countryName = resolved
+                blogDetailsBySourceId[sourceTripId] = updated
+                detailsChanged = true
+            }
+        }
+        if detailsChanged { persistBlogDetails() }
+        if recentsChanged { persistRecents() }
+    }
+
+    private func primaryFromWeightedCandidates(_ candidates: [(country: String, weight: Int, order: Int)]) -> String? {
+        guard !candidates.isEmpty else { return nil }
+        var totals: [String: (weight: Int, firstOrder: Int)] = [:]
+        for (country, weight, order) in candidates where isValidCountryName(country) {
+            if let existing = totals[country] {
+                totals[country] = (existing.weight + weight, existing.firstOrder)
+            } else {
+                totals[country] = (weight, order)
+            }
+        }
+        let sorted = totals.sorted { a, b in
+            if a.value.weight != b.value.weight { return a.value.weight > b.value.weight }
+            return a.value.firstOrder < b.value.firstOrder
+        }
+        return sorted.first?.key
+    }
 
     private func primaryFromCandidates(_ candidates: [(country: String, order: Int)]) -> String {
         guard !candidates.isEmpty else { return "" }
@@ -3683,6 +4011,20 @@ final class CreatedRecapBlogStore: ObservableObject {
             return a.value.firstOrder < b.value.firstOrder
         }
         return sorted.first?.key ?? ""
+    }
+
+    private func countryNameFromBlogTitle(_ title: String) -> String? {
+        var base = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if base.hasSuffix(" Trip") {
+            let country = String(base.dropLast(" Trip".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if isValidCountryName(country) { return country }
+        }
+        if let inRange = base.range(of: " in ", options: .backwards) {
+            base = String(base[..<inRange.lowerBound])
+        }
+        guard let commaIdx = base.lastIndex(of: ",") else { return nil }
+        let country = String(base[base.index(after: commaIdx)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return isValidCountryName(country) ? country : nil
     }
 
     private func seasonFromDetail(_ detail: RecapBlogDetail) -> String? {
@@ -3756,10 +4098,7 @@ final class CreatedRecapBlogStore: ObservableObject {
     /// Country summaries using only cloud-published blogs (for Profile page).
     var cloudCountrySummaries: [CountryRecapSummary] {
         let published = cloudPublishedBlogs
-        let grouped = Dictionary(grouping: published) { blog -> String in
-            let name = blog.countryName ?? "Unknown"
-            return name.isEmpty || name == "Unknown" ? "Unknown" : name
-        }
+        let grouped = Dictionary(grouping: published) { countryGroupingKey(for: $0) }
         return grouped.compactMap { countryName, blogs in
             guard let mostRecent = blogs.max(by: {
                 ($0.tripEndDate ?? $0.tripStartDate ?? $0.createdAt) < ($1.tripEndDate ?? $1.tripStartDate ?? $1.createdAt)
@@ -3805,10 +4144,7 @@ final class CreatedRecapBlogStore: ObservableObject {
     /// Group recents by country for Profile (auth-filtered).
     var countrySummaries: [CountryRecapSummary] {
         let filtered = visibleRecents
-        let grouped = Dictionary(grouping: filtered) { blog -> String in
-            let name = blog.countryName ?? "Unknown"
-            return name.isEmpty || name == "Unknown" ? "Unknown" : name
-        }
+        let grouped = Dictionary(grouping: filtered) { countryGroupingKey(for: $0) }
         return grouped.compactMap { countryName, blogs in
             guard let mostRecent = blogs.max(by: {
                 ($0.tripEndDate ?? $0.tripStartDate ?? $0.createdAt) < ($1.tripEndDate ?? $1.tripStartDate ?? $1.createdAt)

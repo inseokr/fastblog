@@ -270,6 +270,7 @@ struct MyBlogsProfileView: View {
             viewModel.loadUnsavedTrips()
             checkForNewMoments()
             reportTopScrollState()
+            createdRecapStore.backfillMissingCountriesIfNeeded()
             let validIds = Set(createdRecapStore.visibleRecents.map(\.sourceTripId))
             menuIndicators.pruneInvalidBlogs(validSourceTripIds: validIds)
         }
@@ -328,10 +329,15 @@ struct MyBlogsProfileView: View {
 
     // MARK: - Page routing
 
+    private func displayCountryName(_ name: String) -> String {
+        if name.isEmpty || name == "Unknown" || name.hasPrefix("Unknown-") { return "Other" }
+        return name
+    }
+
     private var pageTitle: String {
         switch currentPage {
         case .blogs: return "My Blogs"
-        case .country(let section): return section.countryName.isEmpty || section.countryName == "Unknown" ? "Other" : section.countryName
+        case .country(let section): return displayCountryName(section.countryName)
         }
     }
 

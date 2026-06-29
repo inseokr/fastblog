@@ -101,6 +101,7 @@ struct CountryCardView: View {
     }
 
     private func displayCountryName(_ name: String) -> String {
-        name.isEmpty || name == "Unknown" ? "Other" : name
+        if name.isEmpty || name == "Unknown" || name.hasPrefix("Unknown-") { return "Other" }
+        return name
     }
 }

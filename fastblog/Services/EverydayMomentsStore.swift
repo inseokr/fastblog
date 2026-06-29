@@ -217,8 +217,10 @@ final class EverydayMomentsStore: ObservableObject {
                     dayRows.first { $0.uuid == photo.id }
                 }
                 guard !groupRows.isEmpty else { continue }
-                let titles = groupRows.compactMap(\.placeTitle).filter { !$0.isEmpty }
-                let placeTitle = titles.first ?? groupRows.first?.placeTitle ?? "Captured Moment"
+                let resolvedTitles = groupRows.compactMap(\.placeTitle).filter {
+                    !$0.isEmpty && !PlacePlaceholderNaming.isResolvablePlaceholder($0)
+                }
+                let placeTitle = resolvedTitles.first ?? groupRows.compactMap(\.placeTitle).first { !$0.isEmpty } ?? "Captured Moment"
                 let subtitle = groupRows.compactMap(\.placeSubtitle).first
                 let category = groupRows.compactMap(\.placeCategory).first
                 let loc = groupRows.compactMap(\.location).first

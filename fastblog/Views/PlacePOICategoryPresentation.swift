@@ -466,6 +466,9 @@ struct PlacePOICategoryBadge: View {
 
 /// Auto-generated place titles before reverse geocoding or POI resolution completes.
 enum PlacePlaceholderNaming {
+    /// Shown in UI when the stored title is still a system placeholder (not persisted as the place name).
+    static let unsetPlaceDisplayTitle = "Name this place"
+
     static func isResolvablePlaceholder(_ title: String) -> Bool {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty || trimmed == "Unknown Place" { return true }
@@ -476,5 +479,10 @@ enum PlacePlaceholderNaming {
             return suffix.isEmpty || suffix == "Unknown Place"
         }
         return false
+    }
+
+    /// User-visible title; keeps internal storage (e.g. "Captured Moment") unchanged for geocoding and stores.
+    static func userFacingTitle(_ raw: String) -> String {
+        isResolvablePlaceholder(raw) ? unsetPlaceDisplayTitle : raw.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

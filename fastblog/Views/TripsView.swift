@@ -1909,12 +1909,29 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
             self.session.commitConfiguration()
             guard let configuredDevice = self.videoDevice else { return }
+            self.configureCaptureDevice(configuredDevice)
+            self.applyVideoZoomFactor(Self.defaultVideoZoomFactor(for: configuredDevice))
             DispatchQueue.main.async {
-                self.zoomFactor = configuredDevice.minAvailableVideoZoomFactor
                 self.refreshDisplayZoomPresets(for: configuredDevice)
                 self.isConfigured = true
             }
         }
+    }
+
+    /// Video zoom for 1× display — matches the built-in Camera app default (wide lens, not ultrawide).
+    private static func defaultVideoZoomFactor(for device: AVCaptureDevice) -> CGFloat {
+        let multiplier = displayZoomMultiplier(for: device)
+        let videoFactor = 1.0 / multiplier
+        return max(device.minAvailableVideoZoomFactor, min(videoFactor, device.maxAvailableVideoZoomFactor))
+    }
+
+    private func configureCaptureDevice(_ device: AVCaptureDevice) {
+        guard device.isGeometricDistortionCorrectionSupported else { return }
+        do {
+            try device.lockForConfiguration()
+            device.isGeometricDistortionCorrectionEnabled = true
+            device.unlockForConfiguration()
+        } catch {}
     }
 
     /// Prefers a multi-camera virtual device on the back when available so 0.5× / 2× presets map to real lenses.
@@ -2028,9 +2045,10 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             if self.hasMovieOutput {
                 self.ensureMovieOutputConfiguredLocked()
             }
+            self.configureCaptureDevice(device)
+            self.applyVideoZoomFactor(Self.defaultVideoZoomFactor(for: device))
             DispatchQueue.main.async {
                 self.position = nextPosition
-                self.zoomFactor = device.minAvailableVideoZoomFactor
                 self.refreshDisplayZoomPresets(for: device)
             }
         }

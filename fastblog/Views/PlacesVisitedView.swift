@@ -1031,7 +1031,9 @@ struct PlacesVisitedView: View {
                 .buttonStyle(.plain)
             }
         }
-        .onTapGesture { isSearchActive = true }
+        .onChange(of: isSearchFocused) { _, focused in
+            isSearchActive = focused
+        }
     }
 
     private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
@@ -1095,15 +1097,26 @@ struct PlaceVisitedPhotoModalWrapper: View {
     /// Live place name — updated when user edits via the kebab 'Edit Place Name' menu item.
     @State private var livePlaceTitle: String = ""
 
+    private func rawPlaceName(photoId: UUID, photos: [RecapPhoto]) -> String {
+        if !livePlaceTitle.isEmpty { return livePlaceTitle }
+        if let fromMeta = store.placeTitleForAppCapture(captureId: photoId),
+           !fromMeta.isEmpty {
+            return fromMeta
+        }
+        if let refreshed = store.visitedPlaces.first(where: { $0.placeId == place.placeId }) {
+            return refreshed.placeName
+        }
+        return place.placeName
+    }
+
     var body: some View {
         // Look up live photos from the store so we always reflect the current included-photo state,
         // even if isIncluded flags changed after this sheet was first presented.
         let photos = store.visitedPlaces.first { $0.placeId == place.placeId }?.photos ?? place.photos
         if let initialPhotoId = photos.first?.id {
-            ZStack(alignment: .topTrailing) {
             PlacePhotoModalView(
                 placeTitle: Binding(
-                    get: { livePlaceTitle.isEmpty ? place.displayName : livePlaceTitle },
+                    get: { rawPlaceName(photoId: initialPhotoId, photos: photos) },
                     set: { newName in
                         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trimmed.isEmpty else { return }
@@ -1133,6 +1146,7 @@ struct PlaceVisitedPhotoModalWrapper: View {
                 onDismiss: onDismiss,
                 onDismissSlideBegan: onDismissSlideBegan,
                 onViewBlog: place.relatedBlogs.isEmpty ? nil : onViewBlog,
+                onCreateTripBlog: onCreateTripBlog,
                 onPhotoCaptionManuallyEdited: { photoId in
                     // updatePhotoCaption already called via the binding setter
                 },
@@ -1158,18 +1172,15 @@ struct PlaceVisitedPhotoModalWrapper: View {
                     store.updatePlaceStopCategoryFromPlacesVisited(photoId: initialPhotoId, category: newCategory)
                 }
             )
-            if let onCreateTripBlog {
-                Button(action: onCreateTripBlog) {
-                    Label("Create Trip Blog", systemImage: "book.closed.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.blue.opacity(0.9), in: Capsule())
+            .task(id: initialPhotoId) {
+                await store.resolveAppCapturePlaceIfNeeded(
+                    captureId: initialPhotoId,
+                    fallbackCoordinate: photos.first?.location?.clCoordinate
+                )
+                if let resolved = store.placeTitleForAppCapture(captureId: initialPhotoId),
+                   !PlacePlaceholderNaming.isResolvablePlaceholder(resolved) {
+                    livePlaceTitle = resolved
                 }
-                .padding(.top, 56)
-                .padding(.trailing, 16)
-            }
             }
         } else {
             Color.clear.onAppear { onDismiss() }
@@ -1786,11 +1797,12 @@ private struct PlacesVisitedMapView: View {
 
             // Search overlay (dark navy, similar to My Blogs map search)
             if isSearchActive {
-                Color(red: 5/255, green: 10/255, blue: 48/255)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
+                ZStack(alignment: .top) {
+                    Color(red: 5/255, green: 10/255, blue: 48/255)
+                        .ignoresSafeArea()
+                        .onTapGesture { isSearchFocused = false }
 
-                VStack(spacing: 0) {
+                    VStack(spacing: 0) {
                     // Search bar under header
                     HStack(spacing: 12) {
                         Image(systemName: "magnifyingglass")
@@ -1894,6 +1906,7 @@ private struct PlacesVisitedMapView: View {
                         .padding(.bottom, 32)
                     }
                     .scrollDismissesKeyboard(.immediately)
+                    }
                 }
                 .transition(.opacity)
             }
@@ -1949,11 +1962,6 @@ private struct PlacesVisitedMapView: View {
                     }
                 }
                 .zIndex(90)
-            }
-        }
-        .onTapGesture {
-            if isSearchFocused {
-                isSearchFocused = false
             }
         }
         .navigationBarBackButtonHidden(true)

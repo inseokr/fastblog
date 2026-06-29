@@ -142,6 +142,8 @@ struct PlacePhotoModalView: View {
     /// Blog overlay: fire when the slide-off dismiss animation begins so the recap nav bar can show in sync with the panel.
     var onDismissSlideBegan: (() -> Void)? = nil
     var onViewBlog: (() -> Void)?
+    /// Places Visited everyday-only: promotes captures to a trip blog in My Blogs.
+    var onCreateTripBlog: (() -> Void)? = nil
     /// When provided, a magic wand button is shown in the caption editing panel (only when user has written text).
     /// Called with (photo, placeName, placeSubtitle, userText); returns enriched caption.
     var onGenerateCaption: ((RecapPhoto, String, String?, String) async -> String)?
@@ -337,6 +339,7 @@ struct PlacePhotoModalView: View {
         onDismiss: @escaping () -> Void,
         onDismissSlideBegan: (() -> Void)? = nil,
         onViewBlog: (() -> Void)? = nil,
+        onCreateTripBlog: (() -> Void)? = nil,
         onGenerateCaption: ((RecapPhoto, String, String?, String) async -> String)? = nil,
         onAICaptionApplied: ((UUID) -> Void)? = nil,
         onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil,
@@ -363,6 +366,7 @@ struct PlacePhotoModalView: View {
         self.onDismiss = onDismiss
         self.onDismissSlideBegan = onDismissSlideBegan
         self.onViewBlog = onViewBlog
+        self.onCreateTripBlog = onCreateTripBlog
         self.onGenerateCaption = onGenerateCaption
         self.onAICaptionApplied = onAICaptionApplied
         self.onPhotoCaptionManuallyEdited = onPhotoCaptionManuallyEdited
@@ -638,6 +642,7 @@ struct PlacePhotoModalView: View {
                                         showRenameSheet = true
                                     },
                                     onViewBlog: titleRowOnViewBlog,
+                                    onCreateTripBlog: onCreateTripBlog,
                                     onToggleVoiceMemo: {
                                         guard let memoURL = currentVoiceMemoURL else { return }
                                         if voiceMemoPlayer.isPlaying {
@@ -648,7 +653,8 @@ struct PlacePhotoModalView: View {
                                             voiceMemoPlayer.play(url: memoURL)
                                         }
                                     },
-                                    onCommitCaption: { commitCaption() }
+                                    onCommitCaption: { commitCaption() },
+                                    useUnsetPlaceDisplayLabel: presentation.fullscreenSource == .placesVisited
                                 )
                             }
 
@@ -2128,8 +2134,18 @@ struct BottomInfoOverlay: View {
     var onTitleTap: (() -> Void)? = nil
     /// Places Visited only: opens the source blog; trailing-aligned with the place title row.
     var onViewBlog: (() -> Void)? = nil
+    /// Places Visited everyday-only: promotes captures to a trip blog in My Blogs.
+    var onCreateTripBlog: (() -> Void)? = nil
     var onToggleVoiceMemo: (() -> Void)? = nil
     var onCommitCaption: () -> Void
+    /// My Places fullscreen: show "Name this place" when the stored title is still a system placeholder.
+    var useUnsetPlaceDisplayLabel: Bool = false
+
+    private var titleLabel: String {
+        useUnsetPlaceDisplayLabel
+            ? PlacePlaceholderNaming.userFacingTitle(placeTitle)
+            : placeTitle
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -2138,7 +2154,7 @@ struct BottomInfoOverlay: View {
                     // Tappable place title — opens Edit Place Name when editing is available.
                     Button(action: { onTitleTap?() }) {
                         HStack(alignment: .firstTextBaseline, spacing: 5) {
-                            Text(placeTitle)
+                            Text(titleLabel)
                                 .font(.title2)
                                 .fontWeight(.bold)
                                 .foregroundColor(.white)
@@ -2159,7 +2175,24 @@ struct BottomInfoOverlay: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(onTitleTap == nil)
-                    .accessibilityLabel("Edit place name")
+                    .accessibilityLabel(
+                        useUnsetPlaceDisplayLabel && PlacePlaceholderNaming.isResolvablePlaceholder(placeTitle)
+                            ? PlacePlaceholderNaming.unsetPlaceDisplayTitle
+                            : placeTitle
+                    )
+
+                    if let onCreateTripBlog {
+                        Button(action: onCreateTripBlog) {
+                            Label("Create Trip Blog", systemImage: "book.closed.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Color.blue.opacity(0.9), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Create trip blog")
+                    }
 
                     if let onViewBlog {
                         Button(action: onViewBlog) {
