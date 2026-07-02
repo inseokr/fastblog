@@ -1442,7 +1442,9 @@ private func applyMultiLayoutGrouping(primaryIndex: Int, slides: inout [Carousel
                 slides[si].isSelected = true
             } else {
                 slides[si].layout = .single
-                slides[si].isSelected = false
+                // Do not clear isSelected here — isSlideHiddenBySiblingPIP handles
+                // hiding pip-absorbed siblings dynamically. Preserving isSelected keeps
+                // user-hidden slides hidden when Multi is later released.
                 slides[si].pipImages = []
                 slides[si].pipPhotoIDs = []
                 slides[si].pipThumbnailFramings = []
@@ -1462,8 +1464,10 @@ private func releaseMultiLayoutGrouping(primaryIndex: Int, slides: inout [Carous
     for si in placeStopSiblingIndices(stopID: stopID, in: slides) {
         guard let pid = slides[si].heroPhotoID, clusterPhotos.contains(pid) else { continue }
         slides[si].layout = .single
-        slides[si].isSelected = true
         if si != primaryIndex {
+            // Exiting Multi collapses the deck to just the primary: siblings stay hidden.
+            // The user can explicitly un-hide them if they want individual slides.
+            slides[si].isSelected = false
             slides[si].pipImages = []
             slides[si].pipPhotoIDs = []
             slides[si].pipThumbnailFramings = []
@@ -1481,7 +1485,8 @@ private func releaseSplitLayoutGrouping(splitIndex: Int, slides: inout [Carousel
     for si in placeStopSiblingIndices(stopID: stopID, in: slides) {
         if slides[si].heroPhotoID == bottomID {
             slides[si].layout = .single
-            slides[si].isSelected = true
+            // Do not restore isSelected: exiting Split collapses back to primary only.
+            // The bottom photo stays hidden; user can explicitly un-hide it.
         }
     }
     slides[splitIndex].splitBottomImage = nil
@@ -5883,6 +5888,7 @@ struct SlideTextEditorView: View {
         var layoutTxn = Transaction()
         layoutTxn.disablesAnimations = true
         withTransaction(layoutTxn) {
+            let previousLayout = slides[index].layout
             if layout == .single {
                 if slides[index].layout == .pip {
                     releaseMultiLayoutGrouping(primaryIndex: index, slides: &slides)
@@ -5910,10 +5916,6 @@ struct SlideTextEditorView: View {
                 }
                 applyMultiLayoutGrouping(primaryIndex: index, slides: &slides)
             } else if let stopID {
-                for i in slides.indices where i != index {
-                    guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
-                    slides[i].isSelected = true
-                }
                 if placeStopSiblingIndices(stopID: stopID, in: slides).count > 1 {
                     repopulatePipPayloadsForPlaceStop(stopID: stopID, slides: &slides)
                 }
@@ -7138,9 +7140,8 @@ struct SlideTextEditorView: View {
                 if let stopID {
                     for i in slides.indices where i != slideIndex {
                         guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
-                        if let previousBottomID, slides[i].heroPhotoID == previousBottomID {
-                            slides[i].isSelected = true
-                        }
+                        // Do NOT restore old split bottom: replacing the bottom photo keeps the
+                        // swapped-out slide absorbed rather than making it reappear in the deck.
                         if slides[i].heroPhotoID == photo.id {
                             slides[i].isSelected = false
                         }
@@ -11249,10 +11250,8 @@ struct SocialPostStudioSheet: View {
 
     // MARK: - Layout
 
-    /// Sets the layout for the slide at `index` and syncs sibling-slide selection.
-    /// When switching to `.pip`, sibling slides for the same place stop are deselected
-    /// because their photos are already visible in the PIP cluster. Switching back to
-    /// `.single` re-selects them so they appear as individual slides again.
+    /// Sets the layout for the slide at `index`. Switching back to `.single` from
+    /// `.pip` or `.split` collapses siblings to hidden — only the primary stays in deck.
     private func setLayout(_ layout: CarouselSlideLayout, forSlideAt index: Int) {
         guard slides.indices.contains(index), slides[index].kind == .placeStop else { return }
         let stopID = slides[index].placeStop?.id
@@ -11290,10 +11289,6 @@ struct SocialPostStudioSheet: View {
                 }
                 applyMultiLayoutGrouping(primaryIndex: index, slides: &slides)
             } else if let stopID {
-                for i in slides.indices where i != index {
-                    guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
-                    slides[i].isSelected = true
-                }
                 if placeStopSiblingIndices(stopID: stopID, in: slides).count > 1 {
                     repopulatePipPayloadsForPlaceStop(stopID: stopID, slides: &slides)
                 }
@@ -11338,8 +11333,6 @@ struct SocialPostStudioSheet: View {
             guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
             if slides[i].heroPhotoID == bottomID {
                 slides[i].isSelected = false
-            } else {
-                slides[i].isSelected = true
             }
         }
     }
