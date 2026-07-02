@@ -2280,9 +2280,9 @@ private struct DraggableTextBlock<Content: View>: View {
                         if !didBeginGesture {
                             didBeginGesture = true
                             wasSelectedAtGestureStart = isSelected
+                            onDragStart()
+                            onSelect()
                         }
-                        onDragStart()
-                        onSelect()
                     }
                     .onEnded { value in
                         // Finger lifted with almost no movement → treat as a tap.
@@ -4372,6 +4372,22 @@ private struct DraggablePIPThumb: View {
 
 // MARK: - Per-slide edit page
 
+/// Lightweight stand-in for off-window pager pages — fixed size, no imagery decode.
+private struct EditorPagerPlaceholderPage: View {
+    let width: CGFloat
+    let height: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color.white.opacity(0.06))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+            }
+            .frame(width: width, height: height)
+    }
+}
+
 private struct SlideEditPage: View {
     @Binding var slide: CarouselSlide
     let aspectRatio: CGFloat
@@ -5147,6 +5163,9 @@ struct SlideTextEditorView: View {
     @State private var locksHorizontalSlidePaging = false
     /// One-shot guard so a swipe clears selection once per drag.
     @State private var didClearSelectionForPagerDrag = false
+    /// After hiding a slide, holds the intended pager target until `scrollPosition` stops
+    /// writing spurious ids (e.g. snapping to the cover when a page id leaves the layout).
+    @State private var editorPagerPendingLandingIndex: Int? = nil
     /// Briefly true after a bulk "Apply to…" action to show a confirmation flash.
     @State private var didApplyToAll = false
     /// Prior `slides` arrays for incremental undo (shallow copy; `UIImage` refs unchanged).
@@ -5630,18 +5649,30 @@ struct SlideTextEditorView: View {
         let visible = visibleSlideIndices
         guard !visible.isEmpty else { return }
         if !visible.contains(currentIndex) {
-            // Stable tie-break: equal distance → prefer the earlier slide (deterministic
-            // vs `min(by:)` on ties, which felt random when leaving a hidden sibling).
-            let nearest = visible.min(by: { a, b in
-                let da = abs(a - currentIndex)
-                let db = abs(b - currentIndex)
-                if da != db { return da < db }
-                return a < b
-            }) ?? visible[0]
+            // Prefer the next visible slide (natural after hide), then previous.
+            let nearest: Int
+            if let next = visible.first(where: { $0 > currentIndex }) {
+                nearest = next
+            } else if let prev = visible.last(where: { $0 < currentIndex }) {
+                nearest = prev
+            } else {
+                nearest = visible[0]
+            }
             currentIndex = nearest
             scrollPageID = nearest
             selectedBlock = nil
         }
+    }
+
+    /// Raw slide index to land on after hiding `hiddenIndex` from the pager.
+    private func editorPagerLandingIndexAfterHiding(rawIndex hiddenIndex: Int) -> Int {
+        let visible = visibleSlideIndices
+        guard !visible.isEmpty else {
+            return min(max(0, hiddenIndex), max(0, slides.count - 1))
+        }
+        if let next = visible.first(where: { $0 > hiddenIndex }) { return next }
+        if let prev = visible.last(where: { $0 < hiddenIndex }) { return prev }
+        return visible[0]
     }
 
     /// After the visible page list changes (e.g. PIP hides sibling singles), `scrollPosition`
@@ -5665,18 +5696,136 @@ struct SlideTextEditorView: View {
         visibleSlideIndices.map(String.init).joined(separator: ",")
     }
 
+    /// How many raw slide indices on either side of the window center get a photo preview
+    /// (background only — no text/PIP chrome) while swiping. Everything else is a placeholder.
+    private static let editorPagerStaticPreviewRadius = 2
+
+    private enum EditorPagerPageMode {
+        case fullEdit
+        case staticPreview
+        case placeholder
+    }
+
+    /// Slide index the pager window is centered on — prefer live scroll binding over settled index.
+    private var editorPagerWindowCenter: Int {
+        if let sid = scrollPageID,
+           slides.indices.contains(sid),
+           visibleSlideIndices.contains(sid) {
+            return sid
+        }
+        return editorPagerFocusedSlideIndex
+    }
+
+    private func editorPagerPageMode(for index: Int) -> EditorPagerPageMode {
+        let distance = abs(index - editorPagerWindowCenter)
+        if distance == 0 { return .fullEdit }
+        if distance <= Self.editorPagerStaticPreviewRadius { return .staticPreview }
+        return .placeholder
+    }
+
+    private func editorPagerPreviewSlideWidth(layoutWidth: CGFloat, maxHeight: CGFloat) -> CGFloat {
+        let fromLayout = max(220, layoutWidth - 48)
+        let fromHeight = maxHeight * editorPreviewAspectRatio
+        return min(fromLayout, fromHeight)
+    }
+
+    @ViewBuilder
+    private func editorPagerStaticPreview(
+        for index: Int,
+        slotW: CGFloat,
+        slotH: CGFloat,
+        firstMapSlideIndex: Int?
+    ) -> some View {
+        let previewW = editorPagerPreviewSlideWidth(layoutWidth: slotW, maxHeight: slotH)
+        CarouselSlideView(
+            slide: slides[index],
+            width: previewW,
+            aspectRatio: editorPreviewAspectRatio,
+            onToggleSelection: {},
+            showsSelectionChrome: false,
+            isEditingText: false,
+            clipsFloatingContentToRoundedSlideOutline: false,
+            showsBackgroundOnly: true,
+            showPoweredByBloggoMapWatermark: firstMapSlideIndex == index
+        )
+    }
+
     private var canExcludeCurrentSlide: Bool {
-        guard hasValidCurrentIndex else { return false }
-        let kind = slides[currentIndex].kind
+        let idx = editorPagerFocusedSlideIndex
+        guard slides.indices.contains(idx) else { return false }
+        let kind = slides[idx].kind
         return (kind == .placeStop && onExcludePlaceFromStudio != nil) ||
                (isCarouselStudioMapKind(kind) && onExcludeMapFromStudio != nil)
+    }
+
+    private var hideCurrentSlideMenuTitle: String {
+        let idx = editorPagerFocusedSlideIndex
+        guard slides.indices.contains(idx) else { return "Hide slide" }
+        return isCarouselStudioMapKind(slides[idx].kind) ? "Hide map slide" : "Hide slide"
+    }
+
+    @ViewBuilder
+    private var editorTopTrailingActionsMenu: some View {
+        let exportDisabled = exportActions.exportActionsDisabled()
+        let limit = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
+        Menu {
+            if canExcludeCurrentSlide {
+                Button(role: .destructive) {
+                    performExcludeFromStudio()
+                } label: {
+                    Label(hideCurrentSlideMenuTitle, systemImage: "eye.slash")
+                }
+            }
+            if currentPlaceSlide != nil {
+                Button {
+                    presentCurrentSlideLayoutSheet()
+                } label: {
+                    Label("Layout selection", systemImage: "rectangle.split.2x1")
+                }
+            }
+            if canExcludeCurrentSlide || currentPlaceSlide != nil {
+                Divider()
+            }
+            Button {
+                if studioDownloadCandidateIndices.count <= limit {
+                    Task { await exportActions.share() }
+                } else {
+                    selectAllSlidesForSharePick()
+                    carouselStudioExportHubPhase = .pickShareSlides
+                    showCarouselStudioExportHub = true
+                }
+            } label: {
+                Label("Share to social apps…", systemImage: "square.and.arrow.up")
+            }
+            .disabled(exportDisabled)
+            Button {
+                selectAllSlidesForDownloadPick()
+                downloadOutputMode = .photo
+                carouselStudioExportHubPhase = .pickDownloadSlides
+                showCarouselStudioExportHub = true
+            } label: {
+                Label("Download…", systemImage: "arrow.down.to.line")
+            }
+            .disabled(exportDisabled)
+        } label: {
+            ZStack {
+                Color.clear
+                    .frame(width: 44, height: 44)
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Carousel Studio actions")
     }
 
     /// Initiates exclusion of the current slide: shows confirmation unless the user opted out.
     private func performExcludeFromStudio() {
         guard canExcludeCurrentSlide else { return }
+        let idx = editorPagerFocusedSlideIndex
         if skipExcludeConfirm {
-            commitExclude(at: currentIndex)
+            commitExclude(at: idx)
         } else {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                 showExcludeConfirmOverlay = true
@@ -5697,10 +5846,13 @@ struct SlideTextEditorView: View {
             return
         }
         // Both place and map slides are hidden in-place (isSelected = false) — no array change,
-        // no index arithmetic needed. clampCurrentIndexIfNeeded jumps to nearest visible slide.
-        scrollPageID = currentIndex
+        // no index arithmetic needed. Re-pin the pager to the next visible slide — without
+        // this, `scrollPosition` loses the hidden page id and snaps to the cover (index 0).
+        let landing = editorPagerLandingIndexAfterHiding(rawIndex: idx)
         selectedBlock = nil
-        clampCurrentIndexIfNeeded()
+        currentIndex = landing
+        editorPagerPendingLandingIndex = landing
+        reassertEditorPagerToSlide(at: landing)
     }
 
     private func updateStyle(_ update: (inout TextBlockStyle) -> Void) {
@@ -7393,105 +7545,117 @@ struct SlideTextEditorView: View {
 
                         GeometryReader { slideGeo in
                             let slotW = slideGeo.size.width
+                            let firstMapSlideIndex = indexOfFirstCarouselStudioMapSlide(in: slides)
                             ScrollView(.horizontal, showsIndicators: false) {
-                                // HStack (not LazyHStack): .scrollPosition(id:) needs every
-                                // page's size to be known up front when jumping to a non-zero
-                                // initial index, otherwise SwiftUI estimates widths for
-                                // unmaterialized pages and lands a few points off-center.
-                                // Slide count is small (<= ~20), so eager layout is fine.
+                                // Fixed-width HStack pages (not LazyHStack) so `scrollPosition(id:)`
+                                // lands on the correct index. Only the window around the focused slide
+                                // renders full edit surfaces; neighbors get background-only previews;
+                                // distant pages are lightweight placeholders — keeps 100+ decks usable.
                                 HStack(spacing: 0) {
-                                    // Only paginate through visible slides so pages that
-                                    // have been collapsed into a sibling's PIP cluster don't
-                                    // reappear here. `.id(i)` keeps raw slide indices as page
-                                    // IDs — `scrollPageID` and `currentIndex` stay indices
-                                    // into `slides`, matching the rest of the editor's state.
                                     ForEach(visibleSlideIndices, id: \.self) { i in
+                                        let pageMode = editorPagerPageMode(for: i)
+                                        let previewW = editorPagerPreviewSlideWidth(layoutWidth: slotW, maxHeight: slotH)
+                                        let previewH = previewW / editorPreviewAspectRatio
                                         VStack(spacing: 0) {
                                             Spacer(minLength: 0)
-                                            SlideEditPage(
-                                                slide: $slides[i],
-                                                aspectRatio: editorPreviewAspectRatio,
-                                                layoutWidth: slotW,
-                                                maxHeight: slotH,
-                                                selectedBlock: selectedBlock,
-                                                onSelectBlock: {
-                                                    selectedBlock = $0
-                                                    selectedSplitSlot = nil
-                                                    // Switching to a non-PIP block clears photo selection
-                                                    if $0 != .pipCluster { selectedPIPPhotoIndex = nil }
-                                                },
-                                                onDeselect: {
-                                                    selectedBlock = nil
-                                                    selectedPIPPhotoIndex = nil
-                                                },
-                                                recordUndoSnapshot: { pushUndoSnapshot() },
-                                                locksHorizontalSlidePaging: $locksHorizontalSlidePaging,
-                                                onRequestHeroSwap: { idx in
-                                                    // Drop text/PIP selection and bottom chrome so the swap sheet
-                                                    // is the only focus (case `nil` no longer forces the sheet closed).
-                                                    selectedBlock = nil
-                                                    selectedPIPPhotoIndex = nil
-                                                    heroSwapSlideIndex = idx
-                                                    showsHeroPhotoSwapSheet = true
-                                                },
-                                                onRequestPIPInsetReplace: { slideIdx, thumbIdx in
-                                                    selectedBlock = .pipCluster
-                                                    selectedPIPPhotoIndex = thumbIdx
-                                                    pipInsetReplaceSession = PIPInsetReplaceSession(
-                                                        slideIndex: slideIdx,
-                                                        clusterThumbIndex: thumbIdx)
-                                                },
-                                                onRequestSplitBottomPick: { idx in
-                                                    selectedBlock = nil
-                                                    selectedPIPPhotoIndex = nil
-                                                    guard slides.indices.contains(idx) else { return }
-                                                    if isCarouselStudioMapKind(slides[idx].kind) {
-                                                        // Visual lower half = map (`splitTopFraming`); do not open photo picker.
-                                                        selectedSplitSlot = .top
-                                                    } else {
-                                                        selectedSplitSlot = .bottom
-                                                        presentSplitBottomPicker(for: idx)
+                                            switch pageMode {
+                                            case .fullEdit:
+                                                SlideEditPage(
+                                                    slide: $slides[i],
+                                                    aspectRatio: editorPreviewAspectRatio,
+                                                    layoutWidth: slotW,
+                                                    maxHeight: slotH,
+                                                    selectedBlock: selectedBlock,
+                                                    onSelectBlock: {
+                                                        selectedBlock = $0
+                                                        selectedSplitSlot = nil
+                                                        if $0 != .pipCluster { selectedPIPPhotoIndex = nil }
+                                                    },
+                                                    onDeselect: {
+                                                        selectedBlock = nil
+                                                        selectedPIPPhotoIndex = nil
+                                                    },
+                                                    recordUndoSnapshot: { pushUndoSnapshot() },
+                                                    locksHorizontalSlidePaging: $locksHorizontalSlidePaging,
+                                                    onRequestHeroSwap: { idx in
+                                                        selectedBlock = nil
+                                                        selectedPIPPhotoIndex = nil
+                                                        heroSwapSlideIndex = idx
+                                                        showsHeroPhotoSwapSheet = true
+                                                    },
+                                                    onRequestPIPInsetReplace: { slideIdx, thumbIdx in
+                                                        selectedBlock = .pipCluster
+                                                        selectedPIPPhotoIndex = thumbIdx
+                                                        pipInsetReplaceSession = PIPInsetReplaceSession(
+                                                            slideIndex: slideIdx,
+                                                            clusterThumbIndex: thumbIdx)
+                                                    },
+                                                    onRequestSplitBottomPick: { idx in
+                                                        selectedBlock = nil
+                                                        selectedPIPPhotoIndex = nil
+                                                        guard slides.indices.contains(idx) else { return }
+                                                        if isCarouselStudioMapKind(slides[idx].kind) {
+                                                            selectedSplitSlot = .top
+                                                        } else {
+                                                            selectedSplitSlot = .bottom
+                                                            presentSplitBottomPicker(for: idx)
+                                                        }
+                                                    },
+                                                    onRequestSplitTopSelect: { idx in
+                                                        selectedBlock = nil
+                                                        selectedPIPPhotoIndex = nil
+                                                        guard slides.indices.contains(idx) else { return }
+                                                        if isCarouselStudioMapKind(slides[idx].kind) {
+                                                            selectedSplitSlot = .bottom
+                                                        } else {
+                                                            selectedSplitSlot = .top
+                                                        }
+                                                    },
+                                                    selectedSplitSlot: selectedSplitSlot,
+                                                    onRequestStudioCoverPhotoPick: onRequestStudioCoverPhotoPick,
+                                                    onRequestInlineTextEdit: { presentInlineTextEditor() },
+                                                    slidePageIndex: i,
+                                                    showPoweredByBloggoMapWatermark: firstMapSlideIndex == i,
+                                                    pipBackgroundRemovalLoadingSlots: pipBackgroundRemovalSlideIndex == i
+                                                        ? pipBackgroundRemovalLoadingSlots
+                                                        : [],
+                                                    selectedPIPPhotoIndex: selectedPIPPhotoIndex,
+                                                    onSelectPIPPhoto: { photoIdx in
+                                                        raisePIPUngroupedThumbToFront(
+                                                            slideIndex: i,
+                                                            thumbIndex: photoIdx
+                                                        )
+                                                        selectedBlock = .pipCluster
+                                                        selectedPIPPhotoIndex = photoIdx
+                                                        selectedSplitSlot = nil
                                                     }
-                                                },
-                                                onRequestSplitTopSelect: { idx in
-                                                    selectedBlock = nil
-                                                    selectedPIPPhotoIndex = nil
-                                                    guard slides.indices.contains(idx) else { return }
-                                                    if isCarouselStudioMapKind(slides[idx].kind) {
-                                                        // Visual upper half = photo (`splitBottomFraming`).
-                                                        selectedSplitSlot = .bottom
-                                                    } else {
-                                                        selectedSplitSlot = .top
-                                                    }
-                                                },
-                                                selectedSplitSlot: selectedSplitSlot,
-                                                onRequestStudioCoverPhotoPick: onRequestStudioCoverPhotoPick,
-                                                onRequestInlineTextEdit: { presentInlineTextEditor() },
-                                                slidePageIndex: i,
-                                                showPoweredByBloggoMapWatermark:
-                                                    indexOfFirstCarouselStudioMapSlide(in: slides) == i,
-                                                pipBackgroundRemovalLoadingSlots: pipBackgroundRemovalSlideIndex == i
-                                                    ? pipBackgroundRemovalLoadingSlots
-                                                    : [],
-                                                selectedPIPPhotoIndex: selectedPIPPhotoIndex,
-                                                onSelectPIPPhoto: { photoIdx in
-                                                    raisePIPUngroupedThumbToFront(
-                                                        slideIndex: i,
-                                                        thumbIndex: photoIdx
-                                                    )
-                                                    selectedBlock = .pipCluster
-                                                    selectedPIPPhotoIndex = photoIdx
-                                                    selectedSplitSlot = nil
-                                                }
-                                            )
+                                                )
+                                            case .staticPreview:
+                                                editorPagerStaticPreview(
+                                                    for: i,
+                                                    slotW: slotW,
+                                                    slotH: slotH,
+                                                    firstMapSlideIndex: firstMapSlideIndex
+                                                )
+                                            case .placeholder:
+                                                EditorPagerPlaceholderPage(width: previewW, height: previewH)
+                                            }
                                             Spacer(minLength: 0)
                                         }
                                         .frame(width: slotW, height: slotH)
-                                        // Recreate page-local drag geometry state on ratio changes.
-                                        .id("\(i)-\(editorPreviewAspectLabel)")
+                                        .id("\(i)-\(editorPreviewAspectLabel)-\(pageMode == .fullEdit ? "edit" : "lite")")
                                         .contentTransition(.identity)
+                                        .contextMenu {
+                                            if pageMode == .fullEdit, canExcludeCurrentSlide {
+                                                Button(role: .destructive) {
+                                                    performExcludeFromStudio()
+                                                } label: {
+                                                    Label(hideCurrentSlideMenuTitle, systemImage: "eye.slash")
+                                                }
+                                            }
+                                        }
                                         .onLongPressGesture(minimumDuration: 0.5) {
-                                            guard i == editorPagerFocusedSlideIndex, canExcludeCurrentSlide else { return }
+                                            guard pageMode == .fullEdit, canExcludeCurrentSlide else { return }
                                             performExcludeFromStudio()
                                         }
                                     }
@@ -7778,17 +7942,19 @@ struct SlideTextEditorView: View {
                 }
             VStack(spacing: 20) {
                 VStack(spacing: 6) {
-                    let k = slides.indices.contains(currentIndex) ? slides[currentIndex].kind : nil
+                    let k = slides.indices.contains(editorPagerFocusedSlideIndex)
+                        ? slides[editorPagerFocusedSlideIndex].kind
+                        : nil
                     let isDayOverviewMap = k == .mapRoute
                     let isAnyMapSlide = k.map { isCarouselStudioMapKind($0) } ?? false
-                    Text(isAnyMapSlide ? "Remove map slide?" : "Remove this slide?")
+                    Text(isAnyMapSlide ? "Hide map slide?" : "Hide this slide?")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(.white)
                     Text(isDayOverviewMap
-                         ? "The day map will be excluded from the carousel."
+                         ? "The day map will be hidden from the carousel."
                          : (isAnyMapSlide)
-                         ? "This focused place map will be excluded from the carousel."
-                         : "This photo slide will be excluded from the carousel.")
+                         ? "This focused place map will be hidden from the carousel."
+                         : "This photo slide will be hidden from the carousel.")
                         .font(.system(size: 14))
                         .foregroundColor(.white.opacity(0.65))
                         .multilineTextAlignment(.center)
@@ -7812,11 +7978,11 @@ struct SlideTextEditorView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     Button {
-                        let idx = currentIndex
+                        let idx = editorPagerFocusedSlideIndex
                         withAnimation(.easeOut(duration: 0.2)) { showExcludeConfirmOverlay = false }
                         commitExclude(at: idx)
                     } label: {
-                        Text("Remove")
+                        Text("Hide")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
@@ -8188,48 +8354,6 @@ struct SlideTextEditorView: View {
         }
     }
 
-    @ViewBuilder
-    private func carouselStudioShareAndExportMenu(useExportHubGlyph: Bool) -> some View {
-        let exportDisabled = exportActions.exportActionsDisabled()
-        let limit = CarouselStudioExportHardLimit.maxSlidesPerShareOrPackage
-        Menu {
-            Button {
-                if studioDownloadCandidateIndices.count <= limit {
-                    Task { await exportActions.share() }
-                } else {
-                    selectAllSlidesForSharePick()
-                    carouselStudioExportHubPhase = .pickShareSlides
-                    showCarouselStudioExportHub = true
-                }
-            } label: {
-                Label("Share to social apps…", systemImage: "square.and.arrow.up")
-            }
-            .disabled(exportDisabled)
-            Button {
-                selectAllSlidesForDownloadPick()
-                downloadOutputMode = .photo
-                carouselStudioExportHubPhase = .pickDownloadSlides
-                showCarouselStudioExportHub = true
-            } label: {
-                Label("Download…", systemImage: "arrow.down.to.line")
-            }
-            .disabled(exportDisabled)
-        } label: {
-            if useExportHubGlyph {
-                Image("CarouselStudioExportHub")
-                    .resizable()
-                    .renderingMode(.original)
-                    .scaledToFit()
-                    .frame(width: 30, height: 30)
-            } else {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
-        }
-        .accessibilityLabel("Share or download")
-    }
-
     @ToolbarContentBuilder
     private var editorToolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
@@ -8261,18 +8385,7 @@ struct SlideTextEditorView: View {
         }
 
         ToolbarItemGroup(placement: .topBarTrailing) {
-            if currentPlaceSlide != nil {
-                Button {
-                    presentCurrentSlideLayoutSheet()
-                } label: {
-                    Image(systemName: "rectangle.split.2x1")
-                        .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-                .accessibilityLabel("Layout selection")
-            }
-
-            carouselStudioShareAndExportMenu(useExportHubGlyph: false)
+            editorTopTrailingActionsMenu
         }
     }
 
@@ -8448,6 +8561,16 @@ struct SlideTextEditorView: View {
                 // offset now maps to page 0 once pages get real widths), which would
                 // otherwise yank `currentIndex` away from `initialIndex`.
                 guard didPerformInitialScroll else { return }
+                if let landing = editorPagerPendingLandingIndex {
+                    if newID == landing {
+                        editorPagerPendingLandingIndex = nil
+                    } else {
+                        DispatchQueue.main.async {
+                            scrollPageID = landing
+                        }
+                    }
+                    return
+                }
                 // When PIP collapses sibling slides out of the pager, `scrollPosition` can
                 // still emit an id for a page that no longer exists in `ForEach` — ignore
                 // those writes and snap the binding back to the editor's slide.
@@ -8480,6 +8603,11 @@ struct SlideTextEditorView: View {
             }
             .onChange(of: visibleSlideIndicesTag) { _, _ in
                 guard didPerformInitialScroll, !slides.isEmpty else { return }
+                if let landing = editorPagerPendingLandingIndex {
+                    currentIndex = landing
+                    reassertEditorPagerToSlide(at: landing)
+                    return
+                }
                 // Pager content identity changed (e.g. enabling PIP removed earlier siblings).
                 // Keep `currentIndex` aligned with what `scrollPosition` still claims, then
                 // re-scroll so the centered page matches that id (avoids wrong hero after PIP).
@@ -8880,20 +9008,7 @@ struct SlideTextEditorView: View {
                 .layoutPriority(1)
 
             HStack(spacing: 10) {
-                if currentPlaceSlide != nil {
-                    Button {
-                        presentCurrentSlideLayoutSheet()
-                    } label: {
-                        Image(systemName: "rectangle.split.2x1")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Layout selection")
-                }
-
-                carouselStudioShareAndExportMenu(useExportHubGlyph: true)
+                editorTopTrailingActionsMenu
                     .buttonStyle(.plain)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -11083,7 +11198,7 @@ struct SocialPostStudioSheet: View {
                     .font(.body.weight(.medium))
                     .foregroundStyle(.secondary)
                     .padding(.top, 1)
-                Text("Remove a place photo from this carousel: swipe up on its card, long-press the card, or tap ⋯ then Remove from carousel. To add a photo back, open Slides Management (slide count button) and tap a dimmed card—same layout as the Download slide picker. In the full editor, press and hold the slide or use ⋯ above. Nothing is deleted from your trip.")
+                Text("Hide a place photo from this carousel: swipe up on its card, long-press the card, or tap ⋯ then Hide slide. To add a photo back, open Slides Management (slide count button) and tap a dimmed card—same layout as the Download slide picker. In the full editor, tap ⋯ in the header or long-press the slide. Nothing is deleted from your trip.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
