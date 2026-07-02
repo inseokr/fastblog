@@ -1013,7 +1013,7 @@ struct PlacesVisitedView: View {
                                 selectedCategory = nil
                             }
                             ForEach(availableCategories, id: \.self) { cat in
-                                placesVisitedCategoryChip(raw: cat, isSelected: selectedCategory == cat) {
+                                PlacesVisitedCategoryFilterChip(raw: cat, isSelected: selectedCategory == cat) {
                                     selectedCategory = (selectedCategory == cat) ? nil : cat
                                 }
                             }
@@ -1070,31 +1070,6 @@ struct PlacesVisitedView: View {
                 .background(isSelected ? Color.blue : filterChipUnselectedFill())
                 .clipShape(Capsule())
                 .lineLimit(1)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func placesVisitedCategoryChip(raw: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
-        let label = PlacePOICategoryPresentation.displayLabel(forRaw: raw)
-        return Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: p.symbol)
-                    .font(.caption.weight(.semibold))
-                Text(label)
-                    .font(.subheadline)
-                    .fontWeight(isSelected ? .semibold : .regular)
-            }
-            .foregroundStyle(isSelected ? Color.white : p.color)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(isSelected ? p.color : p.color.opacity(0.14))
-            .clipShape(Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(p.color.opacity(isSelected ? 0.25 : 0.45), lineWidth: isSelected ? 0 : 1)
-            )
-            .lineLimit(1)
         }
         .buttonStyle(.plain)
     }
@@ -1797,11 +1772,11 @@ private struct PlacesVisitedMapView: View {
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                chip(label: "All", isSelected: selectedCategory == nil) {
+                                chip(label: "All", isSelected: selectedCategory == nil, unselectedBackground: Color(red: 0.25, green: 0.31, blue: 0.40)) {
                                     selectedCategory = nil
                                 }
                                 ForEach(availableCategories, id: \.self) { cat in
-                                    placesVisitedMapCategoryChip(raw: cat, isSelected: selectedCategory == cat) {
+                                    PlacesVisitedCategoryFilterChip(raw: cat, isSelected: selectedCategory == cat) {
                                         selectedCategory = (selectedCategory == cat) ? nil : cat
                                     }
                                 }
@@ -2067,31 +2042,6 @@ private struct PlacesVisitedMapView: View {
 
     private func syncMapHomeBottomNavSuppression() {
         suppressHomeBottomNav = selectedPlaceForModal != nil && !revealNavDuringModalDismiss
-    }
-
-    private func placesVisitedMapCategoryChip(raw: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
-        let label = PlacePOICategoryPresentation.displayLabel(forRaw: raw)
-        return Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: p.symbol)
-                    .font(.caption.weight(.semibold))
-                Text(label)
-                    .font(.subheadline)
-                    .fontWeight(isSelected ? .semibold : .regular)
-            }
-            .foregroundStyle(isSelected ? Color.white : p.color)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(isSelected ? p.color : p.color.opacity(0.35))
-            .clipShape(Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(p.color.opacity(isSelected ? 0.25 : 0.45), lineWidth: isSelected ? 0 : 1)
-            )
-            .lineLimit(1)
-        }
-        .buttonStyle(.plain)
     }
 
     private func chip(label: String, isSelected: Bool, unselectedBackground: Color = Color.white.opacity(0.23), action: @escaping () -> Void) -> some View {

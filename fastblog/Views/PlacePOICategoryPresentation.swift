@@ -436,6 +436,61 @@ enum PlacePOICategoryPresentation {
     }
 }
 
+// MARK: - Category filter chips (My Places list + map — opaque enough to read clearly)
+
+enum PlacesVisitedCategoryFilterChipAppearance {
+    static func foreground(isSelected: Bool) -> Color {
+        isSelected ? .white : .white.opacity(0.92)
+    }
+
+    static func strokeOpacity(isSelected: Bool) -> Double {
+        isSelected ? 0.42 : 0.3
+    }
+
+    @ViewBuilder
+    static func capsuleBackground(color: Color, isSelected: Bool) -> some View {
+        ZStack {
+            Capsule().fill(Color.black.opacity(0.48))
+            Capsule().fill(color.opacity(isSelected ? 0.92 : 0.62))
+        }
+    }
+}
+
+struct PlacesVisitedCategoryFilterChip: View {
+    let raw: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
+        let label = PlacePOICategoryPresentation.displayLabel(forRaw: raw)
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: p.symbol)
+                    .font(.caption.weight(.semibold))
+                Text(label)
+                    .font(.subheadline)
+                    .fontWeight(isSelected ? .semibold : .regular)
+            }
+            .foregroundStyle(PlacesVisitedCategoryFilterChipAppearance.foreground(isSelected: isSelected))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background {
+                PlacesVisitedCategoryFilterChipAppearance.capsuleBackground(color: p.color, isSelected: isSelected)
+            }
+            .overlay(
+                Capsule()
+                    .stroke(
+                        Color.white.opacity(PlacesVisitedCategoryFilterChipAppearance.strokeOpacity(isSelected: isSelected)),
+                        lineWidth: 1
+                    )
+            )
+            .lineLimit(1)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - Compact badge (Places Visited cards, map cards)
 
 struct PlacePOICategoryBadge: View {
