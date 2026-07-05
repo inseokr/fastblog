@@ -1312,10 +1312,10 @@ struct PlaceVisitedCard: View {
 
     private var titleLabels: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(place.displayName)
+            Text(place.gridListTitle())
                 .font(.headline)
                 .foregroundStyle(.primary)
-                .lineLimit(1)
+                .lineLimit(2)
                 .truncationMode(.tail)
 
             Text(place.cityDisplay ?? place.country)
@@ -2148,17 +2148,17 @@ private struct PlacesVisitedMapMarker: View {
                     .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
             }
 
-            Text(place.displayName)
+            Text(place.gridListTitle())
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.white)
-                .lineLimit(1)
+                .lineLimit(2)
                 .truncationMode(.tail)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 4)
                 .background(.ultraThinMaterial)
                 .background(Color.black.opacity(0.75))
                 .clipShape(Capsule())
-                .frame(maxWidth: 110)
+                .frame(maxWidth: 120)
         }
     }
 }

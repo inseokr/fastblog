@@ -217,10 +217,15 @@ final class EverydayMomentsStore: ObservableObject {
                     dayRows.first { $0.uuid == photo.id }
                 }
                 guard !groupRows.isEmpty else { continue }
-                let resolvedTitles = groupRows.compactMap(\.placeTitle).filter {
-                    !$0.isEmpty && !PlacePlaceholderNaming.isResolvablePlaceholder($0)
+                let resolvedTitles = groupRows.compactMap { row -> String? in
+                    guard let raw = row.placeTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+                    guard !PlacePlaceholderNaming.isResolvablePlaceholder(raw) else { return nil }
+                    return raw.cleanedAsPlaceTitle
                 }
-                let placeTitle = resolvedTitles.first ?? groupRows.compactMap(\.placeTitle).first { !$0.isEmpty } ?? "Captured Moment"
+                let placeTitle = resolvedTitles.first(where: { !$0.hasPrefix("Near ") })
+                    ?? resolvedTitles.first
+                    ?? groupRows.compactMap(\.placeTitle).first { !$0.isEmpty }?.cleanedAsPlaceTitle
+                    ?? "Captured Moment"
                 let subtitle = groupRows.compactMap(\.placeSubtitle).first
                 let category = groupRows.compactMap(\.placeCategory).first
                 let loc = groupRows.compactMap(\.location).first

@@ -81,11 +81,44 @@ struct VisitedPlaceSummary: Identifiable, Equatable {
     }
 
     var displayName: String {
-        let trimmed = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        Self.displayTitle(from: placeName)
+    }
+
+    static func displayTitle(from rawPlaceName: String) -> String {
+        let trimmed = rawPlaceName.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty || trimmed.lowercased() == "unknown" || trimmed == "Unknown Place" {
             return "Unknown Place"
         }
-        return trimmed
+        if PlacePlaceholderNaming.isResolvablePlaceholder(trimmed) {
+            return PlacePlaceholderNaming.unsetPlaceDisplayTitle
+        }
+        return trimmed.cleanedAsPlaceTitle
+    }
+
+    /// My Places grid title — drops redundant `Near ` so two-column cells don't truncate to "Near …".
+    var compactListTitle: String {
+        Self.compactListTitle(from: displayName)
+    }
+
+    /// Grid/map label: prefers hero capture `meta.json` when it already has a resolved name (O(1); no blog scan).
+    func gridListTitle() -> String {
+        let heroMeta = heroPhoto.flatMap { photo -> String? in
+            guard let raw = AppCapturePhotoService.shared.metadata(captureId: photo.id)?.placeTitle?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty,
+                  !PlacePlaceholderNaming.isResolvablePlaceholder(raw) else { return nil }
+            return raw
+        }
+        let resolved = heroMeta.map { Self.displayTitle(from: $0) } ?? displayName
+        return Self.compactListTitle(from: resolved)
+    }
+
+    static func compactListTitle(from displayName: String) -> String {
+        if displayName == PlacePlaceholderNaming.unsetPlaceDisplayTitle { return displayName }
+        guard displayName.hasPrefix("Near ") else { return displayName }
+        let suffix = String(displayName.dropFirst(5)).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !suffix.isEmpty, suffix != "Unknown Place" else { return displayName }
+        return suffix
     }
 
     var cityDisplay: String? {
@@ -4191,7 +4224,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
                     let latestVisit = included.map(\.timestamp).max() ?? (blog.tripEndDate ?? blog.createdAt)
                     let year = Calendar.current.component(.year, from: latestVisit)
-                    let placeName = stop.placeTitle
+                    let placeName = stop.placeTitle.cleanedAsPlaceTitle
                     let city = stop.placeSubtitle ?? ""
                     let resolvedCategoryRaw = stop.placeCategory
                         ?? PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: placeName)
