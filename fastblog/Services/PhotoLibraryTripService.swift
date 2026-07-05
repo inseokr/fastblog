@@ -1318,12 +1318,13 @@ final class PhotoLibraryTripService {
     ///   - occupiedDateRanges: Date ranges already covered by saved blogs (excludes those captures).
     ///   - scanStart: Earliest timestamp to include (pass .distantPast for limited-access scans).
     ///   - scanEnd: Latest timestamp to include (exclusive).
+    ///   - excludedCaptureIdentifiers: Skip these `bloggo-capture:` ids (already in a saved blog, or registered as My Places daily moments).
     func mergingBloggoCaptures(
         into trips: [TripDraft],
         occupiedDateRanges: [(start: Date, end: Date)],
         scanStart: Date,
         scanEnd: Date,
-        savedCaptureIdentifiers: Set<String> = []
+        excludedCaptureIdentifiers: Set<String> = []
     ) -> [TripDraft] {
         let captureService = AppCapturePhotoService.shared
         let captureIds = captureService.allCaptureIds()
@@ -1353,12 +1354,9 @@ final class PhotoLibraryTripService {
         formatter.dateStyle = .medium
 
         // Collect and filter captures.
-        // In-app captures are always user-intentional, so we intentionally skip:
-        //   - the location-required gate and home-distance filter (used for PHAsset scanning)
-        //   - the occupiedDateRanges filter (so a capture taken inside a published blog's
-        //     date range still surfaces as its own "Bloggo Captures" card in the carousel,
-        //     in addition to whatever the at-capture-time camera flow did with it)
-        // Hard exclusions: outside the scan window, or already part of a saved blog.
+        // Trip-mode in-app captures skip the PHAsset location/home-distance gates.
+        // Hard exclusions: outside the scan window, already in a saved blog, or registered
+        // as a My Places daily moment (those promote via "Create Trip Blog" on the place, not Tap to Blog).
         var candidates: [(id: UUID, info: AppCapturePhotoService.CaptureInfo)] = []
         for uuid in captureIds {
             guard let info = captureService.metadata(captureId: uuid) else {
@@ -1375,9 +1373,9 @@ final class PhotoLibraryTripService {
                 continue
             }
             let captureIdentifier = AppCapturePhotoService.identifier(for: uuid)
-            guard !savedCaptureIdentifiers.contains(captureIdentifier) else {
+            guard !excludedCaptureIdentifiers.contains(captureIdentifier) else {
 #if DEBUG
-                debugPrint("[BloGGoMerge] ✗ \(uuid.uuidString.prefix(8)) — already in saved blog, skipping")
+                debugPrint("[BloGGoMerge] ✗ \(uuid.uuidString.prefix(8)) — excluded (saved blog or My Places daily), skipping")
 #endif
                 continue
             }

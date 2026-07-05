@@ -951,7 +951,7 @@ final class TripsViewModel: ObservableObject {
             return Set([id])
         }()
         let occupiedRanges = createdRecapStore.occupiedDateRanges(excludingSourceTripIds: occupiedRangesExcludedBlogIds)
-        let savedCaptureIds = createdRecapStore.allInAppCaptureIdentifiersInVisibleBlogs()
+        let excludedBloggoCaptureIds = createdRecapStore.bloggoCaptureIdentifiersExcludedFromTripScan()
         let userId = currentUserId
         let previousLastScanned = forceFullScan ? nil : ScanSessionStore.lastScannedDate(for: userId)
 
@@ -994,13 +994,15 @@ final class TripsViewModel: ObservableObject {
                     occupiedDateRanges: occupiedRanges,
                     scanStart: .distantPast,
                     scanEnd: Date(),
-                    savedCaptureIdentifiers: savedCaptureIds
+                    excludedCaptureIdentifiers: excludedBloggoCaptureIds
                 )
                 let preservedCameraDrafts = tripDrafts.filter { draft in
                     draft.coverImageName == "camera.fill"
                         && !mergedLimitedTrips.contains(where: { $0.id == draft.id })
                 }
-                tripDrafts = preservedCameraDrafts + mergedLimitedTrips
+                tripDrafts = createdRecapStore.filterTripDraftsExcludingEverydayCaptures(
+                    preservedCameraDrafts + mergedLimitedTrips
+                )
                 if let first = mergedLimitedTrips.first?.days.first?.photos.first?.timestamp,
                    let last = mergedLimitedTrips.last?.days.last?.photos.last?.timestamp {
                     earliestScannedDate = cal.startOfDay(for: first)
@@ -1091,12 +1093,14 @@ final class TripsViewModel: ObservableObject {
                 #endif
 
                 mergeIncrementalTrips(incrementalTrips, since: lastDate)
-                tripDrafts = photoLibraryService.mergingBloggoCaptures(
-                    into: tripDrafts,
-                    occupiedDateRanges: occupiedRanges,
-                    scanStart: fullWindowStart,
-                    scanEnd: windowEnd,
-                    savedCaptureIdentifiers: savedCaptureIds
+                tripDrafts = createdRecapStore.filterTripDraftsExcludingEverydayCaptures(
+                    photoLibraryService.mergingBloggoCaptures(
+                        into: tripDrafts,
+                        occupiedDateRanges: occupiedRanges,
+                        scanStart: fullWindowStart,
+                        scanEnd: windowEnd,
+                        excludedCaptureIdentifiers: excludedBloggoCaptureIds
+                    )
                 )
                 earliestScannedDate = fullWindowStart
                 latestScannedDate = windowEnd
@@ -1146,13 +1150,15 @@ final class TripsViewModel: ObservableObject {
                     occupiedDateRanges: occupiedRanges,
                     scanStart: fullWindowStart,
                     scanEnd: windowEnd,
-                    savedCaptureIdentifiers: savedCaptureIds
+                    excludedCaptureIdentifiers: excludedBloggoCaptureIds
                 )
                 let preservedCameraDrafts = tripDrafts.filter { draft in
                     draft.coverImageName == "camera.fill"
                         && !mergedWindowTrips.contains(where: { $0.id == draft.id })
                 }
-                tripDrafts = preservedCameraDrafts + mergedWindowTrips
+                tripDrafts = createdRecapStore.filterTripDraftsExcludingEverydayCaptures(
+                    preservedCameraDrafts + mergedWindowTrips
+                )
                 earliestScannedDate = fullWindowStart
                 latestScannedDate = windowEnd
                 currentWindowTrips = visibleTripsInWindow(mergedWindowTrips)

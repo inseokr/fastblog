@@ -6390,6 +6390,7 @@ extension CameraCaptureView {
             if let url = vibeURL { try? FileManager.default.removeItem(at: url) }
             return
         }
+        guard !everydayStore.containsCapture(identifier: localId) else { return }
         if moment.localIdentifier == nil {
             moment.localIdentifier = localId
             moment.vibeURL = nil
@@ -6668,6 +6669,11 @@ extension CameraCaptureView {
     /// Registration runs synchronously on the main actor so the next shutter tap routes through the active-blog path
     /// instead of waiting on reverse-geocoding (which previously left a window where captures only sat in `sessionMoments`).
     private func createBlogFromSessionMomentsOnly(momentsWithImages: [CapturedMoment]) {
+        let eligibleMoments = momentsWithImages.filter { moment in
+            guard let localId = moment.localIdentifier else { return true }
+            return !everydayStore.containsCapture(identifier: localId)
+        }
+        guard !eligibleMoments.isEmpty else { return }
         // Switch UI to blog flow immediately so counter and gallery use sessionCapturesForDisplay.
         attachedCountThisSession = momentCount(from: sessionMoments)
         sessionMoments = []
@@ -6675,7 +6681,7 @@ extension CameraCaptureView {
         let location = cameraController.currentLocation
         let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
         let placeholderLocationName = "Captured Moment"
-        let photos: [MockPhoto] = momentsWithImages.compactMap { moment in
+        let photos: [MockPhoto] = eligibleMoments.compactMap { moment in
             guard let localId = resolvedCaptureLocalIdentifier(for: moment, fallbackVibeURL: moment.vibeURL) else { return nil }
             return MockPhoto(
                 id: moment.id,

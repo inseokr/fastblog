@@ -562,7 +562,7 @@ struct PlacesVisitedView: View {
             })
             .alert("Create trip blog?", isPresented: $showCreateBlogFromSelectionAlert) {
                 Button("Cancel", role: .cancel) {}
-                Button("Create Blog") {
+                Button("Create Trip Blog") {
                     createTripBlogFromSelectedPlaces()
                 }
             } message: {
@@ -580,7 +580,7 @@ struct PlacesVisitedView: View {
             }
             .alert("Create trip blog?", isPresented: $showPromoteToBlogConfirmation) {
                 Button("Cancel", role: .cancel) { placePendingPromote = nil }
-                Button("Create Blog") {
+                Button("Create Trip Blog") {
                     if let place = placePendingPromote {
                         _ = createdRecapStore.createTripBlogFromEverydayPhotos(
                             place.photos,

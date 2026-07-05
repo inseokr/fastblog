@@ -65,6 +65,7 @@ final class EverydayMomentsStore: ObservableObject {
         guard !everydayCaptureIdentifiers.contains(localIdentifier) else { return }
         everydayCaptureIdentifiers.insert(localIdentifier)
         persist()
+        CreatedRecapBlogStore.shared.stripEverydayCapturesFromAllBlogs(identifiers: [localIdentifier])
         if everydayCaptureIdentifiers.count == 5 {
             UserDefaults.standard.set(true, forKey: EverydayRetentionKeys.shouldShowPushPrompt)
         }

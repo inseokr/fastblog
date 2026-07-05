@@ -145,6 +145,75 @@ struct VisitedPlaceSummary: Identifiable, Equatable {
         }
         return photoCaptions.first
     }
+
+    var representativeCoordinate: CLLocationCoordinate2D? {
+        photos.compactMap { $0.location?.clCoordinate }.first
+    }
+
+    /// True when two My Places rows refer to the same visit (shared photos or same resolved name + GPS cluster).
+    func isSamePlace(as other: VisitedPlaceSummary) -> Bool {
+        if sharesPhotos(with: other) { return true }
+
+        let titleA = gridListTitle()
+        let titleB = other.gridListTitle()
+        guard titleA.caseInsensitiveCompare(titleB) == .orderedSame else { return false }
+        guard titleA != PlacePlaceholderNaming.unsetPlaceDisplayTitle,
+              titleA != "Unknown Place" else { return false }
+        guard let coordA = representativeCoordinate,
+              let coordB = other.representativeCoordinate else { return false }
+        let locA = CLLocation(latitude: coordA.latitude, longitude: coordA.longitude)
+        let locB = CLLocation(latitude: coordB.latitude, longitude: coordB.longitude)
+        return locA.distance(from: locB) <= ScanConfig.placeClusterMeters
+    }
+
+    /// Merges an everyday-only row into a blog-linked row without duplicating photos.
+    func mergedWithEveryday(_ everyday: VisitedPlaceSummary) -> VisitedPlaceSummary {
+        let mergedPhotos = (photos + everyday.photos)
+            .uniqued(by: { $0.localIdentifier ?? $0.id.uuidString })
+            .sorted(by: { $0.timestamp > $1.timestamp })
+        let mergedLatest = max(latestVisitDate, everyday.latestVisitDate)
+        let mergedName = Self.preferredPlaceName(
+            primary: placeName,
+            secondary: everyday.placeName,
+            preferSecondary: everyday.latestVisitDate > latestVisitDate
+        )
+        return VisitedPlaceSummary(
+            placeId: placeId,
+            placeName: mergedName,
+            city: city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? everyday.city : city,
+            country: country,
+            categoryRawValue: categoryRawValue ?? everyday.categoryRawValue,
+            latestVisitDate: mergedLatest,
+            year: Calendar.current.component(.year, from: mergedLatest),
+            photos: mergedPhotos,
+            placeCaption: placeCaption ?? everyday.placeCaption,
+            photoCaptions: (photoCaptions + everyday.photoCaptions).filter { !$0.isEmpty },
+            relatedBlogs: relatedBlogs,
+            isEverydayOnly: relatedBlogs.isEmpty && isEverydayOnly && everyday.isEverydayOnly
+        )
+    }
+
+    private func sharesPhotos(with other: VisitedPlaceSummary) -> Bool {
+        let selfIds = Set(photos.map(\.id))
+        let otherIds = Set(other.photos.map(\.id))
+        if !selfIds.isDisjoint(with: otherIds) { return true }
+        let selfLocalIds = Set(photos.compactMap(\.localIdentifier).filter { !$0.isEmpty })
+        let otherLocalIds = Set(other.photos.compactMap(\.localIdentifier).filter { !$0.isEmpty })
+        return !selfLocalIds.isDisjoint(with: otherLocalIds)
+    }
+
+    private static func preferredPlaceName(primary: String, secondary: String, preferSecondary: Bool) -> String {
+        let primaryResolved = !PlacePlaceholderNaming.isResolvablePlaceholder(primary)
+        let secondaryResolved = !PlacePlaceholderNaming.isResolvablePlaceholder(secondary)
+        if preferSecondary {
+            if secondaryResolved { return secondary }
+            if primaryResolved { return primary }
+            return secondary
+        }
+        if primaryResolved { return primary }
+        if secondaryResolved { return secondary }
+        return primary
+    }
 }
 
 /// The cloud lifecycle state of a local blog.
@@ -421,6 +490,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         refreshRecentsDateMetadataFromBlogDetails()
         refreshRecentsCountryFromBlogDetails()
         backfillMissingCountriesIfNeeded()
+        stripEverydayCapturesFromAllBlogs()
     }
 
     /// Merges blog days that share the same EXIF digitized calendar date (fixes duplicate "May 22" rows after flights).
@@ -596,9 +666,11 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Call when user completes the Create Blog sequence (before showing RecapSavedView).
     func addCreatedBlog(trip: TripDraft) {
-        let startDate = trip.earliestDate
-        let endDate = trip.latestDate
-        var tempDetail = buildBlogDetail(from: trip)
+        let blogTrip = tripDraftExcludingEverydayCaptures(trip)
+        guard blogTrip.days.contains(where: { $0.photos.contains(where: \.isSelected) }) else { return }
+        let startDate = blogTrip.earliestDate
+        let endDate = blogTrip.latestDate
+        var tempDetail = buildBlogDetail(from: blogTrip)
         if let country = trip.primaryCountryDisplayName, isValidCountryName(country) {
             tempDetail.countryName = country
         }
@@ -634,7 +706,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             ownerScope: resolvedScope,
             ownerUserId: resolvedUserId
         )
-        tripDraftsBySourceId[trip.id] = trip
+        tripDraftsBySourceId[trip.id] = blogTrip
         // Cache the blog detail so that on the next scan, existingIds is populated
         // correctly and photos already in the blog are not flagged as "new moments".
         blogDetailsBySourceId[trip.id] = tempDetail
@@ -665,6 +737,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         persistTripDrafts()
         // Persist details immediately so the blog survives a background kill.
         persistBlogDetails()
+        unlinkEverydayCapturesNowInBlog(blogTrip.days.flatMap(\.photos).compactMap(\.localIdentifier))
         BlogMenuIndicatorStore.shared.signalNewBlog(sourceTripId: trip.id)
     }
 
@@ -1012,7 +1085,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         let existingIds = Set(detail.days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier))
         let photos = newPhotos.filter { photo in
             guard let lid = photo.localIdentifier, !lid.isEmpty else { return false }
-            return !existingIds.contains(lid)
+            guard !existingIds.contains(lid) else { return false }
+            return !EverydayMomentsStore.shared.containsCapture(identifier: lid)
         }
         guard !photos.isEmpty else { return }
 
@@ -1207,6 +1281,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         if notifyMenuIndicator {
             BlogMenuIndicatorStore.shared.noteMomentsAdded(to: sourceTripId)
         }
+
+        unlinkEverydayCapturesNowInBlog(photos.compactMap(\.localIdentifier))
     }
 
     /// Representative coordinate for a blog: first itinerary place with a location (saved blog detail), else first GPS photo in the trip draft.
@@ -3553,7 +3629,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         let existingIds = Set(detail.days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier))
         let photos = newPhotos.filter { photo in
             guard let lid = photo.localIdentifier, !lid.isEmpty else { return false }
-            return !existingIds.contains(lid)
+            guard !existingIds.contains(lid) else { return false }
+            return !EverydayMomentsStore.shared.containsCapture(identifier: lid)
         }
         guard !photos.isEmpty else { return (0, 0) }
 
@@ -3726,6 +3803,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         if notifyMenuIndicator {
             BlogMenuIndicatorStore.shared.noteMomentsAdded(to: sourceTripId)
         }
+
+        unlinkEverydayCapturesNowInBlog(photos.compactMap(\.localIdentifier))
 
         return (newStops: newStopIds.count, addedToExisting: addedToExisting)
     }
@@ -4219,7 +4298,10 @@ final class CreatedRecapBlogStore: ObservableObject {
                         blogDate: blog.tripStartDate ?? blog.createdAt,
                         placeStopId: stop.id
                     )
-                    let included = stop.photos.filter(\.isIncluded)
+                    let included = stop.photos.filter(\.isIncluded).filter {
+                        guard let lid = $0.localIdentifier else { return true }
+                        return !EverydayMomentsStore.shared.containsCapture(identifier: lid)
+                    }
                     guard !included.isEmpty else { continue }
 
                     let latestVisit = included.map(\.timestamp).max() ?? (blog.tripEndDate ?? blog.createdAt)
@@ -4304,39 +4386,156 @@ final class CreatedRecapBlogStore: ObservableObject {
             .sorted(by: { $0.latestVisitDate > $1.latestVisitDate })
     }
 
+    /// Drops My Places captures from the everyday store once they belong to a trip blog.
+    private func unlinkEverydayCapturesNowInBlog(_ localIdentifiers: [String]) {
+        let ids = Set(localIdentifiers.filter { $0.hasPrefix(AppCapturePhotoService.prefix) })
+        guard !ids.isEmpty else { return }
+        EverydayMomentsStore.shared.removeCaptures(identifiers: ids)
+    }
+
+    /// Removes My Places (daily) captures from blog details and trip drafts.
+    /// Daily moments belong in My Places until explicitly promoted via `createTripBlogFromEverydayPhotos`.
+    func stripEverydayCapturesFromAllBlogs(identifiers: Set<String>? = nil) {
+        let rawIds = identifiers ?? EverydayMomentsStore.shared.everydayCaptureIdentifiers
+        let everydayIds = Set(rawIds.filter { $0.hasPrefix(AppCapturePhotoService.prefix) })
+        guard !everydayIds.isEmpty else { return }
+
+        var detailsChanged = false
+        for key in blogDetailsBySourceId.keys {
+            guard var detail = blogDetailsBySourceId[key] else { continue }
+            let stripped = stripEverydayCaptures(from: &detail, identifiers: everydayIds)
+            guard stripped else { continue }
+            detail = detail.consolidatingDuplicateCalendarDays()
+            blogDetailsBySourceId[key] = detail
+            detailsChanged = true
+            refreshRecapMetadataAfterEverydayStrip(sourceTripId: key, detail: detail)
+        }
+
+        var draftsChanged = false
+        for key in tripDraftsBySourceId.keys {
+            guard var trip = tripDraftsBySourceId[key] else { continue }
+            guard stripEverydayCaptures(from: &trip, identifiers: everydayIds) else { continue }
+            tripDraftsBySourceId[key] = trip
+            draftsChanged = true
+        }
+
+        if detailsChanged {
+            persistBlogDetails()
+            objectWillChange.send()
+        }
+        if draftsChanged {
+            persistTripDrafts()
+        }
+    }
+
+    private func tripDraftExcludingEverydayCaptures(_ trip: TripDraft) -> TripDraft {
+        var copy = trip
+        stripEverydayCaptures(from: &copy, identifiers: EverydayMomentsStore.shared.everydayCaptureIdentifiers)
+        return copy
+    }
+
+    /// Removes My Places daily captures from trip drafts (e.g. after Tap to Blog scan).
+    func filterTripDraftsExcludingEverydayCaptures(_ trips: [TripDraft]) -> [TripDraft] {
+        let ids = EverydayMomentsStore.shared.everydayCaptureIdentifiers
+        guard !ids.isEmpty else { return trips }
+        return trips.compactMap { trip in
+            var copy = trip
+            _ = stripEverydayCaptures(from: &copy, identifiers: ids)
+            return copy.days.isEmpty ? nil : copy
+        }
+    }
+
+    /// `bloggo-capture:` ids that must not appear in Tap to Blog scans (saved blogs + My Places daily).
+    func bloggoCaptureIdentifiersExcludedFromTripScan() -> Set<String> {
+        allInAppCaptureIdentifiersInVisibleBlogs()
+            .union(EverydayMomentsStore.shared.everydayCaptureIdentifiers)
+    }
+
+    @discardableResult
+    private func stripEverydayCaptures(from detail: inout RecapBlogDetail, identifiers: Set<String>) -> Bool {
+        guard !identifiers.isEmpty else { return false }
+        var changed = false
+        for dayIdx in detail.days.indices {
+            var keptStops: [PlaceStop] = []
+            for var stop in detail.days[dayIdx].placeStops {
+                let before = stop.photos.count
+                stop.photos.removeAll { photo in
+                    guard let lid = photo.localIdentifier else { return false }
+                    return identifiers.contains(lid)
+                }
+                if stop.photos.count != before { changed = true }
+                guard !stop.photos.isEmpty else { continue }
+                keptStops.append(stop)
+            }
+            if keptStops.count != detail.days[dayIdx].placeStops.count { changed = true }
+            detail.days[dayIdx].placeStops = keptStops
+            sortPlaceStopsChronologically(&detail.days[dayIdx].placeStops)
+        }
+        let nonEmptyDays = detail.days.filter { !$0.placeStops.isEmpty }
+        if nonEmptyDays.count != detail.days.count {
+            changed = true
+            detail.days = nonEmptyDays.enumerated().map { index, day in
+                var copy = day
+                copy.dayIndex = index + 1
+                return copy
+            }
+        }
+        return changed
+    }
+
+    @discardableResult
+    private func stripEverydayCaptures(from trip: inout TripDraft, identifiers: Set<String>) -> Bool {
+        guard !identifiers.isEmpty else { return false }
+        var changed = false
+        for dayIdx in trip.days.indices {
+            let before = trip.days[dayIdx].photos.count
+            trip.days[dayIdx].photos.removeAll { photo in
+                guard let lid = photo.localIdentifier else { return false }
+                return identifiers.contains(lid)
+            }
+            if trip.days[dayIdx].photos.count != before { changed = true }
+        }
+        let nonEmptyDays = trip.days.filter { !$0.photos.isEmpty }
+        if nonEmptyDays.count != trip.days.count {
+            changed = true
+            trip.days = nonEmptyDays
+        }
+        return changed
+    }
+
+    private func refreshRecapMetadataAfterEverydayStrip(sourceTripId: UUID, detail: RecapBlogDetail) {
+        guard let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) else { return }
+        recents[idx].selectedPhotoCount = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+        recents[idx].totalPlaceVisitCount = detail.days.reduce(0) { $0 + $1.placeStops.count }
+        recents[idx].tripDurationDays = detail.days.count
+        recents[idx].tripStartDate = RecapBlogDay.alignedTripStartDate(from: detail.days)
+        recents[idx].tripEndDate = RecapBlogDay.alignedTripEndDate(from: detail.days)
+        recents[idx].tripDateRangeText = Self.formatDateRange(
+            start: recents[idx].tripStartDate,
+            end: recents[idx].tripEndDate
+        )
+        persistRecents()
+    }
+
     private func mergeVisitedPlaceSummaries(
         blogPlaces: [VisitedPlaceSummary],
         everydayPlaces: [VisitedPlaceSummary]
     ) -> [VisitedPlaceSummary] {
-        var byKey: [String: VisitedPlaceSummary] = [:]
-        for place in blogPlaces {
-            byKey[place.placeId] = place
-        }
-        for place in everydayPlaces {
-            if let existing = byKey[place.placeId] {
-                let mergedPhotos = (existing.photos + place.photos)
-                    .uniqued(by: { $0.id })
-                    .sorted(by: { $0.timestamp > $1.timestamp })
-                let mergedLatest = max(existing.latestVisitDate, place.latestVisitDate)
-                byKey[place.placeId] = VisitedPlaceSummary(
-                    placeId: existing.placeId,
-                    placeName: mergedLatest > existing.latestVisitDate ? place.placeName : existing.placeName,
-                    city: existing.city.isEmpty ? place.city : existing.city,
-                    country: existing.country,
-                    categoryRawValue: existing.categoryRawValue ?? place.categoryRawValue,
-                    latestVisitDate: mergedLatest,
-                    year: Calendar.current.component(.year, from: mergedLatest),
-                    photos: mergedPhotos,
-                    placeCaption: existing.placeCaption ?? place.placeCaption,
-                    photoCaptions: (existing.photoCaptions + place.photoCaptions).filter { !$0.isEmpty },
-                    relatedBlogs: existing.relatedBlogs,
-                    isEverydayOnly: existing.isEverydayOnly && place.isEverydayOnly
-                )
+        var merged = blogPlaces
+
+        for everyday in everydayPlaces {
+            if everyday.isEverydayOnly {
+                merged.append(everyday)
+                continue
+            }
+            if let matchIndex = merged.firstIndex(where: { $0.isSamePlace(as: everyday) }) {
+                merged[matchIndex] = merged[matchIndex].mergedWithEveryday(everyday)
             } else {
-                byKey[place.placeId] = place
+                merged.append(everyday)
             }
         }
-        return byKey.values.sorted(by: { $0.latestVisitDate > $1.latestVisitDate })
+
+        return merged.sorted(by: { $0.latestVisitDate > $1.latestVisitDate })
     }
 
 }
