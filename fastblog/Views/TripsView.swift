@@ -6397,33 +6397,25 @@ extension CameraCaptureView {
             sessionCapturesForDisplay[idx] = moment
         }
         let photoLocation = moment.location ?? cameraController.currentLocation.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
-        let geoForPlace = cameraController.currentLocation
-        Task { @MainActor in
-            var locationName: String? = nil
-            var countryName: String? = nil
-            if let geo = geoForPlace {
-                let place = await GeocodingService.shared.place(for: geo)
-                locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
-                countryName = place.countryName != "Unknown" ? place.countryName : nil
-            }
-            let photo = MockPhoto(
-                id: momentId,
-                imageName: "camera.fill",
-                timestamp: timestamp,
-                locationName: locationName ?? "Captured Moment",
-                countryName: countryName,
-                isSelected: true,
-                localIdentifier: localId,
-                location: photoLocation
-            )
-            createdRecapStore.injectPhotos([photo], intoSourceTripId: sourceTripId)
-            sessionTripTitle = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == sourceTripId })?.title
-            attachedCountThisSession = momentCount(from: sessionCapturesForDisplay)
-            if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) {
-                var m = sessionCapturesForDisplay[idx]
-                m.injectedPhotoId = momentId
-                sessionCapturesForDisplay[idx] = m
-            }
+        // Title/place-name resolution happens asynchronously inside `injectPhotos` (new stops are
+        // reverse-geocoded there, in the background) — don't block injection on a geocode call here.
+        let photo = MockPhoto(
+            id: momentId,
+            imageName: "camera.fill",
+            timestamp: timestamp,
+            locationName: "Captured Moment",
+            countryName: nil,
+            isSelected: true,
+            localIdentifier: localId,
+            location: photoLocation
+        )
+        createdRecapStore.injectPhotos([photo], intoSourceTripId: sourceTripId)
+        sessionTripTitle = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == sourceTripId })?.title
+        attachedCountThisSession = momentCount(from: sessionCapturesForDisplay)
+        if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) {
+            var m = sessionCapturesForDisplay[idx]
+            m.injectedPhotoId = momentId
+            sessionCapturesForDisplay[idx] = m
         }
     }
 
