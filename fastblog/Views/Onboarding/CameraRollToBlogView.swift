@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import MapKit
 
 // MARK: - Data model for each falling photo tile
 
@@ -11,6 +12,14 @@ private struct FallingPhotoData {
     let rotation: Double       // degrees
     let assetName: String
     let filename: String
+}
+
+private struct OnboardingDemoMapPlace: Identifiable {
+    let id = UUID()
+    let number: Int
+    let title: String
+    let coordinate: CLLocationCoordinate2D
+    let color: Color
 }
 
 // MARK: - Main view
@@ -53,6 +62,7 @@ struct CameraRollToBlogView: View {
 
     @State private var showPrivacyPolicy = false
     @State private var showTermsOfService = false
+    @State private var demoMapPosition: MapCameraPosition = .region(Self.demoBaliMapRegion)
 
     // MARK: - Hardcoded photo tile data (xFraction: left edge / screenWidth, shifted right for visual balance)
 
@@ -70,6 +80,38 @@ struct CameraRollToBlogView: View {
         .init(width: 105, height: 155, xFraction: 0.32, landYFraction: 0.36, rotation:  -7, assetName: "OnboardingDemoJatiluwih", filename: "IMG_9940"),
         .init(width: 88,  height: 100, xFraction: 0.56, landYFraction: 0.62, rotation:  22, assetName: "OnboardingDemoGoaGajah", filename: "IMG_0774"),
     ]
+
+    private static let demoBaliMapPlaces: [OnboardingDemoMapPlace] = [
+        .init(
+            number: 1,
+            title: "Ubud Rice Fields",
+            coordinate: CLLocationCoordinate2D(latitude: -8.4319, longitude: 115.2793),
+            color: .green
+        ),
+        .init(
+            number: 2,
+            title: "Water Temples",
+            coordinate: CLLocationCoordinate2D(latitude: -8.4157, longitude: 115.3152),
+            color: .blue
+        ),
+        .init(
+            number: 3,
+            title: "Clifftop Beaches",
+            coordinate: CLLocationCoordinate2D(latitude: -8.8291, longitude: 115.0849),
+            color: .orange
+        ),
+        .init(
+            number: 4,
+            title: "Volcanoes & Falls",
+            coordinate: CLLocationCoordinate2D(latitude: -8.2423, longitude: 115.3754),
+            color: .cyan
+        )
+    ]
+
+    private static let demoBaliMapRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: -8.5350, longitude: 115.2650),
+        span: MKCoordinateSpan(latitudeDelta: 0.82, longitudeDelta: 0.72)
+    )
 
     // MARK: - Body
 
@@ -338,29 +380,26 @@ struct CameraRollToBlogView: View {
     // Inline map placeholder — matches mapCard() appearance
     private var mapCardMock: some View {
         ZStack(alignment: .topTrailing) {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(white: 0.12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
-                )
-            Canvas { context, size in
-                let gridColor = Color.white.opacity(0.06)
-                for x in stride(from: CGFloat(0), through: size.width, by: 24) {
-                    context.stroke(Path { p in p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: size.height)) }, with: .color(gridColor), lineWidth: 1)
-                }
-                for y in stride(from: CGFloat(0), through: size.height, by: 24) {
-                    context.stroke(Path { p in p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: size.width, y: y)) }, with: .color(gridColor), lineWidth: 1)
+            Map(position: $demoMapPosition) {
+                MapPolyline(coordinates: Self.demoBaliMapPlaces.map(\.coordinate))
+                    .stroke(OnboardingConstants.Colors.doneButtonBlue, lineWidth: 3)
+
+                ForEach(Self.demoBaliMapPlaces) { place in
+                    Annotation(place.title, coordinate: place.coordinate) {
+                        onboardingDemoMapMarker(place)
+                    }
                 }
             }
+            .mapStyle(.standard(elevation: .flat))
+            .allowsHitTesting(false)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            Circle().fill(Color.green).frame(width: 10, height: 10)
-                .position(x: 90, y: 28)
-            Circle().fill(Color.blue).frame(width: 10, height: 10)
-                .position(x: 170, y: 52)
-            Circle().fill(Color.orange).frame(width: 10, height: 10)
-                .position(x: 130, y: 68)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
+            )
+            .onAppear {
+                demoMapPosition = .region(Self.demoBaliMapRegion)
+            }
 
             Image(systemName: "arrow.up.left.and.arrow.down.right")
                 .font(.system(size: 12, weight: .medium))
@@ -373,6 +412,27 @@ struct CameraRollToBlogView: View {
         .frame(height: 140)
         .padding(.horizontal, 14)
         .padding(.top, 8)
+    }
+
+    private func onboardingDemoMapMarker(_ place: OnboardingDemoMapPlace) -> some View {
+        VStack(spacing: 3) {
+            Text("\(place.number)")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(place.color))
+                .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+                .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+
+            Text(place.title)
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Color.black.opacity(0.68))
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        }
     }
 
     // Single place stop row — matches PlaceStopRowView layout

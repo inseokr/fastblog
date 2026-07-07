@@ -385,6 +385,17 @@ struct PlaceStopRowView: View {
         Array(displayableIncludedPhotos.prefix(3))
     }
 
+    private var editPhotoTileSize: CGFloat {
+        let horizontalInsets: CGFloat = 8 + 12 + 12 + 8
+        let spacing: CGFloat = 8 * 2
+        return floor((UIScreen.main.bounds.width - horizontalInsets - spacing) / 3)
+    }
+
+    private var editPhotoThumbnailTargetSize: CGSize {
+        let pixelSize = editPhotoTileSize * UIScreen.main.scale
+        return CGSize(width: pixelSize, height: pixelSize)
+    }
+
     /// Included photos that still resolve to real pixels (omits deleted library assets / missing app captures).
     private var displayableIncludedPhotos: [RecapPhoto] {
         stop.photos.filter(\.isIncluded).filter(\.hasDisplayableLocalBacking)
@@ -446,6 +457,69 @@ struct PlaceStopRowView: View {
 
     private func hasMomentVideo(for photo: RecapPhoto) -> Bool {
         momentVideoURL(for: photo) != nil
+    }
+
+    @ViewBuilder
+    private func editPhotoTile(photo: RecapPhoto) -> some View {
+        RecapPhotoThumbnail(
+            photo: photo,
+            cornerRadius: 10,
+            showIcon: false,
+            targetSize: editPhotoThumbnailTargetSize
+        )
+        .aspectRatio(contentMode: .fill)
+        .frame(width: editPhotoTileSize, height: editPhotoTileSize)
+        .clipped()
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 10, style: .continuous))
+        .overlay(alignment: .topLeading) {
+            photoTimestampBadge(for: photo)
+                .padding(6)
+        }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                onRemovePhoto?(photo.id)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 24))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.black.opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .padding(6)
+            .accessibilityLabel("Remove photo")
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onPhotoTapped?(photo)
+        }
+    }
+
+    private func chunkedEditPhotos(_ photos: [RecapPhoto], chunkSize: Int) -> [[RecapPhoto]] {
+        guard chunkSize > 0 else { return [photos] }
+        var rows: [[RecapPhoto]] = []
+        var index = 0
+        while index < photos.count {
+            let endIndex = min(index + chunkSize, photos.count)
+            rows.append(Array(photos[index..<endIndex]))
+            index += chunkSize
+        }
+        return rows
+    }
+
+    @ViewBuilder
+    private func editPhotoRows(photos: [RecapPhoto]) -> some View {
+        let rows = chunkedEditPhotos(photos, chunkSize: 3)
+
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, rowPhotos in
+                HStack(spacing: 8) {
+                    ForEach(rowPhotos) { photo in
+                        editPhotoTile(photo: photo)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
     }
 
     @ViewBuilder
@@ -558,35 +632,41 @@ struct PlaceStopRowView: View {
             }
 
             if !photos.isEmpty {
-                VStack(alignment: .leading, spacing: 14) {
-                    PlaceMediaCarouselView(
-                        photos: photos,
-                        isEditMode: isEditMode,
-                        reportsReelCandidates: false,
-                        cornerRadius: 10,
-                        slideContent: { photo in
-                            verticalPhotoBlock(photo: photo)
-                        }
-                    )
+                Group {
+                    if isEditMode {
+                        editPhotoRows(photos: displayableIncludedPhotos)
+                    } else {
+                        VStack(alignment: .leading, spacing: 14) {
+                            PlaceMediaCarouselView(
+                                photos: photos,
+                                isEditMode: isEditMode,
+                                reportsReelCandidates: false,
+                                cornerRadius: 10,
+                                slideContent: { photo in
+                                    verticalPhotoBlock(photo: photo)
+                                }
+                            )
 
-                    if !isEditMode, totalPhotoCount > 3,
-                       let firstHidden = displayableIncludedPhotos.dropFirst(3).first {
-                        Button {
-                            onPhotoTapped?(firstHidden)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text("See all photos/videos")
-                                    .font(.subheadline.weight(.semibold))
-                                Spacer(minLength: 8)
-                                Image(systemName: "chevron.right")
-                                    .font(.subheadline.weight(.semibold))
+                            if totalPhotoCount > 3,
+                               let firstHidden = displayableIncludedPhotos.dropFirst(3).first {
+                                Button {
+                                    onPhotoTapped?(firstHidden)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text("See all photos/videos")
+                                            .font(.subheadline.weight(.semibold))
+                                        Spacer(minLength: 8)
+                                        Image(systemName: "chevron.right")
+                                            .font(.subheadline.weight(.semibold))
+                                    }
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 2)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("See all photos/videos")
+                                .padding(.horizontal, 12)
                             }
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 2)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("See all photos/videos")
-                        .padding(.horizontal, 12)
                     }
                 }
                 .onChange(of: reelAutoplay.isUserMuted) { _, muted in
