@@ -850,7 +850,7 @@ struct RecapBlogPageView: View {
                         .foregroundColor(.white)
                         .multilineTextAlignment(.center)
 
-                    Text("Sign in to save and download unlimited blogs. Guest users can only save one blog to try Bloggo.")
+                    Text("Sign in to save and export your blogs.")
                         .font(.body)
                         .multilineTextAlignment(.center)
                         .foregroundColor(.secondary)
