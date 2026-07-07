@@ -52,7 +52,7 @@ struct PrivacyPolicyView: View {
                     sectionTitle("2. Your Blog Content Stays on Your Device")
                     bodyText("Your blogs, drafts, and the photos you include in them are stored and processed on your device. In-app camera captures—including optional short Reel clips and Vibe audio—are also stored locally with your blog. Bloggo does not upload your blog content, Reel clips, or your photo library to our servers for editing, server-side backup, sync, hosting, or publishing.")
                     bodyText("We do not store or sync your blog files on our systems; only the account and technical data described elsewhere in this policy are processed on our servers.")
-                    bodyText("Whether you use Bloggo as a guest or with an account, your blog files stay with you locally unless you export them yourself (for example, PDF, zip, or video using the app's export tools). If you create an account, we store the information needed to sign you in and operate your account on our systems, such as username and email—that is separate from your blog drafts and media, which remain on your device.")
+                    bodyText("Your blog files stay with you locally unless you export them yourself (for example, PDF, zip, or video using the app's export tools). If you create an account, we store the information needed to sign you in and operate your account on our systems, such as username and email—that is separate from your blog drafts and media, which remain on your device.")
                     bullet("Blog generation uses AI that runs entirely on your device. Your photos are not sent to external AI services for that processing.")
                 }
 
@@ -90,12 +90,10 @@ struct PrivacyPolicyView: View {
                 }
 
                 Group {
-                    sectionTitle("7. Guest and Registered User Access")
-                    bodyText("Bloggo offers two tiers of access:")
-                    bullet("Guest users (no account): Guests may create and export one (1) blog. To save additional blogs or use features that require an account, you can create one.")
-                    bullet("Registered users: Users with a Bloggo account can save and export blogs according to the limits shown in the app. Account creation requires a valid email address.")
-                    bodyText("Age and accounts. Bloggo is listed on the Apple App Store with a 4+ age rating. That rating reflects the general suitability of the app for download and everyday use, including when you use Bloggo without registering. Creating a Bloggo account is different: it requires you to provide personal information (such as an email address) that we process on our systems. For that reason, you must be at least 13 years old to create an account. If you are not yet 13, you may not register; you may still use Bloggo as a guest within the limits shown in the app, without submitting the information we collect for registered users.")
-                    bullet("By creating an account, you represent that you are at least 13 years of age, or the minimum age required in your jurisdiction to consent to the collection of your personal information online, whichever is higher.")
+                    sectionTitle("7. Registered Accounts")
+                    bodyText("Bloggo requires an account to use the app. Account creation requires a valid email address.")
+                    bodyText("Age and accounts. Bloggo is listed on the Apple App Store with a 4+ age rating. Creating a Bloggo account requires you to provide personal information (such as an email address) that we process on our systems. You must be at least 13 years old to create an account, or the minimum age required in your jurisdiction to consent to the collection of your personal information online, whichever is higher. If you do not meet this requirement, you must not use the app.")
+                    bullet("By creating an account, you represent that you meet the age requirement above.")
                     bullet("Only one account may be created per email address.")
                     bodyText("An account does not move your blog content to our servers; drafts and photos stay on your device as described in Section 2, while we store the account details needed to sign you in.")
                 }
