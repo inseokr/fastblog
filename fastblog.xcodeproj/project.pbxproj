@@ -291,6 +291,10 @@
 		TS00B03 /* TripNearbyShareSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R03 /* TripNearbyShareSessionController.swift */; };
 		TS00B04 /* TripNearbyShareViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R04 /* TripNearbyShareViews.swift */; };
 		TS00B05 /* TripNearbyShareHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R05 /* TripNearbyShareHaptics.swift */; };
+		BBCC0001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCC0002 /* main.swift */; };
+		BBCC0003 /* EXIFExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCC0004 /* EXIFExtractor.swift */; };
+		BBCC0005 /* ReverseGeocoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCC0006 /* ReverseGeocoder.swift */; };
+		BBCC0007 /* DatasetExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCC0008 /* DatasetExporter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -582,6 +586,11 @@
 		TS00R03 /* TripNearbyShareSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareSessionController.swift; sourceTree = "<group>"; };
 		TS00R04 /* TripNearbyShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareViews.swift; sourceTree = "<group>"; };
 		TS00R05 /* TripNearbyShareHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareHaptics.swift; sourceTree = "<group>"; };
+		BBCC0002 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		BBCC0004 /* EXIFExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EXIFExtractor.swift; sourceTree = "<group>"; };
+		BBCC0006 /* ReverseGeocoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReverseGeocoder.swift; sourceTree = "<group>"; };
+		BBCC0008 /* DatasetExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatasetExporter.swift; sourceTree = "<group>"; };
+		BBCC000E /* poi-export */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "poi-export"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -593,6 +602,13 @@
 				BB0003D1 /* ZIPFoundation in Frameworks */,
 				A1C4M3R12F9E1000010003 /* PhotosUI.framework in Frameworks */,
 				BB000282 /* KakaoMapsSDK-SPM in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BBCC000C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -650,6 +666,7 @@
 				BB0001AE /* fastblog */,
 				BB0001AF /* Products */,
 				03B8B6572F7CA2EB0088C39F /* Recovered References */,
+				BBCC0009 /* Tools */,
 			);
 			name = main;
 			sourceTree = "<group>";
@@ -677,6 +694,7 @@
 			isa = PBXGroup;
 			children = (
 				AA000003 /* Bloggo.app */,
+				BBCC000E /* poi-export */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -982,6 +1000,25 @@
 			path = Auth;
 			sourceTree = "<group>";
 		};
+		BBCC0009 /* Tools */ = {
+			isa = PBXGroup;
+			children = (
+				BBCC000A /* POIExport */,
+			);
+			path = Tools;
+			sourceTree = "<group>";
+		};
+		BBCC000A /* POIExport */ = {
+			isa = PBXGroup;
+			children = (
+				BBCC0002 /* main.swift */,
+				BBCC0004 /* EXIFExtractor.swift */,
+				BBCC0006 /* ReverseGeocoder.swift */,
+				BBCC0008 /* DatasetExporter.swift */,
+			);
+			path = POIExport;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -1006,6 +1043,22 @@
 			productName = fastblog;
 			productReference = AA000003 /* Bloggo.app */;
 			productType = "com.apple.product-type.application";
+		};
+		BBCC000D /* poi-export */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BBCC0011 /* Build configuration list for PBXNativeTarget "poi-export" */;
+			buildPhases = (
+				BBCC000B /* Sources */,
+				BBCC000C /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "poi-export";
+			productName = "poi-export";
+			productReference = BBCC000E /* poi-export */;
+			productType = "com.apple.product-type.tool";
 		};
 /* End PBXNativeTarget section */
 
@@ -1036,6 +1089,7 @@
 			projectRoot = "";
 			targets = (
 				AA000020 /* Bloggo */,
+				BBCC000D /* poi-export */,
 			);
 		};
 /* End PBXProject section */
@@ -1338,6 +1392,17 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BBCC000B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BBCC0001 /* main.swift in Sources */,
+				BBCC0003 /* EXIFExtractor.swift in Sources */,
+				BBCC0005 /* ReverseGeocoder.swift in Sources */,
+				BBCC0007 /* DatasetExporter.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
@@ -1511,6 +1576,37 @@
 			};
 			name = Release;
 		};
+		BBCC000F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+			};
+			name = Debug;
+		};
+		BBCC0010 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1528,6 +1624,15 @@
 			buildConfigurations = (
 				AA000050 /* Debug */,
 				AA000051 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BBCC0011 /* Build configuration list for PBXNativeTarget "poi-export" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BBCC000F /* Debug */,
+				BBCC0010 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
