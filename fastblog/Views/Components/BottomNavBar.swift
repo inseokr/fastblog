@@ -40,7 +40,7 @@ struct BottomNavBar: View {
                 navItem(
                     tab: .create,
                     label: "Create",
-                    icon: .sfSymbol("plus.circle.fill"),
+                    icon: .sfSymbol("plus"),
                     action: onCreate
                 )
                 navItem(
