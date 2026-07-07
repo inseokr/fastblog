@@ -101,7 +101,7 @@ struct PlacesVisitedStandaloneView: View {
     @State private var searchText: String = ""
     @State private var showPlacesMap: Bool = false
 
-    private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
+    private let pageBackgroundCream = Color(red: 0.98, green: 0.96, blue: 0.91)
 
     var body: some View {
         PlacesVisitedView(
@@ -113,12 +113,11 @@ struct PlacesVisitedStandaloneView: View {
             standaloneOnDismiss: onDismiss,
             onShowSettings: onShowSettings
         )
-        .background(backgroundBlue.ignoresSafeArea())
+        .background(pageBackgroundCream.ignoresSafeArea())
         .scrollContentBackground(.hidden)
         .navigationTitle("My Places")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
-        .preferredColorScheme(.dark)
         .homeSettingsToolbar(
             onShowSettings: onShowSettings,
             onReplayOnboarding: onReplayOnboarding
@@ -439,7 +438,7 @@ struct PlacesVisitedView: View {
     }
 
     private var placesSearchOverlay: some View {
-        Color(red: 5/255, green: 10/255, blue: 48/255)
+        Color(red: 0.98, green: 0.96, blue: 0.91)
             .ignoresSafeArea()
             .overlay {
                 ScrollView(showsIndicators: false) {
@@ -449,13 +448,13 @@ struct PlacesVisitedView: View {
                                 Text("No matches")
                                     .font(.title3)
                                     .fontWeight(.semibold)
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(.primary)
 
                                 Text(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                                      ? "Start typing to search by place, city, or country."
                                      : "Try a different place, city, or country.")
                                     .font(.subheadline)
-                                    .foregroundStyle(.white.opacity(0.7))
+                                    .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 20)
                             }

@@ -94,11 +94,8 @@ struct UploadingBlogView: View {
                 buildingNode(at: index)
             }
 
-            // Central app logo with subtle pulse
-            Image("ScanIcon")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 88, height: 88)
+            // Central Rewind icon with subtle pulse
+            RewindAnimationIcon(circleSide: 102, symbolSize: 48)
                 .scaleEffect(pulseScale)
                 .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulseScale)
         }

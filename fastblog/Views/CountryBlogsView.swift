@@ -69,7 +69,7 @@ struct CountryBlogsView: View {
         return section.blogs
     }
 
-    private let darkNavy = Color(red: 5/255, green: 10/255, blue: 48/255)
+    private let pageBackgroundCream = Color(red: 0.98, green: 0.96, blue: 0.91)
     /// Swipe delete: explicit colors so parent `.tint(.primary)` (white in dark mode) does not wash out the icon.
     private let swipeDeleteRed = Color(red: 0.88, green: 0.38, blue: 0.40)
 
@@ -144,7 +144,7 @@ struct CountryBlogsView: View {
                         .padding(.horizontal)
                         .padding(.vertical, 12)
                     }
-                    .background(darkNavy)
+                    .background(pageBackgroundCream)
 
                     Divider()
                 }
@@ -183,6 +183,8 @@ struct CountryBlogsView: View {
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(pageBackgroundCream)
                 .padding(.top, 4)
                 .coordinateSpace(name: "countryList")
                 .onPreferenceChange(CountryListScrollOffsetKey.self) { scrollOffset = $0 }
@@ -221,7 +223,7 @@ struct CountryBlogsView: View {
         }
         } // end ZStack
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showUndoBanner)
-        .background(darkNavy)
+        .background(pageBackgroundCream)
         .background(InteractivePopGestureDisabler())
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

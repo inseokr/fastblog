@@ -17,11 +17,10 @@ struct CreatingRecapView: View {
     @State private var assembledStep: Int = 0
     @State private var pulseScale: CGFloat = 1
     @State private var stepLabelIndex: Int = 0
-    @State private var colorProgress: CGFloat = 0
     /// Displayed progress percentage (0-100). Driven by externalProgress when available.
     @State private var progressPercent: Int = 0
 
-    private let navyBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
+    private let pageBackgroundCream = Color(red: 0.98, green: 0.96, blue: 0.91)
     /// Total animation duration for the simulated-progress fallback path.
     private let totalDuration: TimeInterval = 5.0
 
@@ -32,11 +31,8 @@ struct CreatingRecapView: View {
 
     var body: some View {
         ZStack {
-            ZStack {
-                Color(uiColor: .systemGroupedBackground)
-                navyBlue.opacity(colorProgress)
-            }
-            .ignoresSafeArea()
+            pageBackgroundCream
+                .ignoresSafeArea()
 
             VStack(spacing: 32) {
                 Spacer()
@@ -50,17 +46,16 @@ struct CreatingRecapView: View {
                         Text("Cancel")
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.45))
+                            .foregroundColor(Color.black.opacity(0.56))
                             .padding(.horizontal, 32)
                             .padding(.vertical, 12)
-                            .background(Color.white.opacity(0.08))
+                            .background(Color.black.opacity(0.08))
                             .clipShape(Capsule())
                     }
                     .padding(.bottom, 32)
                 }
             }
         }
-        .preferredColorScheme(.dark)
         .onAppear {
             startAnimations()
         }
@@ -103,11 +98,8 @@ struct CreatingRecapView: View {
                 buildingNode(at: index)
             }
 
-            // Central app logo with subtle pulse
-            Image("ScanIcon")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 88, height: 88)
+            // Central Rewind icon with subtle pulse
+            RewindAnimationIcon(circleSide: 102, symbolSize: 48)
                 .scaleEffect(pulseScale)
                 .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulseScale)
         }
@@ -135,7 +127,7 @@ struct CreatingRecapView: View {
             Text("We're creating your Recap Blog!")
                 .font(.title2)
                 .fontWeight(.bold)
-                .foregroundColor(.primary)
+                .foregroundColor(Color.black.opacity(0.86))
                 .multilineTextAlignment(.center)
 
             Group {
@@ -149,22 +141,17 @@ struct CreatingRecapView: View {
                 }
             }
             .font(.subheadline)
-            .foregroundColor(.secondary)
+            .foregroundColor(Color.black.opacity(0.58))
             .animation(.easeInOut(duration: 0.3), value: stepLabelIndex)
 
             Text("Please do not leave this screen")
                 .font(.caption)
-                .foregroundColor(.secondary.opacity(0.8))
+                .foregroundColor(Color.black.opacity(0.46))
         }
         .padding(.horizontal, 24)
     }
 
     private func startAnimations() {
-        // Background slowly transitions to navy blue
-        withAnimation(.easeIn(duration: 4.5)) {
-            colorProgress = 1
-        }
-
         // Progress ring fills over ~1.8s
         ringTrim = 1
 
@@ -207,4 +194,3 @@ struct CreatingRecapView: View {
 #Preview {
     CreatingRecapView(onCancel: { })
 }
-

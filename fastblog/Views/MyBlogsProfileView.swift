@@ -2,7 +2,7 @@
 //  MyBlogsProfileView.swift
 //  Capper
 //
-//  My Blogs: dark blue background, vertical list of Country Cards, fixed search bar and My Map button.
+//  My Blogs: cream background, vertical list of Country Cards, fixed search bar and My Map button.
 //
 
 import SwiftUI
@@ -99,7 +99,7 @@ struct MyBlogsProfileView: View {
         self.onNavMyPlaces = onNavMyPlaces
     }
 
-    private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
+    private let pageBackgroundCream = Color(red: 0.98, green: 0.96, blue: 0.91)
 
     /// If on-the-go new moments exist for a blog we have, show the alert.
     private func checkForNewMoments() {
@@ -115,7 +115,7 @@ struct MyBlogsProfileView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            backgroundBlue.ignoresSafeArea()
+            pageBackgroundCream.ignoresSafeArea()
 
             // ── Active page content ──────────────────────────────────────
             pageContent
@@ -124,8 +124,7 @@ struct MyBlogsProfileView: View {
 
             // ── Search focus overlay + full blog list (My Blogs only) ─────
             if isSearchActive && isOnBlogsPage {
-                // Deep navy background, visually aligned with My Blogs.
-                backgroundBlue
+                pageBackgroundCream
                     .ignoresSafeArea()
                     .transition(.opacity)
 
@@ -137,10 +136,10 @@ struct MyBlogsProfileView: View {
                                 VStack(spacing: 8) {
                                     Text("Search by city, country, or blog title")
                                         .font(.subheadline)
-                                        .foregroundColor(.white.opacity(0.7))
+                                        .foregroundColor(.secondary)
                                     Text("Start typing to quickly jump into a blog.")
                                         .font(.footnote)
-                                        .foregroundColor(.white.opacity(0.6))
+                                        .foregroundColor(.secondary)
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding(.top, 32)
@@ -184,13 +183,12 @@ struct MyBlogsProfileView: View {
         .navigationTitle(pageTitle)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
-        .preferredColorScheme(.dark)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 switch currentPage {
                 case .blogs:
                     HomeSettingsGearButton(
+                        tint: .black,
                         action: { onShowSettings?() },
                         onLongPress: onReplayOnboarding
                     )
@@ -218,14 +216,14 @@ struct MyBlogsProfileView: View {
                             isSearchFocused = false
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                         }
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                         .fontWeight(.semibold)
                     } else {
                         Button("Manage") {
                             isSearchFocused = false
                             showManage = true
                         }
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                     }
                 }
             }
@@ -577,10 +575,10 @@ struct MyBlogsProfileView: View {
             Text("No recap blogs yet")
                 .font(.title3)
                 .fontWeight(.semibold)
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundColor(.primary)
             Text("Trip blogs from travel and past photo scans live here. Everyday moments save to My Places.")
                 .font(.subheadline)
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -694,6 +692,8 @@ private struct MyBlogsManageSheet: View {
     @State private var mergeCountryNav: String?
     @State private var splitCountryNav: String?
 
+    private let pageBackgroundCream = Color(red: 0.98, green: 0.96, blue: 0.91)
+
     private var countryNames: [String] {
         allSections.map(\.country).sorted()
     }
@@ -716,7 +716,7 @@ private struct MyBlogsManageSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(uiColor: .systemGroupedBackground)
+                pageBackgroundCream
                     .ignoresSafeArea()
 
                 ScrollView {

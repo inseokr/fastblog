@@ -59,10 +59,7 @@ struct PreparingStoryBookView: View {
                 buildingNode(at: index)
             }
 
-            Image("ScanIcon")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 88, height: 88)
+            RewindAnimationIcon(circleSide: 102, symbolSize: 48)
                 .scaleEffect(pulseScale)
                 .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulseScale)
         }

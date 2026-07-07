@@ -19,49 +19,53 @@ struct BottomNavBar: View {
 
     private var menuIndicators: BlogMenuIndicatorStore { BlogMenuIndicatorStore.shared }
 
-    private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
-    private let hairline = Color.white.opacity(0.12)
-
     var body: some View {
-        VStack(spacing: 0) {
-            Rectangle()
-                .fill(hairline)
-                .frame(height: 1)
-                .frame(maxWidth: .infinity)
+        TimelineView(.periodic(from: Date(), by: 60)) { context in
+            let phase = HomeBackdropPhase(date: context.date)
 
-            HStack(spacing: 0) {
-                navItem(
-                    tab: .myBlogs,
-                    label: "My Blogs",
-                    icon: .asset("MyBlogsIcon"),
-                    showsActivityBadge: menuIndicators.hasAnyIndicator,
-                    action: onMyBlogs
-                )
-                navItem(
-                    tab: .create,
-                    label: "Create",
-                    icon: .sfSymbol("plus"),
-                    action: onCreate
-                )
-                navItem(
-                    tab: .myPlaces,
-                    label: "My Places",
-                    icon: .asset("MyPlacesIcon"),
-                    action: onMyPlaces
-                )
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(phase.hairlineColor)
+                    .frame(height: 1)
+                    .frame(maxWidth: .infinity)
+
+                HStack(spacing: 0) {
+                    navItem(
+                        tab: .myBlogs,
+                        label: "My Blogs",
+                        icon: .asset("MyBlogsIcon"),
+                        phase: phase,
+                        showsActivityBadge: menuIndicators.hasAnyIndicator,
+                        action: onMyBlogs
+                    )
+                    navItem(
+                        tab: .create,
+                        label: "Create",
+                        icon: .sfSymbol("plus"),
+                        phase: phase,
+                        action: onCreate
+                    )
+                    navItem(
+                        tab: .myPlaces,
+                        label: "My Places",
+                        icon: .asset("MyPlacesIcon"),
+                        phase: phase,
+                        action: onMyPlaces
+                    )
+                }
+                // Keep the content higher (more top air) while avoiding extra bottom lift
+                // beyond the home indicator safe area.
+                .padding(.top, 10)
+                .padding(.bottom, 8)
+                .frame(height: HomeChromeMetrics.bottomNavBarRowHeight)
             }
-            // Keep the content higher (more top air) while avoiding extra bottom lift
-            // beyond the home indicator safe area.
-            .padding(.top, 10)
-            .padding(.bottom, 8)
-            .frame(height: HomeChromeMetrics.bottomNavBarRowHeight)
+            .safeAreaPadding(.bottom, HomeChromeMetrics.bottomNavBarExtraBottomPadding)
+            .background {
+                phase.bottomNavBackground.ignoresSafeArea(edges: .bottom)
+            }
+            // Home tab content may use larger dynamic type; keep the tab bar height identical on every tab.
+            .dynamicTypeSize(.medium)
         }
-        .safeAreaPadding(.bottom, HomeChromeMetrics.bottomNavBarExtraBottomPadding)
-        .background {
-            backgroundBlue.ignoresSafeArea(edges: .bottom)
-        }
-        // Home tab content may use larger dynamic type; keep the tab bar height identical on every tab.
-        .dynamicTypeSize(.medium)
     }
 
     private enum NavIcon {
@@ -73,6 +77,7 @@ struct BottomNavBar: View {
         tab: BottomNavTab,
         label: String,
         icon: NavIcon,
+        phase: HomeBackdropPhase,
         showsActivityBadge: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
@@ -97,7 +102,7 @@ struct BottomNavBar: View {
                                 .frame(width: 24, height: 24)
                         }
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(phase.primaryText)
                     .opacity(iconOpacity)
 
                     if showsActivityBadge {
@@ -110,11 +115,11 @@ struct BottomNavBar: View {
                     .font(.footnote)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                    .foregroundColor(.white)
+                    .foregroundColor(tab == .myPlaces ? .black : phase.primaryText)
                     .opacity(textOpacity)
 
                 Circle()
-                    .fill(Color.white)
+                    .fill(phase.primaryText)
                     .frame(width: 4, height: 4)
                     .opacity(isActive ? 1 : 0)
                     .padding(.top, 1)
@@ -138,6 +143,7 @@ struct HomeSettingsGearButton: View {
     }
 
     var style: Style = .navigationBar
+    var tint: Color = .white
     let action: () -> Void
     var onLongPress: (() -> Void)? = nil
 
@@ -169,14 +175,14 @@ struct HomeSettingsGearButton: View {
         switch style {
         case .navigationBar:
             gearIcon(pointSize: HomeChromeMetrics.settingsIconPointSize)
-                .foregroundStyle(.white)
+                .foregroundStyle(tint)
                 .frame(
                     width: HomeChromeMetrics.settingsTapSide,
                     height: HomeChromeMetrics.settingsTapSide
                 )
         case .cameraTopBar:
             gearIcon(pointSize: 16)
-                .foregroundStyle(.white)
+                .foregroundStyle(tint)
                 .frame(width: 44, height: 44)
                 .background(.ultraThinMaterial)
                 .clipShape(Circle())

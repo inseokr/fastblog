@@ -5,7 +5,8 @@
 
 import SwiftUI
 
-private let loadingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
+private let loadingCreamBackground = Color(red: 0.98, green: 0.96, blue: 0.91)
+private let loadingOverlayNavy = Color(red: 5/255, green: 10/255, blue: 48/255)
 
 /// Shared vertical placement for scan rings (landing idle CTA + ``LoadingScanView`` centered layout).
 enum ScanRingLayoutMetrics {
@@ -65,6 +66,46 @@ struct LoadingScanView: View {
 
     private let nodeIcons = ["mappin.and.ellipse", "photo.on.rectangle.angled", "sparkles"]
 
+    private var usesCreamPageStyle: Bool {
+        !isOverlay && backgroundColorOverride == nil
+    }
+
+    private var primaryTextColor: Color {
+        usesCreamPageStyle ? Color.black.opacity(0.86) : .white
+    }
+
+    private var secondaryTextColor: Color {
+        usesCreamPageStyle ? Color.black.opacity(0.58) : Color.white.opacity(0.65)
+    }
+
+    private var tertiaryTextColor: Color {
+        usesCreamPageStyle ? Color.black.opacity(0.42) : Color.white.opacity(0.35)
+    }
+
+    private var controlForegroundColor: Color {
+        usesCreamPageStyle ? Color.black.opacity(0.70) : Color.white.opacity(0.85)
+    }
+
+    private var controlBackgroundColor: Color {
+        usesCreamPageStyle ? Color.black.opacity(0.08) : Color.white.opacity(0.16)
+    }
+
+    private var cancelForegroundColor: Color {
+        usesCreamPageStyle ? Color.black.opacity(0.62) : Color.white.opacity(0.7)
+    }
+
+    private var cancelBackgroundColor: Color {
+        usesCreamPageStyle ? Color.black.opacity(0.08) : Color.white.opacity(0.12)
+    }
+
+    private var scanRingTint: Color {
+        usesCreamPageStyle ? Color.black.opacity(0.28) : .white
+    }
+
+    private var outerRingColor: Color {
+        usesCreamPageStyle ? Color.black.opacity(0.14) : Color.white.opacity(0.25)
+    }
+
     /// Step label driven by real progress value.
     private var progressStepLabel: String {
         guard let p = progress else { return timerStepLabels[stepLabelIndex] }
@@ -122,7 +163,7 @@ struct LoadingScanView: View {
                     .ignoresSafeArea()
                 switch overlayTint {
                 case .tripNavy:
-                    loadingBackground.opacity(0.65)
+                    loadingOverlayNavy.opacity(0.65)
                         .ignoresSafeArea()
                 case .modalGrayGlass:
                     Color.black.opacity(0.38)
@@ -131,7 +172,7 @@ struct LoadingScanView: View {
                         .ignoresSafeArea()
                 }
             } else {
-                (backgroundColorOverride ?? loadingBackground)
+                (backgroundColorOverride ?? loadingCreamBackground)
                     .ignoresSafeArea()
             }
 
@@ -175,9 +216,9 @@ struct LoadingScanView: View {
                         } label: {
                             Image(systemName: "camera.fill")
                                 .font(.system(size: 17, weight: .semibold))
-                                .foregroundColor(.white.opacity(0.85))
+                                .foregroundColor(controlForegroundColor)
                                 .padding(10)
-                                .background(Color.white.opacity(0.16))
+                                .background(controlBackgroundColor)
                                 .clipShape(Circle())
                         }
                     }
@@ -187,9 +228,9 @@ struct LoadingScanView: View {
                         } label: {
                             Image(systemName: "xmark")
                                 .font(.system(size: 17, weight: .semibold))
-                                .foregroundColor(.white.opacity(0.85))
+                                .foregroundColor(controlForegroundColor)
                                 .padding(10)
-                                .background(Color.white.opacity(0.16))
+                                .background(controlBackgroundColor)
                                 .clipShape(Circle())
                         }
                     }
@@ -198,7 +239,7 @@ struct LoadingScanView: View {
                 .padding(.trailing, 20)
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(usesCreamPageStyle ? nil : .dark)
         .onAppear {
             startAnimations()
             scheduleSlowScanHint()
@@ -251,10 +292,10 @@ struct LoadingScanView: View {
                         Text("Cancel")
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundColor(cancelForegroundColor)
                             .padding(.horizontal, 32)
                             .padding(.vertical, 10)
-                            .background(Color.white.opacity(0.12))
+                            .background(cancelBackgroundColor)
                             .appChromeCornerRadius(10)
                     }
                 }
@@ -272,13 +313,13 @@ struct LoadingScanView: View {
                 .stroke(
                     style: StrokeStyle(lineWidth: 3, dash: [8, 8])
                 )
-                .foregroundColor(.white.opacity(0.25))
+                .foregroundColor(outerRingColor)
                 .frame(width: 250, height: 250)
                 .rotationEffect(.degrees(ringRotation))
                 .animation(.linear(duration: 6).repeatForever(autoreverses: false), value: ringRotation)
 
             // Pulsating concentric rings — the signature scan effect
-            ScanningAnimationView(ringCount: 4, ringSpacing: 28, pulseDuration: 1.8, showIcon: false)
+            ScanningAnimationView(ringCount: 4, ringSpacing: 28, pulseDuration: 1.8, showIcon: false, ringTint: scanRingTint)
                 .frame(width: 200, height: 200)
 
             // Small orbit icons that pop in one by one
@@ -286,11 +327,8 @@ struct LoadingScanView: View {
                 orbitNode(at: index)
             }
 
-            // Central icon with subtle pulse
-            Image("SplashIcon")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 88, height: 88)
+            // Central Rewind icon with subtle pulse
+            RewindAnimationIcon(circleSide: 102, symbolSize: 48)
                 .scaleEffect(pulseScale)
                 .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulseScale)
         }
@@ -328,14 +366,14 @@ struct LoadingScanView: View {
             Text(message)
                 .font(.title2)
                 .fontWeight(.bold)
-                .foregroundColor(.white)
+                .foregroundColor(primaryTextColor)
                 .multilineTextAlignment(.center)
                 // Fill the padded width so centering does not jump when intrinsic line breaks change.
                 .frame(maxWidth: .infinity, alignment: .center)
 
             Text(displayedSecondaryLabel)
                 .font(.subheadline)
-                .foregroundColor(.white.opacity(0.65))
+                .foregroundColor(secondaryTextColor)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.85)
@@ -346,12 +384,12 @@ struct LoadingScanView: View {
                     Text("\(Int(progress * 100))%")
                         .font(.title3)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(tertiaryTextColor)
                         .monospacedDigit()
                 } else {
                     Text("This may take a moment")
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.35))
+                        .foregroundColor(tertiaryTextColor)
                 }
             }
             .multilineTextAlignment(.center)

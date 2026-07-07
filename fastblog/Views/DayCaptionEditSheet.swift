@@ -29,9 +29,14 @@ struct DayCaptionEditSheet: View {
     /// Captures the user's own text before the first AI run, enabling "Revert to original".
     @State private var originalDraft: String? = nil
     @FocusState private var isFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     private var trimmedEditedText: String {
         editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var captionInputBackground: Color {
+        colorScheme == .dark ? Color(white: 0.14) : Color(uiColor: .secondarySystemBackground)
     }
 
     var body: some View {
@@ -85,7 +90,7 @@ struct DayCaptionEditSheet: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
                         .frame(minHeight: 180)
-                        .background(Color(uiColor: .secondarySystemBackground))
+                        .background(captionInputBackground)
                         .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
                         .padding(.horizontal, 20)
 

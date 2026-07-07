@@ -209,6 +209,7 @@ extension View {
             toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     HomeSettingsGearButton(
+                        tint: .black,
                         action: onShowSettings,
                         onLongPress: onReplayOnboarding
                     )

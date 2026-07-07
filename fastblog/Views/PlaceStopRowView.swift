@@ -391,6 +391,10 @@ struct PlaceStopRowView: View {
         return floor((UIScreen.main.bounds.width - horizontalInsets - spacing) / 3)
     }
 
+    private var editPhotoCardWidth: CGFloat {
+        max(280, UIScreen.main.bounds.width - 48)
+    }
+
     private var editPhotoThumbnailTargetSize: CGSize {
         let pixelSize = editPhotoTileSize * UIScreen.main.scale
         return CGSize(width: pixelSize, height: pixelSize)
@@ -508,18 +512,17 @@ struct PlaceStopRowView: View {
 
     @ViewBuilder
     private func editPhotoRows(photos: [RecapPhoto]) -> some View {
-        let rows = chunkedEditPhotos(photos, chunkSize: 3)
-
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, rowPhotos in
-                HStack(spacing: 8) {
-                    ForEach(rowPhotos) { photo in
-                        editPhotoTile(photo: photo)
-                    }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 12) {
+                ForEach(photos) { photo in
+                    verticalPhotoBlock(photo: photo)
+                        .frame(width: editPhotoCardWidth, alignment: .top)
+                        .scrollTargetLayout()
                 }
             }
+            .padding(.horizontal, 12)
         }
-        .padding(.horizontal, 12)
+        .scrollTargetBehavior(.viewAligned)
     }
 
     @ViewBuilder
@@ -550,7 +553,7 @@ struct PlaceStopRowView: View {
                     onCaptionTapped?(photo.id)
                 } label: {
                     let caption = photoCaption(photo.id).wrappedValue
-                    Text(caption.isEmpty ? "Leave a story for this photo" : caption)
+                    Text(caption.isEmpty ? "Add caption" : caption)
                         .font(.subheadline)
                         .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
                         .lineLimit(2)

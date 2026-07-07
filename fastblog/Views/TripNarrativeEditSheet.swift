@@ -16,9 +16,14 @@ struct TripNarrativeEditSheet: View {
     @State private var editedText: String = ""
     @State private var originalDraft: String?
     @FocusState private var isFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     private var trimmedEditedText: String {
         editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var narrativeInputBackground: Color {
+        colorScheme == .dark ? Color(white: 0.14) : Color(uiColor: .secondarySystemBackground)
     }
 
     var body: some View {
@@ -73,7 +78,7 @@ struct TripNarrativeEditSheet: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
                         .frame(minHeight: 180)
-                        .background(Color(uiColor: .secondarySystemBackground))
+                        .background(narrativeInputBackground)
                         .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
                         .padding(.horizontal, 20)
 

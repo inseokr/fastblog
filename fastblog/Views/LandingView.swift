@@ -25,12 +25,13 @@ struct LandingView: View {
 
     @StateObject private var photoAuth = PhotosAuthorizationManager()
 
-    private let landingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
+    @State private var backgroundPhase = HomeBackdropPhase.current()
+    private let backgroundRefreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     private let latestEditsPageSize = 5
     @State private var latestEditsVisibleCount = 5
     @State private var isLoadingLatestEditsBatch = false
 
-    /// Used to keep the "Blog Your Trips in Seconds" alternate CTA off smaller iPhones.
+    /// Used to keep the "Rewind Your Trips in Seconds" alternate CTA off smaller iPhones.
     /// iPhone Pro Max models have wider point bounds than non-Max models.
     private var isIPhoneMax: Bool {
         guard UIDevice.current.userInterfaceIdiom == .phone else { return false }
@@ -73,7 +74,7 @@ struct LandingView: View {
 
     var body: some View {
         ZStack {
-            landingBackground
+            HomeBackdropView(phase: backgroundPhase)
                 .ignoresSafeArea()
 
             // Scan CTA: vertically centered on screen (above footer chrome).
@@ -84,6 +85,7 @@ struct LandingView: View {
             VStack(spacing: 0) {
                 HStack {
                     HomeSettingsGearButton(
+                        tint: backgroundPhase.iconColor,
                         action: { onShowSettings() },
                         onLongPress: onReplayOnboarding
                     )
@@ -93,9 +95,9 @@ struct LandingView: View {
                     } label: {
                         Image(systemName: "camera.fill")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(backgroundPhase.iconColor)
                             .frame(width: 44, height: 44)
-                            .background(.ultraThinMaterial)
+                            .background(backgroundPhase.controlFill)
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
@@ -112,7 +114,14 @@ struct LandingView: View {
 
         }
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(backgroundPhase.preferredColorScheme)
+        .onReceive(backgroundRefreshTimer) { date in
+            let nextPhase = HomeBackdropPhase(date: date)
+            guard nextPhase != backgroundPhase else { return }
+            withAnimation(.easeInOut(duration: 0.5)) {
+                backgroundPhase = nextPhase
+            }
+        }
         .onReceive(textCycleTimer) { _ in
             guard isIPhoneMax else {
                 showAlternateText = false
@@ -172,10 +181,10 @@ struct LandingView: View {
                 Text("Your blog is ready")
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(.white)
+                    .foregroundColor(backgroundPhase.primaryText)
                 Text("Available in your Profile")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.75))
+                    .foregroundColor(backgroundPhase.secondaryText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Button {
@@ -183,7 +192,7 @@ struct LandingView: View {
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.title3)
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(backgroundPhase.tertiaryText)
                     .symbolRenderingMode(.hierarchical)
             }
         }
@@ -194,7 +203,7 @@ struct LandingView: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(appChromeBaseRadius: 14)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        .stroke(backgroundPhase.borderColor, lineWidth: 1)
                 )
         )
         .padding(.horizontal, 20)
@@ -224,14 +233,20 @@ struct LandingView: View {
             ZStack {
                 ZStack {
                     Circle()
-                        .fill(.ultraThinMaterial)
+                        .fill(backgroundPhase.scanCircleFill)
                         .frame(width: 220, height: 220)
                     
-                    ScanningAnimationView(ringCount: 4, ringSpacing: 28, pulseDuration: 1.8, showIcon: showScanIcon, iconName: "SplashIcon")
+                    ScanningAnimationView(
+                        ringCount: 4,
+                        ringSpacing: 28,
+                        pulseDuration: 1.8,
+                        showIcon: showScanIcon,
+                        systemIconName: "gobackward"
+                    )
                         .frame(width: 200, height: 200)
                     
                     Circle()
-                        .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                        .strokeBorder(backgroundPhase.borderColor, lineWidth: 1)
                         .frame(width: 220, height: 220)
                 }
                 .clipShape(Circle())
@@ -242,18 +257,18 @@ struct LandingView: View {
                 )
                 
                 if photoAuth.status == .limited {
-                    Text(showAlternateSecondsCTA ? "Blog Your Trips in Seconds" : "Select Photos to Blog")
+                    Text(showAlternateSecondsCTA ? "Rewind Your Trips in Seconds" : "Select Photos to Rewind")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .foregroundColor(backgroundPhase.primaryText)
                         .opacity(ctaTextOpacity)
                         .frame(maxWidth: .infinity)
                         .offset(y: -156)
                 } else {
-                    Text(showAlternateSecondsCTA ? "Blog Your Trips in Seconds" : "Tap to Blog")
+                    Text(showAlternateSecondsCTA ? "Rewind Your Trips in Seconds" : "Tap to Rewind")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .foregroundColor(backgroundPhase.primaryText)
                         .opacity(ctaTextOpacity)
                         .frame(maxWidth: .infinity)
                         .offset(y: -156)
@@ -273,20 +288,20 @@ struct LandingView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Latest Edits")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundColor(backgroundPhase.primaryText)
                     .padding(.horizontal, 20)
                     .frame(height: 22, alignment: .leading)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(visibleLatestEdits) { recap in
-                            LatestEditsRecapCardButton(recap: recap) {
+                            LatestEditsRecapCardButton(recap: recap, phase: backgroundPhase) {
                                 selectedCreatedRecap = recap
                             }
                         }
 
                         if hasMoreLatestEdits {
-                            LatestEditsMoreHintCard {
+                            LatestEditsMoreHintCard(phase: backgroundPhase) {
                                 loadMoreLatestEdits()
                             }
                         }
@@ -297,11 +312,7 @@ struct LandingView: View {
                 .overlay(alignment: .trailing) {
                     if hasMoreLatestEdits {
                         LinearGradient(
-                            colors: [
-                                landingBackground.opacity(0),
-                                landingBackground.opacity(0.75),
-                                landingBackground
-                            ],
+                            colors: backgroundPhase.trailingFadeColors,
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -335,7 +346,187 @@ struct LandingView: View {
 
 }
 
+enum HomeBackdropPhase: Equatable {
+    case day
+    case night
+
+    init(date: Date, calendar: Calendar = .current) {
+        let hour = calendar.component(.hour, from: date)
+        self = (6..<18).contains(hour) ? .day : .night
+    }
+
+    static func current() -> HomeBackdropPhase {
+        HomeBackdropPhase(date: Date())
+    }
+
+    var preferredColorScheme: ColorScheme {
+        switch self {
+        case .day: return .light
+        case .night: return .dark
+        }
+    }
+
+    var primaryText: Color {
+        switch self {
+        case .day: return Color(white: 0.12)
+        case .night: return .white
+        }
+    }
+
+    var secondaryText: Color {
+        switch self {
+        case .day: return Color(white: 0.34)
+        case .night: return .white.opacity(0.72)
+        }
+    }
+
+    var tertiaryText: Color {
+        switch self {
+        case .day: return Color(white: 0.50)
+        case .night: return .white.opacity(0.62)
+        }
+    }
+
+    var iconColor: Color {
+        primaryText
+    }
+
+    var cardFill: Color {
+        switch self {
+        case .day: return .white.opacity(0.58)
+        case .night: return .white.opacity(0.10)
+        }
+    }
+
+    var subtleFill: Color {
+        switch self {
+        case .day: return Color(red: 0.75, green: 0.61, blue: 0.42).opacity(0.13)
+        case .night: return .white.opacity(0.08)
+        }
+    }
+
+    var controlFill: Color {
+        switch self {
+        case .day: return Color(red: 0.96, green: 0.90, blue: 0.79).opacity(0.74)
+        case .night: return .white.opacity(0.14)
+        }
+    }
+
+    var scanCircleFill: Color {
+        switch self {
+        case .day: return Color(white: 0.86).opacity(0.78)
+        case .night: return .white.opacity(0.12)
+        }
+    }
+
+    var borderColor: Color {
+        switch self {
+        case .day: return Color(red: 0.45, green: 0.36, blue: 0.23).opacity(0.16)
+        case .night: return .white.opacity(0.18)
+        }
+    }
+
+    var hairlineColor: Color {
+        switch self {
+        case .day: return Color(red: 0.45, green: 0.36, blue: 0.23).opacity(0.14)
+        case .night: return .white.opacity(0.12)
+        }
+    }
+
+    var trailingFadeColors: [Color] {
+        switch self {
+        case .day:
+            return [
+                Color(red: 0.98, green: 0.96, blue: 0.91).opacity(0),
+                Color(red: 0.98, green: 0.96, blue: 0.91).opacity(0.76),
+                Color(red: 0.98, green: 0.96, blue: 0.91)
+            ]
+        case .night:
+            return [
+                Color(red: 0.04, green: 0.06, blue: 0.16).opacity(0),
+                Color(red: 0.04, green: 0.06, blue: 0.16).opacity(0.78),
+                Color(red: 0.04, green: 0.06, blue: 0.16)
+            ]
+        }
+    }
+
+    var bottomNavBackground: Color {
+        switch self {
+        case .day: return Color(red: 0.98, green: 0.96, blue: 0.91)
+        case .night: return Color(red: 0.04, green: 0.06, blue: 0.16)
+        }
+    }
+}
+
+struct HomeBackdropView: View {
+    let phase: HomeBackdropPhase
+
+    private let stars: [HomeBackdropStar] = [
+        .init(x: 0.10, y: 0.12, size: 2.2, opacity: 0.80),
+        .init(x: 0.22, y: 0.08, size: 1.4, opacity: 0.58),
+        .init(x: 0.34, y: 0.18, size: 2.8, opacity: 0.74),
+        .init(x: 0.52, y: 0.10, size: 1.8, opacity: 0.62),
+        .init(x: 0.69, y: 0.15, size: 2.4, opacity: 0.82),
+        .init(x: 0.84, y: 0.09, size: 1.5, opacity: 0.66),
+        .init(x: 0.92, y: 0.22, size: 2.0, opacity: 0.56),
+        .init(x: 0.15, y: 0.29, size: 1.7, opacity: 0.52),
+        .init(x: 0.43, y: 0.31, size: 2.1, opacity: 0.64),
+        .init(x: 0.61, y: 0.27, size: 1.3, opacity: 0.58),
+        .init(x: 0.77, y: 0.34, size: 2.5, opacity: 0.70),
+        .init(x: 0.28, y: 0.43, size: 1.4, opacity: 0.50),
+        .init(x: 0.55, y: 0.46, size: 1.9, opacity: 0.54),
+        .init(x: 0.88, y: 0.48, size: 1.5, opacity: 0.60)
+    ]
+
+    var body: some View {
+        ZStack {
+            switch phase {
+            case .day:
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.99, green: 0.97, blue: 0.92),
+                        Color(red: 0.96, green: 0.93, blue: 0.86)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            case .night:
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.03, green: 0.05, blue: 0.15),
+                        Color(red: 0.06, green: 0.08, blue: 0.20),
+                        Color(red: 0.02, green: 0.03, blue: 0.10)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                GeometryReader { proxy in
+                    ForEach(stars) { star in
+                        Circle()
+                            .fill(Color.white.opacity(star.opacity))
+                            .frame(width: star.size, height: star.size)
+                            .position(
+                                x: proxy.size.width * star.x,
+                                y: proxy.size.height * star.y
+                            )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct HomeBackdropStar: Identifiable {
+    let id = UUID()
+    let x: CGFloat
+    let y: CGFloat
+    let size: CGFloat
+    let opacity: Double
+}
+
 private struct LatestEditsMoreHintCard: View {
+    let phase: HomeBackdropPhase
     var onLoadMore: () -> Void
 
     var body: some View {
@@ -343,25 +534,25 @@ private struct LatestEditsMoreHintCard: View {
             VStack(spacing: 8) {
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(0.10))
+                        .fill(phase.subtleFill)
                         .frame(width: 36, height: 36)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white.opacity(0.75))
+                        .foregroundColor(phase.secondaryText)
                 }
 
                 Text("More")
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(phase.secondaryText)
             }
             .frame(width: 72, height: 100)
             .padding(.vertical, 10)
-            .background(Color.white.opacity(0.08))
+            .background(phase.subtleFill)
             .overlay {
                 RoundedRectangle(appChromeBaseRadius: 12)
                     .strokeBorder(
-                        Color.white.opacity(0.18),
+                        phase.borderColor,
                         style: StrokeStyle(lineWidth: 1, dash: [5, 4])
                     )
             }
@@ -374,6 +565,7 @@ private struct LatestEditsMoreHintCard: View {
 struct CreatedRecapCard: View {
     let recap: CreatedRecapBlog
     var menuIndicatorKind: BlogMenuIndicatorStore.Kind? = nil
+    var phase: HomeBackdropPhase = .night
 
     private static let coverSide: CGFloat = 76
     private static let cardWidth: CGFloat = 260
@@ -425,7 +617,7 @@ struct CreatedRecapCard: View {
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if let menuIndicatorKind {
+                if menuIndicatorKind != nil {
                     BlogMenuNavDotBadge()
                         .padding(2)
                 }
@@ -442,21 +634,21 @@ struct CreatedRecapCard: View {
                 Text(recap.title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(.white)
+                    .foregroundColor(phase.primaryText)
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .frame(height: Self.titleRowHeight, alignment: .topLeading)
 
                 Text(dateRangeLine)
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.85))
+                    .foregroundColor(phase.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(height: Self.dateRangeRowHeight, alignment: .leading)
 
                 Text(lastEditedText)
                     .font(.caption2)
-                    .foregroundColor(.white.opacity(0.65))
+                    .foregroundColor(phase.tertiaryText)
                     .lineLimit(1)
                     .frame(height: Self.lastEditedRowHeight, alignment: .leading)
             }
@@ -465,7 +657,11 @@ struct CreatedRecapCard: View {
         .frame(width: Self.cardWidth - Self.cardPadding * 2, height: Self.innerContentHeight, alignment: .topLeading)
         .padding(Self.cardPadding)
         .frame(width: Self.cardWidth, height: Self.layoutHeight, alignment: .topLeading)
-        .background(Color.white.opacity(0.1))
+        .background(phase.cardFill)
+        .overlay(
+            RoundedRectangle(appChromeBaseRadius: 12)
+                .stroke(phase.borderColor, lineWidth: 1)
+        )
         .appChromeCornerRadius(12)
     }
 
@@ -484,10 +680,11 @@ struct CreatedRecapCard: View {
 struct LatestEditsRecapCardButton: View {
     let recap: CreatedRecapBlog
     var menuIndicatorKind: BlogMenuIndicatorStore.Kind? = nil
+    var phase: HomeBackdropPhase = .night
     let action: () -> Void
 
     var body: some View {
-        CreatedRecapCard(recap: recap, menuIndicatorKind: menuIndicatorKind)
+        CreatedRecapCard(recap: recap, menuIndicatorKind: menuIndicatorKind, phase: phase)
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .onTapGesture(perform: action)
     }

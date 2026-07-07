@@ -303,7 +303,6 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .tint(.primary)
-            .preferredColorScheme(.dark)
             .opacity(homeTab == .myBlogs ? 1 : 0)
             .allowsHitTesting(homeTab == .myBlogs)
             .zIndex(homeTab == .myBlogs ? 3 : 0)
@@ -348,7 +347,6 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .tint(.primary)
-            .preferredColorScheme(.dark)
             .opacity(homeTab == .myPlaces ? 1 : 0)
             .allowsHitTesting(homeTab == .myPlaces)
             .zIndex(homeTab == .myPlaces ? 4 : 0)
