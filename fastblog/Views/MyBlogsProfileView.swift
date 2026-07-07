@@ -16,8 +16,6 @@ private enum MyBlogsPage: Equatable {
 
 private let cardSpacing: CGFloat = 16
 private let horizontalPadding: CGFloat = 20
-/// Gap between Latest Edits strip and country cards — keeps gestures from overlapping.
-private let latestEditsCountryGap: CGFloat = 28
 
 private struct MyBlogsScrollOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
@@ -66,8 +64,6 @@ struct MyBlogsProfileView: View {
     @State private var scrollOffset: CGFloat = 0
     /// Scroll offset for country page — used for swipe-down-to-dismiss when at top.
     @State private var countryScrollOffset: CGFloat = 0
-    /// While the user pans Latest Edits sideways, the outer vertical list must not scroll.
-    @State private var latestEditsLocksVerticalScroll = false
     /// Mirrors search field focus while on a country page (Manage → Done in `CountryBlogsView`).
     @State private var countrySearchBarFocused = false
 
@@ -397,8 +393,6 @@ struct MyBlogsProfileView: View {
                 if !isSearchActive {
                     tapToBlogBanner
                         .padding(.bottom, 10)
-                    latestEditsSection
-                        .padding(.bottom, latestEditsCountryGap)
                 }
                 if false && !isSearchActive && !viewModel.unsavedTrips.isEmpty {
                     unsavedTripsSection
@@ -423,7 +417,6 @@ struct MyBlogsProfileView: View {
                             .frame(maxWidth: .infinity)
                         }
                     }
-                    .allowsHitTesting(!latestEditsLocksVerticalScroll)
                 }
             }
             .background(GeometryReader { proxy in
@@ -435,7 +428,6 @@ struct MyBlogsProfileView: View {
         }
         .coordinateSpace(name: "MyBlogsScroll")
         .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in scrollOffset = value }
-        .scrollDisabled(latestEditsLocksVerticalScroll)
         .transition(.opacity)
     }
 
@@ -475,38 +467,6 @@ struct MyBlogsProfileView: View {
             .appChromeCornerRadius(14)
         }
         .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private var latestEditsSection: some View {
-        let recents = createdRecapStore.displayRecents
-        if !recents.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Latest Edits")
-                    .font(.headline)
-                    .foregroundColor(.white)
-
-                LatestEditsNestedHorizontalScroll(
-                    locksParentVerticalScroll: $latestEditsLocksVerticalScroll,
-                    height: CreatedRecapCard.layoutHeight
-                ) {
-                    HStack(spacing: 12) {
-                        ForEach(Array(recents.prefix(8))) { recap in
-                            LatestEditsRecapCardButton(
-                                recap: recap,
-                                menuIndicatorKind: menuIndicators.kind(forSourceTripId: recap.sourceTripId)
-                            ) {
-                                openRecapInEditMode = false
-                                openRecapPresentShareYourBlogSheet = false
-                                selectedCreatedRecap = recap
-                            }
-                        }
-                    }
-                    .padding(.bottom, 4)
-                }
-            }
-            .zIndex(1)
-        }
     }
 
     // MARK: - Persistent bottom bar (inset above home tab bar)
