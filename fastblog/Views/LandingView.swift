@@ -1365,61 +1365,6 @@ struct AllRecentsSheet: View {
     }
 }
 
-// MARK: - Notifications overlay (slides in from right on home)
-private struct NotificationsOverlayView: View {
-    var onDismiss: () -> Void
-    private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
-    private let dismissThreshold: CGFloat = 100
-
-    @GestureState private var dragOffsetX: CGFloat = 0
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button {
-                    onDismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.body.weight(.semibold))
-                        .foregroundColor(.white)
-                }
-                Spacer()
-                Text("Notifications")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                Spacer()
-                Color.clear.frame(width: 24, height: 24)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 12)
-
-            Spacer()
-            Text("No Notifications")
-                .font(.title3)
-                .foregroundColor(.white.opacity(0.8))
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(backgroundBlue.ignoresSafeArea())
-        .preferredColorScheme(.dark)
-        .offset(x: max(0, dragOffsetX))
-        .gesture(
-            DragGesture()
-                .updating($dragOffsetX) { value, state, _ in
-                    if value.translation.width > 0 {
-                        state = value.translation.width
-                    }
-                }
-                .onEnded { value in
-                    if value.translation.width > dismissThreshold {
-                        onDismiss()
-                    }
-                }
-        )
-    }
-}
-
 #Preview {
     NavigationStack {
         LandingView(
