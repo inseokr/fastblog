@@ -7,6 +7,7 @@ import SwiftUI
 
 enum OnboardingStep {
     case splash
+    case createAccount
     case cameraRollToBlog
     case problemStatement
 }
@@ -20,8 +21,14 @@ struct OnboardingFlowView: View {
         Group {
             if step == .splash {
                 SplashView {
-                    step = .cameraRollToBlog
+                    step = .createAccount
                 }
+            } else if step == .createAccount {
+                AuthView(
+                    onAuthenticated: { step = .cameraRollToBlog },
+                    hostControlsDismiss: true,
+                    showsCloseButton: false
+                )
             } else if step == .cameraRollToBlog {
                 CameraRollToBlogView {
                     step = .problemStatement
