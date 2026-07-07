@@ -8,45 +8,19 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct LandingView: View {
-    @Binding var showTrips: Bool
-    @Binding var showProfile: Bool
-    @Binding var showSeeAll: Bool
-    @Binding var showPlacesVisited: Bool
-    @Binding var showCameraFromHome: Bool
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
-    @Binding var postCameraToastMessage: String?
-    /// Passed back to ContentView so RecapBlogPageView opens at the right day.
     @ObservedObject var tripsViewModel: TripsViewModel
-    /// When provided, "Tap to Blog" calls this instead of setting showTrips; parent shows Trips when scan is ready.
     var onTapToBlog: (() -> Void)? = nil
+    var onOpenCamera: () -> Void
+    var onShowSettings: () -> Void
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
-    @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var splashManager: SplashStateManager
 
-    // Circle zoom-reveal: starts at 0, springs to full size as logo lands
     @State private var circlesScale: CGFloat = 0.001
-    // ScanIcon hidden while the animated splash logo overlay is on top
     @State private var showScanIcon: Bool = false
-
-    @State private var showSettings = false
-    @State private var showAuth = false
-    @State private var showNotifications = false
-
-    /// Fade-in opacity for the CTA label on first launch. Starts hidden, fades in after the button appears.
     @State private var ctaTextOpacity: Double = 0
-
-    /// Cycles between "Tap to Blog" and "Blog Your Trips in Seconds" every 7 seconds.
     @State private var showAlternateText = false
     private let textCycleTimer = Timer.publish(every: 7, on: .main, in: .common).autoconnect()
-
-    // New-moments popup (on-the-go feature)
-    @State private var showNewMomentsAlert = false
-    @State private var newMomentsAlertBlogTitle = ""
-    @State private var newMomentsAlertBlogId: UUID? = nil
-    @State private var newMomentsAlertDayIndex: Int? = nil
-
-    /// Per-user profile photo — loaded from authService on appear/user-change.
-    @State private var avatarImageData: Data?
 
     @StateObject private var photoAuth = PhotosAuthorizationManager()
 
@@ -109,22 +83,17 @@ struct LandingView: View {
             VStack(spacing: 0) {
                 HStack {
                     Button {
-                        showSettings = true
+                        onShowSettings()
                     } label: {
                         Image(systemName: "gearshape.fill")
                             .font(.title2)
                             .foregroundColor(.white)
                     }
-                    .simultaneousGesture(
-                        LongPressGesture(minimumDuration: 1.5).onEnded { _ in
-                            OnboardingStore.hasCompletedOnboarding = false
-                        }
-                    )
                     Spacer()
                     Button {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { showNotifications = true }
+                        onOpenCamera()
                     } label: {
-                        Image(systemName: "bell.fill")
+                        Image(systemName: "camera.fill")
                             .font(.title2)
                             .foregroundColor(.white)
                     }
@@ -136,122 +105,11 @@ struct LandingView: View {
                 Spacer()
 
                 recentRecapsSection
-                bottomMenuBar
-            }
-
-            // Auth slide-in from the right
-            if showAuth {
-                AuthView(onAuthenticated: {
-                    showProfile = true
-                    showAuth = false
-                }, onDismiss: {
-                    showAuth = false
-                })
-                .environmentObject(authService)
-                .transition(.move(edge: .trailing))
-                .zIndex(10)
-            }
-
-            // Notifications slide-in from the right
-            NotificationsOverlayView(onDismiss: {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { showNotifications = false }
-            })
-            .offset(x: showNotifications ? 0 : UIScreen.main.bounds.width)
-            .opacity(showNotifications ? 1 : 0)
-            .allowsHitTesting(showNotifications)
-            .animation(.spring(response: 0.4, dampingFraction: 0.9), value: showNotifications)
-            .zIndex(10)
-
-            // Post-camera toast banner
-            if let toastMsg = postCameraToastMessage {
-                VStack {
-                    HStack(spacing: 12) {
-                        Group {
-                            if toastMsg.contains("added to") {
-                                Image("MyBlogsIcon")
-                                    .resizable()
-                                    .renderingMode(.template)
-                                    .foregroundColor(.green)
-                                    .frame(width: 28, height: 28)
-                            } else {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.green)
-                            }
-                        }
-                        Text(toastMsg)
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                        Spacer()
-                        Button {
-                            withAnimation { postCameraToastMessage = nil }
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.body)
-                                .foregroundColor(.white.opacity(0.8))
-                                .padding(8)
-                                .contentShape(Rectangle())
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(appChromeBaseRadius: 14)
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                RoundedRectangle(appChromeBaseRadius: 14)
-                                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                            )
-                    )
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
-                    Spacer()
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(15)
             }
 
         }
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
         .preferredColorScheme(.dark)
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-            .environmentObject(authService)
-            .environmentObject(photoAuth)
-            .environmentObject(createdRecapStore)
-        }
-        .alert(
-            "New moments added to \"\(newMomentsAlertBlogTitle)\"",
-            isPresented: $showNewMomentsAlert
-        ) {
-            Button("View") {
-                if let blogId = newMomentsAlertBlogId {
-                    createdRecapStore.injectPhotos(
-                        tripsViewModel.newlyScannedPhotos,
-                        intoSourceTripId: blogId,
-                        notifyMenuIndicator: false
-                    )
-                }
-                tripsViewModel.clearNewMomentsSignal()
-                OnTheGoTripStore.clearNewMoments()
-                if let blogId = newMomentsAlertBlogId,
-                   let recap = createdRecapStore.displayRecents.first(where: { $0.sourceTripId == blogId }) {
-                    selectedCreatedRecap = recap
-                }
-            }
-            Button("Ok", role: .cancel) {
-                OnTheGoTripStore.clearNewMoments()
-                // Proceed to Trips page so user can keep exploring
-                if !tripsViewModel.tripDrafts.isEmpty {
-                    showTrips = true
-                }
-            }
-        } message: {
-            Text("Your trip has new content since you last looked. Tap View to go to the latest day.")
-        }
-        .animation(.easeInOut(duration: 0.3), value: showAuth)
         .onReceive(textCycleTimer) { _ in
             guard isIPhoneMax else {
                 showAlternateText = false
@@ -269,36 +127,20 @@ struct LandingView: View {
                 }
             }
         }
-        .onChange(of: postCameraToastMessage) { _, msg in
-            if msg != nil {
-                DispatchQueue.main.asyncAfter(
-                    deadline: .now() + HomeChromeMetrics.momentCaptureToastAutoDismissSeconds
-                ) {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        postCameraToastMessage = nil
-                    }
-                }
-            }
-        }
         .onAppear {
             AppAnalytics.track(.appOpen)
-            avatarImageData = authService.profileImageData
-            // If already past splash (e.g. navigating back), show everything immediately
             if splashManager.phase == .done {
                 circlesScale = 1.0
                 showScanIcon = true
                 ctaTextOpacity = 1
             } else {
-                // Circles zoom out 0.35s after appear — synced to logo spring landing
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                     withAnimation(.spring(response: 0.6, dampingFraction: 0.72)) {
                         circlesScale = 1.0
                     }
                 }
-                // ScanIcon appears once the splash overlay has faded (~0.85s)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
                     showScanIcon = true
-                    // Fade the CTA text in shortly after the button appears
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         withAnimation(.easeIn(duration: 0.55)) {
                             ctaTextOpacity = 1
@@ -306,9 +148,6 @@ struct LandingView: View {
                     }
                 }
             }
-        }
-        .onChange(of: authService.currentUser?.id) { _, _ in
-            avatarImageData = authService.profileImageData
         }
     }
 
@@ -377,9 +216,6 @@ struct LandingView: View {
                 onTapToBlog()
             } else {
                 tripsViewModel.startDefaultScan()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                    showTrips = true
-                }
             }
         } label: {
             ZStack {
@@ -493,66 +329,6 @@ struct LandingView: View {
         }
     }
 
-    private var bottomMenuBar: some View {
-        HStack(spacing: 0) {
-            Button {
-                showSeeAll = true
-            } label: {
-                VStack(spacing: 4) {
-                    Image("MyBlogsIcon")
-                        .resizable()
-                        .renderingMode(.template)
-                        .foregroundColor(.white)
-                        .frame(width: 24, height: 24)
-                    Text("My Blogs")
-                        .font(.caption2)
-                        .foregroundColor(.white)
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.plain)
-
-            // Center: icon-sized tap target only — was full-width third of the bar, which overlapped
-            // swipe-down-to-dismiss-Capture and edge taps near the home indicator.
-            Button {
-                showCameraFromHome = true
-            } label: {
-                VStack(spacing: 4) {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.white)
-                        .frame(width: 24, height: 24)
-                    Text("Capture")
-                        .font(.caption2)
-                        .foregroundColor(.white)
-                }
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                showPlacesVisited = true
-            } label: {
-                VStack(spacing: 4) {
-                    Image("MyPlacesIcon")
-                        .resizable()
-                        .renderingMode(.template)
-                        .foregroundColor(.white)
-                        .frame(width: 24, height: 24)
-                    Text("My Places")
-                        .font(.caption2)
-                        .foregroundColor(.white)
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
-        // Extra lift so the bar sits a bit farther from the system home / edge gesture band.
-        .safeAreaPadding(.bottom, 24)
-    }
 }
 
 private struct LatestEditsMoreHintCard: View {
@@ -1647,17 +1423,12 @@ private struct NotificationsOverlayView: View {
 #Preview {
     NavigationStack {
         LandingView(
-            showTrips: .constant(false),
-            showProfile: .constant(false),
-            showSeeAll: .constant(false),
-            showPlacesVisited: .constant(false),
-            showCameraFromHome: .constant(false),
             selectedCreatedRecap: .constant(nil),
-            postCameraToastMessage: .constant(nil),
-            tripsViewModel: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared)
+            tripsViewModel: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared),
+            onOpenCamera: {},
+            onShowSettings: {}
         )
         .environmentObject(CreatedRecapBlogStore.shared)
-        .environmentObject(AuthService.shared)
         .environmentObject(SplashStateManager())
     }
 }
