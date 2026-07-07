@@ -192,7 +192,7 @@ extension View {
                 BottomNavBar(
                     activeTab: activeTab,
                     onMyBlogs: { onSelect(.myBlogs) },
-                    onCamera: { onSelect(.camera) },
+                    onCreate: { onSelect(.create) },
                     onMyPlaces: { onSelect(.myPlaces) }
                 )
             }

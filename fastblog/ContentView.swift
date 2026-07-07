@@ -20,11 +20,8 @@ struct ContentView: View {
     /// Without this, .transition(.identity) removes the view immediately and Metal fires
     /// MTLDebugDevice notifyExternalReferencesNonZeroOnDealloc.
     @State private var tripsViewKeepMounted = false
-    @State private var homeTab: BottomNavTab = .camera
-    /// Immersive home camera hides the tab bar until the user taps the back chevron.
-    @State private var isHomeBottomNavRevealed = false
-    @State private var homeBottomNavAutoHideTask: Task<Void, Never>?
-    private static let homeBottomNavAutoHideSeconds: UInt64 = 4
+    @State private var homeTab: BottomNavTab = .create
+    @State private var showCameraOverlay = false
     @State private var postCameraToastMessage: String?
     @State private var postCameraToastDismissTask: Task<Void, Never>?
     @State private var selectedCreatedRecap: CreatedRecapBlog?
@@ -43,7 +40,6 @@ struct ContentView: View {
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     /// Day index to open when navigating to a blog via the new-moments popup.
     @AppStorage("blogify.justFinishedOnboarding") private var justFinishedOnboarding = false
-    @AppStorage("bloggo.hasSeenCameraTooltip") private var hasSeenCameraTooltip = false
     @State private var showPostOnboardingWelcome = false
     @State private var showTripScanSetupFlow = false
     @State private var showScanPhotoAccessSheet = false
@@ -113,9 +109,7 @@ struct ContentView: View {
                     onUseCamera: {
                         showScanPhotoAccessSheet = false
                         cancelPendingFindPastTripsScan()
-                        hasSeenCameraTooltip = true
-                        selectHomeTab(.camera)
-                        isHomeBottomNavRevealed = true
+                        showCameraOverlay = true
                     },
                     onDismiss: {
                         showScanPhotoAccessSheet = false
@@ -143,9 +137,7 @@ struct ContentView: View {
                     onCaptureMoments: {
                         cancelPendingFindPastTripsScan()
                         showPostOnboardingWelcome = false
-                        hasSeenCameraTooltip = true
-                        selectHomeTab(.camera)
-                        isHomeBottomNavRevealed = true
+                        showCameraOverlay = true
                     },
                     onFindPastTrips: {
                         showPostOnboardingWelcome = false
@@ -174,7 +166,6 @@ struct ContentView: View {
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
                         homeTab = .myBlogs
-                        isHomeBottomNavRevealed = true
                     }
                     showPostOnboardingWelcome = true
                 }
@@ -233,7 +224,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .onChange(of: isCameraHomeVisible) { _, visible in
+            .onChange(of: isLandingHomeVisible) { _, visible in
                 if visible {
                     considerPresentingNewMomentsBannerOnCamera()
                 } else {
@@ -254,26 +245,14 @@ struct ContentView: View {
                 BottomNavBar(
                     activeTab: homeTab,
                     onMyBlogs: { selectHomeTab(.myBlogs) },
-                    onCamera: { selectHomeTab(.camera) },
+                    onCreate: { selectHomeTab(.create) },
                     onMyPlaces: { selectHomeTab(.myPlaces) }
                 )
             }
         }
         .onChange(of: homeTab) { _, newTab in
-            if newTab == .camera {
-                isHomeBottomNavRevealed = false
-            } else {
-                cancelHomeBottomNavAutoHide()
-            }
             if newTab != .myPlaces {
                 suppressHomeBottomNav = false
-            }
-        }
-        .onChange(of: isHomeBottomNavRevealed) { _, revealed in
-            if revealed {
-                scheduleHomeBottomNavAutoHide()
-            } else {
-                cancelHomeBottomNavAutoHide()
             }
         }
     }
@@ -283,30 +262,19 @@ struct ContentView: View {
         ZStack {
             // Home tabs stay mounted (opacity) so the shared bottom nav never tears down / re-renders.
             NavigationStack {
-                CameraCaptureView(
+                LandingView(
+                    selectedCreatedRecap: $selectedCreatedRecap,
                     tripsViewModel: tripsViewModel,
-                    postDismissToast: { msg in
-                        presentPostCameraToast(msg)
-                    },
-                    onWillCaptureMoment: {
-                        dismissPostCameraToast()
-                    },
-                    onDismissOverlay: nil,
-                    onNavigateToBlog: { sourceTripId in
-                        if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == sourceTripId }) {
-                            selectedCreatedRecap = blog
-                        }
-                    },
-                    homeBottomNavRevealed: $isHomeBottomNavRevealed,
-                    isTabActive: homeTab == .camera
+                    onTapToBlog: handleTapToBlog,
+                    onOpenCamera: { showCameraOverlay = true },
+                    onShowSettings: { showSettingsFromNav = true }
                 )
                 .environmentObject(createdRecapStore)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.black)
-            .opacity(homeTab == .camera ? 1 : 0)
-            .allowsHitTesting(homeTab == .camera)
-            .zIndex(homeTab == .camera ? 1 : 0)
+            .opacity(homeTab == .create ? 1 : 0)
+            .allowsHitTesting(homeTab == .create)
+            .zIndex(homeTab == .create ? 1 : 0)
 
             NavigationStack {
                 MyBlogsProfileView(
@@ -321,7 +289,7 @@ struct ContentView: View {
                         showSettingsFromNav = true
                     },
                     onNavCamera: {
-                        selectHomeTab(.camera)
+                        selectHomeTab(.create)
                     },
                     onNavMyPlaces: {
                         selectHomeTab(.myPlaces)
@@ -337,12 +305,39 @@ struct ContentView: View {
             .allowsHitTesting(homeTab == .myBlogs)
             .zIndex(homeTab == .myBlogs ? 3 : 0)
 
+            if showCameraOverlay {
+                NavigationStack {
+                    CameraCaptureView(
+                        tripsViewModel: tripsViewModel,
+                        postDismissToast: { msg in
+                            presentPostCameraToast(msg)
+                        },
+                        onWillCaptureMoment: {
+                            dismissPostCameraToast()
+                        },
+                        onDismissOverlay: { showCameraOverlay = false },
+                        onNavigateToBlog: { sourceTripId in
+                            if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == sourceTripId }) {
+                                selectedCreatedRecap = blog
+                            }
+                        },
+                        homeBottomNavRevealed: nil,
+                        isTabActive: true
+                    )
+                    .environmentObject(createdRecapStore)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black)
+                .transition(.identity)
+                .zIndex(8)
+            }
+
             NavigationStack {
                 PlacesVisitedStandaloneView(
                     selectedCreatedRecap: $selectedCreatedRecap,
                     initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
                     suppressHomeBottomNav: $suppressHomeBottomNav,
-                    onDismiss: { selectHomeTab(.camera) },
+                    onDismiss: { selectHomeTab(.create) },
                     onShowSettings: { showSettingsFromNav = true }
                 )
                 .environmentObject(createdRecapStore)
@@ -439,46 +434,24 @@ struct ContentView: View {
         !showTrips && !pendingShowTripsWhenIdle && selectedCreatedRecap == nil && tripsViewModel.scanState == .idle
     }
 
-    /// Tab bar: hidden on default camera, My Places place viewer, and share studio; optional on camera after back chevron.
     private var isHomeBottomNavVisible: Bool {
-        showsHomeChrome && !suppressHomeBottomNav && (homeTab != .camera || isHomeBottomNavRevealed)
+        showsHomeChrome && !suppressHomeBottomNav && !showCameraOverlay
     }
 
-    private var isCameraHomeVisible: Bool {
-        homeTab == .camera && showsHomeChrome
+    private var isLandingHomeVisible: Bool {
+        homeTab == .create && showsHomeChrome
     }
 
     private func selectHomeTab(_ tab: BottomNavTab) {
-        cancelHomeBottomNavAutoHide()
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            if tab == .camera {
-                isHomeBottomNavRevealed = false
-            }
             homeTab = tab
         }
     }
 
-    private func scheduleHomeBottomNavAutoHide() {
-        cancelHomeBottomNavAutoHide()
-        homeBottomNavAutoHideTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: Self.homeBottomNavAutoHideSeconds * 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            guard homeTab == .camera, isHomeBottomNavRevealed else { return }
-            withAnimation(.easeInOut(duration: 0.25)) {
-                isHomeBottomNavRevealed = false
-            }
-        }
-    }
-
-    private func cancelHomeBottomNavAutoHide() {
-        homeBottomNavAutoHideTask?.cancel()
-        homeBottomNavAutoHideTask = nil
-    }
-
     private func considerPresentingNewMomentsBannerOnCamera() {
-        guard isCameraHomeVisible else { return }
+        guard isLandingHomeVisible else { return }
         guard OnTheGoTripStore.hasNewMoments,
               let blogId = OnTheGoTripStore.activeBlogId,
               let title = OnTheGoTripStore.activeBlogTitle,
