@@ -7,14 +7,14 @@ import SwiftUI
 
 enum BottomNavTab: Equatable {
     case myBlogs
-    case camera
+    case create
     case myPlaces
 }
 
 struct BottomNavBar: View {
     let activeTab: BottomNavTab
     let onMyBlogs: () -> Void
-    let onCamera: () -> Void
+    let onCreate: () -> Void
     let onMyPlaces: () -> Void
 
     private var menuIndicators: BlogMenuIndicatorStore { BlogMenuIndicatorStore.shared }
@@ -38,10 +38,10 @@ struct BottomNavBar: View {
                     action: onMyBlogs
                 )
                 navItem(
-                    tab: .camera,
-                    label: "Camera",
-                    icon: .sfSymbol("camera.fill"),
-                    action: onCamera
+                    tab: .create,
+                    label: "Create",
+                    icon: .sfSymbol("plus"),
+                    action: onCreate
                 )
                 navItem(
                     tab: .myPlaces,
