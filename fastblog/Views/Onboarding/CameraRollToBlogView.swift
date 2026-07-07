@@ -9,7 +9,7 @@ private struct FallingPhotoData {
     let xFraction: CGFloat    // left-edge as fraction of screen width (0–1)
     let landYFraction: CGFloat // landing Y as fraction of screen height (0–1)
     let rotation: Double       // degrees
-    let colors: [Color]
+    let assetName: String
     let filename: String
 }
 
@@ -40,6 +40,8 @@ struct CameraRollToBlogView: View {
     @State private var showDayHeader   = false
     @State private var showStop1       = false
     @State private var showStop2       = false
+    @State private var showStop3       = false
+    @State private var showStop4       = false
     @State private var showDayPills    = false
 
     // MARK: Phase 6 — blog scrolls up
@@ -55,18 +57,18 @@ struct CameraRollToBlogView: View {
     // MARK: - Hardcoded photo tile data (xFraction: left edge / screenWidth, shifted right for visual balance)
 
     private let fallingPhotos: [FallingPhotoData] = [
-        .init(width: 140, height: 140, xFraction: 0.10, landYFraction: 0.42, rotation: -11, colors: [Color(red:0.88,green:0.44,blue:0.25), Color(red:0.69,green:0.25,blue:0.13)], filename: "IMG_3847"),
-        .init(width: 115, height: 150, xFraction: 0.54, landYFraction: 0.37, rotation:  15, colors: [Color(red:0.25,green:0.44,blue:0.88), Color(red:0.13,green:0.25,blue:0.63)], filename: "IMG_0291"),
-        .init(width: 95,  height: 95,  xFraction: 0.34, landYFraction: 0.47, rotation:  -4, colors: [Color(red:0.25,green:0.63,blue:0.38), Color(red:0.13,green:0.44,blue:0.25)], filename: "IMG_5512"),
-        .init(width: 150, height: 110, xFraction: 0.55, landYFraction: 0.30, rotation:  19, colors: [Color(red:0.56,green:0.25,blue:0.69), Color(red:0.38,green:0.06,blue:0.56)], filename: "IMG_7734"),
-        .init(width: 105, height: 125, xFraction: 0.08, landYFraction: 0.52, rotation: -17, colors: [Color(red:0.88,green:0.25,blue:0.38), Color(red:0.63,green:0.06,blue:0.25)], filename: "IMG_1192"),
-        .init(width: 120, height: 120, xFraction: 0.22, landYFraction: 0.34, rotation:   6, colors: [Color(red:0.81,green:0.63,blue:0.25), Color(red:0.56,green:0.38,blue:0.06)], filename: "IMG_4405"),
-        .init(width: 100, height: 135, xFraction: 0.58, landYFraction: 0.44, rotation: -10, colors: [Color(red:0.25,green:0.75,blue:0.63), Color(red:0.06,green:0.50,blue:0.38)], filename: "IMG_8823"),
-        .init(width: 165, height: 120, xFraction: 0.20, landYFraction: 0.26, rotation: -14, colors: [Color(red:0.38,green:0.50,blue:0.81), Color(red:0.19,green:0.31,blue:0.63)], filename: "IMG_2267"),
-        .init(width: 92,  height: 92,  xFraction: 0.42, landYFraction: 0.57, rotation:   8, colors: [Color(red:0.88,green:0.50,blue:0.19), Color(red:0.63,green:0.25,blue:0.06)], filename: "IMG_6098"),
-        .init(width: 115, height: 130, xFraction: 0.12, landYFraction: 0.49, rotation:  12, colors: [Color(red:0.19,green:0.56,blue:0.75), Color(red:0.06,green:0.31,blue:0.50)], filename: "IMG_3311"),
-        .init(width: 105, height: 155, xFraction: 0.32, landYFraction: 0.36, rotation:  -7, colors: [Color(red:0.63,green:0.31,blue:0.63), Color(red:0.38,green:0.06,blue:0.38)], filename: "IMG_9940"),
-        .init(width: 88,  height: 100, xFraction: 0.56, landYFraction: 0.62, rotation:  22, colors: [Color(red:0.38,green:0.63,blue:0.31), Color(red:0.19,green:0.38,blue:0.19)], filename: "IMG_0774"),
+        .init(width: 140, height: 140, xFraction: 0.10, landYFraction: 0.42, rotation: -11, assetName: "OnboardingDemoRiceTerraces", filename: "IMG_3847"),
+        .init(width: 115, height: 150, xFraction: 0.54, landYFraction: 0.37, rotation:  15, assetName: "OnboardingDemoTirtaEmpul", filename: "IMG_0291"),
+        .init(width: 95,  height: 95,  xFraction: 0.34, landYFraction: 0.47, rotation:  -4, assetName: "OnboardingDemoTanahLot", filename: "IMG_5512"),
+        .init(width: 150, height: 110, xFraction: 0.55, landYFraction: 0.30, rotation:  19, assetName: "OnboardingDemoTirtaGangga", filename: "IMG_7734"),
+        .init(width: 105, height: 125, xFraction: 0.08, landYFraction: 0.52, rotation: -17, assetName: "OnboardingDemoUluwatu", filename: "IMG_1192"),
+        .init(width: 120, height: 120, xFraction: 0.22, landYFraction: 0.34, rotation:   6, assetName: "OnboardingDemoUlunDanu", filename: "IMG_4405"),
+        .init(width: 100, height: 135, xFraction: 0.58, landYFraction: 0.44, rotation: -10, assetName: "OnboardingDemoCampuhan", filename: "IMG_8823"),
+        .init(width: 165, height: 120, xFraction: 0.20, landYFraction: 0.26, rotation: -14, assetName: "OnboardingDemoMountBatur", filename: "IMG_2267"),
+        .init(width: 92,  height: 92,  xFraction: 0.42, landYFraction: 0.57, rotation:   8, assetName: "OnboardingDemoKelingking", filename: "IMG_6098"),
+        .init(width: 115, height: 130, xFraction: 0.12, landYFraction: 0.49, rotation:  12, assetName: "OnboardingDemoSekumpul", filename: "IMG_3311"),
+        .init(width: 105, height: 155, xFraction: 0.32, landYFraction: 0.36, rotation:  -7, assetName: "OnboardingDemoJatiluwih", filename: "IMG_9940"),
+        .init(width: 88,  height: 100, xFraction: 0.56, landYFraction: 0.62, rotation:  22, assetName: "OnboardingDemoGoaGajah", filename: "IMG_0774"),
     ]
 
     // MARK: - Body
@@ -152,8 +154,7 @@ struct CameraRollToBlogView: View {
         GeometryReader { geo in
             ForEach(fallingPhotos.indices, id: \.self) { i in
                 let p = fallingPhotos[i]
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(LinearGradient(colors: p.colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                demoPhotoTile(assetName: p.assetName, cornerRadius: 12)
                     .frame(width: p.width, height: p.height)
                     .overlay(alignment: .bottomLeading) {
                         Text(p.filename)
@@ -192,18 +193,10 @@ struct CameraRollToBlogView: View {
     // Cover photo hero — matches CoverPageView + RecapBlogPageView view mode
     private var coverHeroMock: some View {
         ZStack {
-            // Vivid tropical gradient — clearly reads as a travel photo
-            LinearGradient(
-                colors: [
-                    Color(red: 0.85, green: 0.48, blue: 0.22),
-                    Color(red: 0.55, green: 0.35, blue: 0.60),
-                    Color(red: 0.10, green: 0.28, blue: 0.55)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Image("OnboardingDemoRiceTerraces")
+                .resizable()
+                .scaledToFill()
 
-            // Light bottom scrim only — keeps text readable without hiding the gradient
             LinearGradient(
                 colors: [.black.opacity(0.55), .black.opacity(0.05)],
                 startPoint: .bottom,
@@ -251,6 +244,7 @@ struct CameraRollToBlogView: View {
             .padding(.horizontal, 24)
         }
         .frame(height: 300)
+        .clipped()
     }
 
     // Scroll content: map + day header + 2 stop rows (day pills are fixed in body ZStack)
@@ -278,18 +272,14 @@ struct CameraRollToBlogView: View {
             placeStopRow(
                 number: 1,
                 badgeColor: .green,
-                name: "Tegallalang Rice Terraces",
-                subtitle: "Ubud, Bali  ·  2:14 PM",
+                name: "Ubud Rice Fields & Ridge Walk",
+                subtitle: "Tegallalang, Campuhan, Jatiluwih  ·  2:14 PM",
                 categorySymbol: "leaf.fill",
                 categoryLabel: "Nature",
                 categoryColor: .green,
-                photoColors: [
-                    [Color(red:0.88,green:0.44,blue:0.25), Color(red:0.56,green:0.19,blue:0.13)],
-                    [Color(red:0.81,green:0.56,blue:0.19), Color(red:0.50,green:0.31,blue:0.06)],
-                    [Color(red:0.25,green:0.63,blue:0.38), Color(red:0.13,green:0.38,blue:0.25)]
-                ],
-                photoTimes: ["2:14 PM", "2:21 PM", "2:35 PM"],
-                overflow: "+7"
+                photoAssets: ["OnboardingDemoRiceTerraces", "OnboardingDemoCampuhan", "OnboardingDemoJatiluwih"],
+                photoTimes: ["2:14 PM", "2:42 PM", "3:10 PM"],
+                overflow: "+2"
             )
             .opacity(showStop1 ? 1 : 0)
             .offset(y: showStop1 ? 0 : 10)
@@ -297,20 +287,47 @@ struct CameraRollToBlogView: View {
             placeStopRow(
                 number: 2,
                 badgeColor: .blue,
-                name: "Tirta Empul Temple",
-                subtitle: "Tampaksiring  ·  4:50 PM",
+                name: "Water Temples & Palaces",
+                subtitle: "Tirta Empul, Tirta Gangga, Ulun Danu  ·  4:50 PM",
                 categorySymbol: "building.columns.fill",
                 categoryLabel: "Landmark",
                 categoryColor: .blue,
-                photoColors: [
-                    [Color(red:0.25,green:0.44,blue:0.88), Color(red:0.13,green:0.25,blue:0.63)],
-                    [Color(red:0.38,green:0.50,blue:0.81), Color(red:0.19,green:0.31,blue:0.63)]
-                ],
-                photoTimes: ["4:50 PM", "5:02 PM"],
-                overflow: "+4"
+                photoAssets: ["OnboardingDemoTirtaEmpul", "OnboardingDemoTirtaGangga", "OnboardingDemoUlunDanu"],
+                photoTimes: ["4:50 PM", "5:08 PM", "5:37 PM"],
+                overflow: "+1"
             )
             .opacity(showStop2 ? 1 : 0)
             .offset(y: showStop2 ? 0 : 10)
+
+            placeStopRow(
+                number: 3,
+                badgeColor: .orange,
+                name: "Clifftop Beaches",
+                subtitle: "Tanah Lot, Uluwatu, Kelingking  ·  6:18 PM",
+                categorySymbol: "sunset.fill",
+                categoryLabel: "Sunset",
+                categoryColor: .orange,
+                photoAssets: ["OnboardingDemoTanahLot", "OnboardingDemoUluwatu", "OnboardingDemoKelingking"],
+                photoTimes: ["6:18 PM", "6:44 PM", "7:02 PM"],
+                overflow: "+2"
+            )
+            .opacity(showStop3 ? 1 : 0)
+            .offset(y: showStop3 ? 0 : 10)
+
+            placeStopRow(
+                number: 4,
+                badgeColor: .cyan,
+                name: "Volcanoes, Falls & Caves",
+                subtitle: "Mount Batur, Sekumpul, Goa Gajah  ·  10:42 AM",
+                categorySymbol: "mountain.2.fill",
+                categoryLabel: "Adventure",
+                categoryColor: .cyan,
+                photoAssets: ["OnboardingDemoMountBatur", "OnboardingDemoSekumpul", "OnboardingDemoGoaGajah"],
+                photoTimes: ["10:42 AM", "11:23 AM", "12:05 PM"],
+                overflow: "+3"
+            )
+            .opacity(showStop4 ? 1 : 0)
+            .offset(y: showStop4 ? 0 : 10)
 
             // Extra bottom space so stop rows aren't hidden behind fixed day pill bar
             Color.clear.frame(height: 58)
@@ -368,7 +385,7 @@ struct CameraRollToBlogView: View {
         categorySymbol: String,
         categoryLabel: String,
         categoryColor: Color,
-        photoColors: [[Color]],
+        photoAssets: [String],
         photoTimes: [String],
         overflow: String
     ) -> some View {
@@ -404,7 +421,7 @@ struct CameraRollToBlogView: View {
                 .background(Capsule().fill(categoryColor.opacity(0.18)))
                 .padding(.top, 2)
 
-                photoStrip(colors: photoColors, times: photoTimes, overflow: overflow)
+                photoStrip(assetNames: photoAssets, times: photoTimes, overflow: overflow)
             }
         }
         .padding(12)
@@ -418,20 +435,15 @@ struct CameraRollToBlogView: View {
         .padding(.bottom, 10)
     }
 
-    // Horizontal photo strip — square thumbnails at 0.8× screen width, matching PlaceStopRowView exactly
-    private func photoStrip(colors: [[Color]], times: [String], overflow: String) -> some View {
-        let thumbSize = UIScreen.main.bounds.width * 0.8 // square, matches photoStripThumbnailSize
+    // Horizontal photo strip — large thumbnails, clipped to their laid-out frames.
+    private func photoStrip(assetNames: [String], times: [String], overflow: String) -> some View {
+        let thumbSize = UIScreen.main.bounds.width * 0.8
 
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(colors.indices, id: \.self) { i in
+                ForEach(assetNames.indices, id: \.self) { i in
                     ZStack(alignment: .topLeading) {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(LinearGradient(
-                                colors: colors[i],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ))
+                        demoPhotoTile(assetName: assetNames[i], cornerRadius: 10)
                             .frame(width: thumbSize, height: thumbSize)
 
                         if i < times.count {
@@ -445,6 +457,7 @@ struct CameraRollToBlogView: View {
                                 .padding(8)
                         }
                     }
+                    .frame(width: thumbSize, height: thumbSize)
                 }
 
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -457,7 +470,26 @@ struct CameraRollToBlogView: View {
                     )
             }
         }
+        .frame(height: thumbSize)
         .padding(.top, 4)
+    }
+
+    private func demoPhotoTile(assetName: String, cornerRadius: CGFloat) -> some View {
+        GeometryReader { geometry in
+            Image(assetName)
+                .resizable()
+                .scaledToFill()
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .overlay {
+                    LinearGradient(
+                        colors: [.black.opacity(0.1), .black.opacity(0.25)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            }
     }
 
     // Day pill bar — fixed at screen bottom via body ZStack
@@ -634,11 +666,15 @@ struct CameraRollToBlogView: View {
         try? await Task.sleep(for: .milliseconds(200))
         withAnimation(.easeOut(duration: 0.38)) { showStop2 = true }
         try? await Task.sleep(for: .milliseconds(200))
+        withAnimation(.easeOut(duration: 0.38)) { showStop3 = true }
+        try? await Task.sleep(for: .milliseconds(200))
+        withAnimation(.easeOut(duration: 0.38)) { showStop4 = true }
+        try? await Task.sleep(for: .milliseconds(200))
         withAnimation(.easeOut(duration: 0.4)) { showDayPills = true }
 
         // Phase 6: wait 1 s, then slide entire blog view upward
         try? await Task.sleep(for: .milliseconds(1000))
-        withAnimation(.easeInOut(duration: 1.4)) { blogOffset = -220 }
+        withAnimation(.easeInOut(duration: 1.4)) { blogOffset = -320 }
 
         // Phase 7: tagline overlay fades in after scroll starts settling
         try? await Task.sleep(for: .milliseconds(1600))

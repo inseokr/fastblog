@@ -139,32 +139,47 @@ struct HomeSettingsGearButton: View {
 
     var style: Style = .navigationBar
     let action: () -> Void
+    var onLongPress: (() -> Void)? = nil
 
     var body: some View {
-        Button(action: action) {
-            switch style {
-            case .navigationBar:
-                gearIcon(pointSize: HomeChromeMetrics.settingsIconPointSize)
-                    .foregroundStyle(.white)
-                    .frame(
-                        width: HomeChromeMetrics.settingsTapSide,
-                        height: HomeChromeMetrics.settingsTapSide
-                    )
-            case .cameraTopBar:
-                gearIcon(pointSize: 16)
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Circle())
+        label
+            .contentShape(Circle())
+            .onTapGesture(perform: action)
+            .onLongPressGesture(minimumDuration: 0.7) {
+                onLongPress?()
             }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Settings")
+            .accessibilityLabel("Settings")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction {
+                action()
+            }
+            .accessibilityAction(named: Text("Replay Onboarding")) {
+                onLongPress?()
+            }
     }
 
     private func gearIcon(pointSize: CGFloat) -> some View {
         Image(systemName: "gearshape.fill")
             .font(.system(size: pointSize, weight: .semibold))
             .symbolRenderingMode(.monochrome)
+    }
+
+    @ViewBuilder
+    private var label: some View {
+        switch style {
+        case .navigationBar:
+            gearIcon(pointSize: HomeChromeMetrics.settingsIconPointSize)
+                .foregroundStyle(.white)
+                .frame(
+                    width: HomeChromeMetrics.settingsTapSide,
+                    height: HomeChromeMetrics.settingsTapSide
+                )
+        case .cameraTopBar:
+            gearIcon(pointSize: 16)
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(.ultraThinMaterial)
+                .clipShape(Circle())
+        }
     }
 }

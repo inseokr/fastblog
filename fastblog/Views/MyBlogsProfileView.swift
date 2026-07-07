@@ -42,9 +42,9 @@ struct MyBlogsProfileView: View {
     
     // Home redesign callbacks (bottom nav + settings).
     var onShowSettings: (() -> Void)? = nil
+    var onReplayOnboarding: (() -> Void)? = nil
     var onNavCamera: (() -> Void)? = nil
     var onNavMyPlaces: (() -> Void)? = nil
-    var onTapToBlog: (() -> Void)? = nil
     @StateObject private var viewModel = MyBlogsProfileViewModel()
     private var menuIndicators: BlogMenuIndicatorStore { BlogMenuIndicatorStore.shared }
     // Page navigation (ZStack-based, bottom bar persists across all pages)
@@ -82,9 +82,9 @@ struct MyBlogsProfileView: View {
         onDismissCover: (() -> Void)? = nil,
         onTopScrollStateChange: ((Bool) -> Void)? = nil,
         onShowSettings: (() -> Void)? = nil,
+        onReplayOnboarding: (() -> Void)? = nil,
         onNavCamera: (() -> Void)? = nil,
-        onNavMyPlaces: (() -> Void)? = nil,
-        onTapToBlog: (() -> Void)? = nil
+        onNavMyPlaces: (() -> Void)? = nil
     ) {
         _selectedCreatedRecap = selectedCreatedRecap
         _initialDayIndexForRecap = initialDayIndexForRecap
@@ -94,9 +94,9 @@ struct MyBlogsProfileView: View {
         self.onDismissCover = onDismissCover
         self.onTopScrollStateChange = onTopScrollStateChange
         self.onShowSettings = onShowSettings
+        self.onReplayOnboarding = onReplayOnboarding
         self.onNavCamera = onNavCamera
         self.onNavMyPlaces = onNavMyPlaces
-        self.onTapToBlog = onTapToBlog
     }
 
     private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
@@ -190,9 +190,10 @@ struct MyBlogsProfileView: View {
             ToolbarItem(placement: .topBarLeading) {
                 switch currentPage {
                 case .blogs:
-                    HomeSettingsGearButton {
-                        onShowSettings?()
-                    }
+                    HomeSettingsGearButton(
+                        action: { onShowSettings?() },
+                        onLongPress: onReplayOnboarding
+                    )
                 case .country:
                     Button {
                         isSearchFocused = false
@@ -390,10 +391,6 @@ struct MyBlogsProfileView: View {
             let searched = viewModel.filteredSections(from: allSections)
             let sections = searched
             Group {
-                if !isSearchActive {
-                    tapToBlogBanner
-                        .padding(.bottom, 10)
-                }
                 if false && !isSearchActive && !viewModel.unsavedTrips.isEmpty {
                     unsavedTripsSection
                 }
@@ -429,44 +426,6 @@ struct MyBlogsProfileView: View {
         .coordinateSpace(name: "MyBlogsScroll")
         .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in scrollOffset = value }
         .transition(.opacity)
-    }
-
-    private var tapToBlogBanner: some View {
-        Button {
-            onTapToBlog?()
-        } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color.blue.opacity(0.22))
-                        .frame(width: 34, height: 34)
-                    Image(systemName: "plus")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(Color.blue)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Tap to Blog")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
-                    Text("Scan your photos into a blog")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.7))
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.white.opacity(0.6))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Color.white.opacity(0.08))
-            .overlay {
-                RoundedRectangle(appChromeBaseRadius: 14)
-                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
-            }
-            .appChromeCornerRadius(14)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Persistent bottom bar (inset above home tab bar)

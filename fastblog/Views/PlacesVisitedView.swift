@@ -96,6 +96,7 @@ struct PlacesVisitedStandaloneView: View {
     var onDismiss: () -> Void
 
     var onShowSettings: (() -> Void)? = nil
+    var onReplayOnboarding: (() -> Void)? = nil
 
     @State private var searchText: String = ""
     @State private var showPlacesMap: Bool = false
@@ -118,7 +119,10 @@ struct PlacesVisitedStandaloneView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .preferredColorScheme(.dark)
-        .homeSettingsToolbar(onShowSettings: onShowSettings)
+        .homeSettingsToolbar(
+            onShowSettings: onShowSettings,
+            onReplayOnboarding: onReplayOnboarding
+        )
     }
 }
 

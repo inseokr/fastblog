@@ -127,6 +127,9 @@ struct AuthView: View {
         }
         .onAppear {
             AuthService.Analytics.track(.authCreateAccountTapped)
+            if authService.currentUser != nil {
+                onAuthenticated?()
+            }
         }
         } // NavigationStack
     }

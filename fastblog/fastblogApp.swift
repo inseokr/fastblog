@@ -97,6 +97,8 @@ struct fastblogApp: App {
         var hasCompletedOnboarding = false
     @AppStorage("blogify.justFinishedOnboarding") private
         var justFinishedOnboarding = false
+    @AppStorage("blogify.hasAuthenticatedDuringOnboarding") private
+        var hasAuthenticatedDuringOnboarding = false
     @AppStorage("blogify.hasCheckedExistingUser") private
         var hasCheckedExistingUser = false
     @AppStorage("blogify.hasSkippedPhotoPermission") private
@@ -195,6 +197,7 @@ struct fastblogApp: App {
                         OnboardingFlowView {
                             hasCompletedOnboarding = true
                             justFinishedOnboarding = true
+                            hasAuthenticatedDuringOnboarding = false
                         }
                     } else {
                         ContentView()
@@ -241,6 +244,7 @@ struct fastblogApp: App {
 
                 if !hasCheckedExistingUser {
                     if !hasCompletedOnboarding
+                        && !hasAuthenticatedDuringOnboarding
                         && photoAuth.status != .notDetermined
                     {
                         hasCompletedOnboarding = true

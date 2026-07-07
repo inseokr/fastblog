@@ -13,6 +13,7 @@ struct LandingView: View {
     var onTapToBlog: (() -> Void)? = nil
     var onOpenCamera: () -> Void
     var onShowSettings: () -> Void
+    var onReplayOnboarding: (() -> Void)? = nil
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @EnvironmentObject private var splashManager: SplashStateManager
 
@@ -82,21 +83,23 @@ struct LandingView: View {
             // Top bar + bottom chrome (Latest Edits, menu).
             VStack(spacing: 0) {
                 HStack {
-                    Button {
-                        onShowSettings()
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.title2)
-                            .foregroundColor(.white)
-                    }
+                    HomeSettingsGearButton(
+                        action: { onShowSettings() },
+                        onLongPress: onReplayOnboarding
+                    )
                     Spacer()
                     Button {
                         onOpenCamera()
                     } label: {
                         Image(systemName: "camera.fill")
-                            .font(.title2)
-                            .foregroundColor(.white)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Circle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Camera")
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -303,6 +306,7 @@ struct LandingView: View {
                             endPoint: .trailing
                         )
                         .frame(width: 36)
+                        .padding(.bottom, 8)
                         .allowsHitTesting(false)
                     }
                 }

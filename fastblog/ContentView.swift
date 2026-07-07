@@ -38,7 +38,7 @@ struct ContentView: View {
     /// Enables the unchanged-selection prompt only after a prior limited scan found no trips.
     @State private var didSeeWeakResultOnLimitedScan = false
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
-    /// Day index to open when navigating to a blog via the new-moments popup.
+    @AppStorage("blogify.hasCompletedOnboarding") private var hasCompletedOnboarding = true
     @AppStorage("blogify.justFinishedOnboarding") private var justFinishedOnboarding = false
     @State private var showPostOnboardingWelcome = false
     @State private var showTripScanSetupFlow = false
@@ -137,10 +137,12 @@ struct ContentView: View {
                     onCaptureMoments: {
                         cancelPendingFindPastTripsScan()
                         showPostOnboardingWelcome = false
+                        selectHomeTab(.create)
                         showCameraOverlay = true
                     },
                     onFindPastTrips: {
                         showPostOnboardingWelcome = false
+                        selectHomeTab(.create)
                         scheduleFindPastTripsScan()
                     }
                 )
@@ -165,7 +167,7 @@ struct ContentView: View {
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
-                        homeTab = .myBlogs
+                        homeTab = .create
                     }
                     showPostOnboardingWelcome = true
                 }
@@ -267,7 +269,8 @@ struct ContentView: View {
                     tripsViewModel: tripsViewModel,
                     onTapToBlog: handleTapToBlog,
                     onOpenCamera: { showCameraOverlay = true },
-                    onShowSettings: { showSettingsFromNav = true }
+                    onShowSettings: { showSettingsFromNav = true },
+                    onReplayOnboarding: replayOnboardingForTesting
                 )
                 .environmentObject(createdRecapStore)
             }
@@ -288,13 +291,13 @@ struct ContentView: View {
                     onShowSettings: {
                         showSettingsFromNav = true
                     },
+                    onReplayOnboarding: replayOnboardingForTesting,
                     onNavCamera: {
                         selectHomeTab(.create)
                     },
                     onNavMyPlaces: {
                         selectHomeTab(.myPlaces)
-                    },
-                    onTapToBlog: handleTapToBlog
+                    }
                 )
                 .environmentObject(createdRecapStore)
             }
@@ -338,7 +341,8 @@ struct ContentView: View {
                     initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
                     suppressHomeBottomNav: $suppressHomeBottomNav,
                     onDismiss: { selectHomeTab(.create) },
-                    onShowSettings: { showSettingsFromNav = true }
+                    onShowSettings: { showSettingsFromNav = true },
+                    onReplayOnboarding: replayOnboardingForTesting
                 )
                 .environmentObject(createdRecapStore)
             }
@@ -448,6 +452,17 @@ struct ContentView: View {
         withTransaction(transaction) {
             homeTab = tab
         }
+    }
+
+    private func replayOnboardingForTesting() {
+        showSettingsFromNav = false
+        showPostOnboardingWelcome = false
+        showTripScanSetupFlow = false
+        showScanPhotoAccessSheet = false
+        showPushPermissionPrompt = false
+        cancelPendingFindPastTripsScan()
+        dismissPostCameraToast()
+        hasCompletedOnboarding = false
     }
 
     private func considerPresentingNewMomentsBannerOnCamera() {

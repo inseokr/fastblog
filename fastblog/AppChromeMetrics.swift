@@ -201,11 +201,17 @@ extension View {
 
     /// Leading settings gear for home tabs — same placement in the navigation bar on every tab.
     @ViewBuilder
-    func homeSettingsToolbar(onShowSettings: (() -> Void)?) -> some View {
+    func homeSettingsToolbar(
+        onShowSettings: (() -> Void)?,
+        onReplayOnboarding: (() -> Void)? = nil
+    ) -> some View {
         if let onShowSettings {
             toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    HomeSettingsGearButton(action: onShowSettings)
+                    HomeSettingsGearButton(
+                        action: onShowSettings,
+                        onLongPress: onReplayOnboarding
+                    )
                 }
             }
             .toolbarColorScheme(.dark, for: .navigationBar)

@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Bloggo — Intern Orientation 2026</title>
+  <style>
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+    :root {
+      --navy:   #050A30;
+      --navy2:  #080E38;
+      --blue:   #007AFF;
+      --cyan:   #4FC3F7;
+      --accent: #C8EBFF;
+      --green:  #A6F2B7;
+      --glass:  rgba(255,255,255,0.06);
+      --gb:     rgba(255,255,255,0.10);
+      --t1:     rgba(255,255,255,0.95);
+      --t2:     rgba(255,255,255,0.65);
+      --t3:     rgba(255,255,255,0.38);
+    }
+
+    html, body {
+      width:100%; height:100%; overflow:hidden;
+      background:var(--navy);
+      font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",Arial,sans-serif;
+      color:var(--t1);
+      -webkit-font-smoothing:antialiased;
+    }
+
+    /* ── SLIDE ENGINE ── */
+    .deck { width:100%; height:100%; position:relative; }
+
+    .slide {
+      position:absolute; inset:0;
+      opacity:0; pointer-events:none;
+      transition: opacity .5s cubic-bezier(.4,0,.2,1),
+                  transform .5s cubic-bezier(.4,0,.2,1);
+      transform:translateX(52px);
+      will-change:transform,opacity;
+      overflow:hidden;
+    }
+    .slide.active   { opacity:1; transform:translateX(0); pointer-events:auto; }
+    .slide.out-left { opacity:0; transform:translateX(-52px); pointer-events:none; }
+
+    /* ── WAVY BACKGROUND ── */
+    .waves {
+      position:absolute; inset:0; pointer-events:none; overflow:hidden;
+    }
+    .waves svg { position:absolute; inset:0; width:100%; height:100%; }
+
+    /* ── BRANDING (top-right every slide) ── */
+    .brand {
+      position:absolute; top:28px; right:36px;
+      display:flex; align-items:center; gap:10px;
+      z-index:50;
+    }
+    .brand-icon {
+      width:36px; height:36px; border-radius:10px;
+      background:linear-gradient(135deg,#007AFF,#0B84FF);
+      display:flex; align-items:center; justify-content:center;
+      font-size:18px; font-weight:900; color:#fff;
+      box-shadow:0 4px 16px rgba(0,122,255,.4);
+    }
+    .brand-text { text-align:right; }
+    .brand-name { font-size:13px; font-weight:800; color:var(--t1); letter-spacing:-.3px; }
+    .brand-sub  { font-size:10px; color:var(--t3); letter-spacing:.04em; }
+
+    /* ── SLIDE LABEL (bottom right) ── */
+    .slide-label {
+      position:absolute; bottom:28px; right:36px;
+      font-size:12px; font-weight:800; letter-spacing:.14em;
+      text-transform:uppercase; color:var(--cyan);
+      z-index:50;
+      display:flex; align-items:center; gap:8px;
+    }
+    .slide-label span { display:inline-block; width:20px; height:1.5px; background:var(--cyan); }
+
+    /* ── NAV DOTS ── */
+    .nav-dots {
+      position:fixed; bottom:28px; left:50%;
+      transform:translateX(-50%);
+      display:flex; gap:7px; z-index:200;
+    }
+    .dot {
+      height:5px; width:5px; border-radius:3px;
+      background:rgba(255,255,255,0.2); cursor:pointer;
+      transition:width .3s, background .3s;
+    }
+    .dot.active { width:20px; background:var(--cyan); }
+
+    /* ── ARROWS ── */
+    .arrow-btn {
+      position:fixed; top:50%; z-index:200;
+      transform:translateY(-50%);
+      width:38px; height:38px; border-radius:50%;
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.12);
+      color:rgba(255,255,255,.5); font-size:15px;
+      cursor:pointer; display:flex; align-items:center; justify-content:center;
+      backdrop-filter:blur(16px);
+      transition:background .2s, color .2s;
+    }
+    .arrow-btn:hover { background:rgba(255,255,255,.12); color:#fff; }
+    .arrow-btn.prev { left:20px; }
+    .arrow-btn.next { right:20px; }
+
+    /* ── SHARED LAYOUT ── */
+    .slide-inner {
+      position:relative; z-index:10;
+      width:100%; height:100%;
+      display:flex; align-items:center; justify-content:center;
+      padding:80px 72px 72px;
+    }
+
+    .split { display:flex; gap:64px; align-items:center; width:100%; }
+    .split-left  { flex:1; }
+    .split-right { flex:1; display:flex; justify-content:center; }
+
+    .full-center {
+      display:flex; flex-direction:column; align-items:center; text-align:center;
+      width:100%;
+    }
+
+    /* Typography */
+    .eyebrow {
+      font-size:11px; font-weight:700; letter-spacing:.18em;
+      text-transform:uppercase; color:var(--cyan); margin-bottom:16px;
+    }
+    .big-title {
+      font-size:64px; font-weight:900; line-height:1.0;
+      letter-spacing:-3px; color:var(--t1); margin-bottom:20px;
+    }
+    .med-title {
+      font-size:46px; font-weight:900; line-height:1.05;
+      letter-spacing:-2px; color:var(--t1); margin-bottom:16px;
+    }
+    .body-lg {
+      font-size:17px; color:var(--t2); line-height:1.7; margin-bottom:32px;
+      max-width:520px;
+    }
+    .body-md {
+      font-size:15px; color:var(--t2); line-height:1.7; margin-bottom:24px;
+    }
+
+    /* Cards */
+    .glass-card {
+      background:var(--glass);
+      border:1px solid rgba(255,255,255,.1);
+      border-radius:18px; padding:26px;
+      backdrop-filter:blur(20px);
+    }
+    .card-icon { font-size:30px; margin-bottom:12px; }
+    .card-title { font-size:14px; font-weight:700; color:var(--t1); margin-bottom:7px; }
+    .card-body  { font-size:13px; color:var(--t2); line-height:1.65; }
+
+    /* Pill */
+    .pill {
+      display:inline-flex; align-items:center;
+      padding:5px 13px; border-radius:100px; font-size:12px; font-weight:600;
+      background:var(--glass); border:1px solid rgba(255,255,255,.1); color:var(--t2);
+    }
+    .pill.blue  { background:rgba(0,122,255,.15); border-color:rgba(0,122,255,.3); color:var(--accent); }
+    .pill.green { background:rgba(166,242,183,.12); border-color:rgba(166,242,183,.22); color:var(--green); }
+    .pill.cyan  { background:rgba(79,195,247,.12); border-color:rgba(79,195,247,.25); color:var(--cyan); }
+
+    .code-chip {
+      font-family:"SF Mono","Fira Code",monospace; font-size:11px;
+      padding:3px 9px; background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.1); border-radius:6px; color:var(--t2);
+    }
+
+    /* Bullet list */
+    .blist { list-style:none; display:flex; flex-direction:column; gap:12px; }
+    .blist li {
+      display:flex; align-items:flex-start; gap:12px;
+      font-size:15px; color:var(--t2); line-height:1.55;
+    }
+    .blist li::before {
+      content:''; flex-shrink:0; width:7px; height:7px; border-radius:50%;
+      background:var(--cyan); margin-top:6px;
+    }
+    .blist li strong { color:var(--t1); }
+
+    /* Stat pill */
+    .stat-pill {
+      margin-top:28px; padding:14px 28px; border-radius:100px;
+      background:rgba(0,122,255,.1); border:1px solid rgba(0,122,255,.22);
+      font-size:14px; color:var(--accent); font-weight:500;
+    }
+
+    /* ── SLIDE 1 · HERO ── */
+    #s0 { background:var(--navy); }
+    .hero-year  { font-size:100px; font-weight:900; letter-spacing:-5px; line-height:1; color:rgba(255,255,255,.07); position:absolute; top:50px; left:50%; transform:translateX(-50%); white-space:nowrap; }
+    .hero-kicker{ font-size:12px; font-weight:700; letter-spacing:.22em; text-transform:uppercase; color:var(--cyan); margin-bottom:20px; }
+    .hero-title {
+      font-size:100px; font-weight:900; line-height:.95; letter-spacing:-6px;
+      background:linear-gradient(130deg,#fff 30%,var(--accent) 100%);
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+      background-clip:text; margin-bottom:22px;
+    }
+    .hero-sub { font-size:19px; color:var(--t2); max-width:480px; line-height:1.65; margin-bottom:40px; }
+    .hero-badges { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+
+    /* ── SLIDE 2 · PROBLEM ── */
+    .prob-cards { display:flex; flex-direction:column; gap:14px; }
+
+    /* ── SLIDE 3 · SOLUTION ── */
+    .steps { display:flex; flex-direction:column; gap:14px; }
+    .step-row {
+      display:flex; align-items:center; gap:18px; padding:18px 22px;
+      background:var(--glass); border:1px solid rgba(255,255,255,.09); border-radius:14px;
+    }
+    .step-num {
+      width:32px; height:32px; border-radius:50%; flex-shrink:0;
+      background:rgba(79,195,247,.15); border:1px solid rgba(79,195,247,.3);
+      display:flex; align-items:center; justify-content:center;
+      font-size:13px; font-weight:800; color:var(--cyan);
+    }
+    .step-icon { font-size:22px; width:28px; text-align:center; flex-shrink:0; }
+    .step-info { flex:1; }
+    .step-title { font-size:14px; font-weight:700; color:var(--t1); margin-bottom:2px; }
+    .step-body  { font-size:12px; color:var(--t2); line-height:1.5; }
+
+    /* ── SLIDE 4 · FEATURES ── */
+    .feat-grid {
+      display:grid; grid-template-columns:repeat(3,1fr); gap:14px;
+      width:100%; max-width:860px;
+    }
+    .feat-card {
+      padding:22px; background:var(--glass); border:1px solid rgba(255,255,255,.09);
+      border-radius:16px; backdrop-filter:blur(16px);
+      transition:transform .2s, border-color .2s;
+    }
+    .feat-card:hover { transform:translateY(-3px); border-color:rgba(79,195,247,.3); }
+    .feat-icon { font-size:26px; margin-bottom:10px; }
+    .feat-name { font-size:13px; font-weight:700; color:var(--t1); margin-bottom:5px; }
+    .feat-desc { font-size:12px; color:var(--t2); line-height:1.6; }
+
+    /* ── SLIDE 5 · PIPELINE ── */
+    .pipe { display:flex; flex-direction:column; gap:9px; width:100%; }
+    .pipe-step {
+      display:flex; align-items:center; gap:14px; padding:13px 20px;
+      background:var(--glass); border:1px solid rgba(255,255,255,.09); border-radius:12px;
+    }
+    .pipe-icon  { font-size:18px; width:28px; text-align:center; flex-shrink:0; }
+    .pipe-name  { font-size:13px; font-weight:700; color:var(--t1); flex:1; }
+    .pipe-detail{ font-size:11px; color:var(--t2); flex:2; }
+    .pipe-tag   {
+      font-size:10px; font-weight:700; padding:3px 9px; border-radius:100px; flex-shrink:0;
+      background:rgba(79,195,247,.1); border:1px solid rgba(79,195,247,.22); color:var(--cyan);
+    }
+
+    /* ── SLIDE 6 · STACK ── */
+    .stack-grid {
+      display:grid; grid-template-columns:repeat(2,1fr); gap:14px; width:100%; max-width:800px;
+    }
+    .stack-card  { padding:22px 26px; }
+    .stack-label { font-size:10px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; color:var(--cyan); margin-bottom:14px; }
+    .stack-pills { display:flex; flex-wrap:wrap; gap:7px; }
+    .stack-pill  {
+      padding:5px 12px; border-radius:100px; font-size:12px; font-weight:500;
+      background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); color:var(--t1);
+    }
+
+    /* ── SLIDE 7 · CODEBASE ── */
+    .mvvm { display:flex; flex-direction:column; width:100%; max-width:680px; margin-bottom:20px; }
+    .mvvm-row {
+      display:flex; align-items:center; gap:16px; padding:16px 24px;
+      border:1px solid rgba(255,255,255,.09);
+    }
+    .mvvm-row:first-child { border-radius:14px 14px 0 0; background:rgba(0,122,255,.12); border-color:rgba(0,122,255,.25); }
+    .mvvm-row:nth-child(2){ border-top:none; background:rgba(0,122,255,.07); border-color:rgba(0,122,255,.15); }
+    .mvvm-row:nth-child(3){ border-top:none; background:rgba(79,195,247,.05); }
+    .mvvm-row:last-child  { border-top:none; border-radius:0 0 14px 14px; background:rgba(255,255,255,.03); }
+    .mvvm-lbl  { font-size:13px; font-weight:800; width:105px; flex-shrink:0; }
+    .mvvm-lbl.v  { color:#007AFF; }
+    .mvvm-lbl.vm { color:#4FC3F7; }
+    .mvvm-lbl.s  { color:var(--accent); }
+    .mvvm-lbl.m  { color:var(--t3); }
+    .chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
+    .mvvm-rule { font-size:11px; color:var(--t3); }
+
+    /* ── VISUAL PANEL (right side) ── */
+    .visual-panel {
+      background:var(--glass); border:1px solid rgba(255,255,255,.1);
+      border-radius:24px; padding:36px 28px;
+      display:flex; flex-direction:column; gap:16px;
+      min-width:300px; backdrop-filter:blur(20px);
+    }
+    .vp-title { font-size:12px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--cyan); margin-bottom:4px; }
+
+    /* Overview panel blocks */
+    .ov-block {
+      padding:16px 20px; border-radius:12px;
+      background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08);
+    }
+    .ov-block-title { font-size:13px; font-weight:700; color:var(--t1); margin-bottom:4px; }
+    .ov-block-body  { font-size:12px; color:var(--t2); line-height:1.55; }
+
+    /* Pipeline visual */
+    .pipe-vis {
+      display:flex; flex-direction:column; align-items:center; gap:0;
+    }
+    .pv-box {
+      width:100%; padding:12px 16px; border-radius:10px; text-align:center;
+      background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08);
+      font-size:12px; font-weight:600; color:var(--t1);
+    }
+    .pv-box.highlight {
+      background:rgba(79,195,247,.1); border-color:rgba(79,195,247,.25); color:var(--cyan);
+    }
+    .pv-arrow {
+      font-size:13px; color:var(--t3); line-height:1; padding:3px 0;
+    }
+
+  </style>
+</head>
+<body>
+<div class="deck">
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 1 · HERO
+  ═══════════════════════════════════════════════════ -->
+  <div class="slide active" id="s0">
+    <!-- Wavy lines -->
+    <div class="waves">
+      <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M-100,180 C200,120 400,260 700,200 C1000,140 1200,300 1540,240" stroke="rgba(79,195,247,0.12)" stroke-width="1.5"/>
+        <path d="M-100,220 C200,160 400,300 700,240 C1000,180 1200,340 1540,280" stroke="rgba(79,195,247,0.09)" stroke-width="1.5"/>
+        <path d="M-100,260 C200,200 400,340 700,280 C1000,220 1200,380 1540,320" stroke="rgba(79,195,247,0.07)" stroke-width="1.5"/>
+        <path d="M-100,300 C200,240 400,380 700,320 C1000,260 1200,420 1540,360" stroke="rgba(79,195,247,0.05)" stroke-width="1.5"/>
+        <path d="M-100,600 C200,540 400,680 700,620 C1000,560 1200,700 1540,640" stroke="rgba(79,195,247,0.06)" stroke-width="1.5"/>
+        <path d="M-100,640 C200,580 400,720 700,660 C1000,600 1200,740 1540,680" stroke="rgba(79,195,247,0.04)" stroke-width="1.5"/>
+        <path d="M-100,680 C200,620 400,760 700,700 C1000,640 1200,780 1540,720" stroke="rgba(79,195,247,0.03)" stroke-width="1.5"/>
+        <!-- right-side waves -->
+        <path d="M900,-50 C840,200 980,400 920,700 C860,900 1000,950 940,1100" stroke="rgba(0,122,255,0.1)" stroke-width="1.5"/>
+        <path d="M960,-50 C900,200 1040,400 980,700 C920,900 1060,950 1000,1100" stroke="rgba(0,122,255,0.08)" stroke-width="1.5"/>
+        <path d="M1020,-50 C960,200 1100,400 1040,700 C980,900 1120,950 1060,1100" stroke="rgba(0,122,255,0.06)" stroke-width="1.5"/>
+        <path d="M1080,-50 C1020,200 1160,400 1100,700 C1040,900 1180,950 1120,1100" stroke="rgba(0,122,255,0.04)" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <!-- Branding -->
+    <div class="brand">
+      <div class="brand-text" style="text-align:right;">
+        <div class="brand-name">Bloggo</div>
+        <div class="brand-sub">YB STUDIO LLC</div>
+      </div>
+      <div class="brand-icon">B</div>
+    </div>
+    <div class="slide-label">WELCOME <span></span></div>
+    <!-- Content -->
+    <div class="slide-inner">
+      <div class="full-center">
+        <div class="hero-year">2026</div>
+        <div class="hero-kicker">Welcome to</div>
+        <div class="hero-title">Bloggo</div>
+        <div class="hero-sub">You're about to help people remember the best moments of their lives.</div>
+        <div class="hero-badges">
+          <span class="pill blue">Swift</span>
+          <span class="pill blue">SwiftUI</span>
+          <span class="pill blue">iOS</span>
+          <span class="pill blue">AI · Vision</span>
+          <span class="pill blue">MapKit</span>
+          <span class="pill">Intern Orientation</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 2 · WHO ARE WE
+  ═══════════════════════════════════════════════════ -->
+  <div class="slide" id="s1">
+    <div class="waves">
+      <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" fill="none">
+        <path d="M-100,300 C300,200 600,400 900,320 C1200,240 1350,380 1540,300" stroke="rgba(79,195,247,0.07)" stroke-width="1.5"/>
+        <path d="M-100,350 C300,250 600,450 900,370 C1200,290 1350,430 1540,350" stroke="rgba(79,195,247,0.05)" stroke-width="1.5"/>
+        <path d="M-100,550 C300,450 600,650 900,570 C1200,490 1350,630 1540,550" stroke="rgba(79,195,247,0.04)" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <div class="brand"><div class="brand-text" style="text-align:right;"><div class="brand-name">Bloggo</div><div class="brand-sub">YB STUDIO LLC</div></div><div class="brand-icon">B</div></div>
+    <div class="slide-label">NEXT <span></span></div>
+    <div class="slide-inner">
+      <div class="split">
+        <div class="split-left">
+          <div class="eyebrow">Who Are We?</div>
+          <div class="med-title">A travel memory company.</div>
+          <div class="body-lg">Bloggo automatically turns your camera roll into beautifully organised travel blogs — no manual effort, no forgetting. We're building the tools that help people relive the places they've been.</div>
+          <ul class="blist">
+            <li><strong>For travellers</strong> who take hundreds of photos but never look back at them</li>
+            <li><strong>For creators</strong> who want to share their world without the friction of blogging</li>
+            <li><strong>For anyone</strong> who wants their memories to actually mean something</li>
+          </ul>
+        </div>
+        <div class="split-right">
+          <div class="visual-panel">
+            <div class="vp-title">Our Mission</div>
+            <div class="ov-block">
+              <div class="ov-block-title">✈️ Industry</div>
+              <div class="ov-block-body">Travel-tech platform that turns raw photo libraries into polished, shareable travel journals and blogs.</div>
+            </div>
+            <div class="ov-block">
+              <div class="ov-block-title">🤖 AI-First</div>
+              <div class="ov-block-body">On-device AI reads your photo metadata, scores image quality, clusters locations, and generates narrative automatically.</div>
+            </div>
+            <div class="ov-block">
+              <div class="ov-block-title">🚀 Where We Are</div>
+              <div class="ov-block-body">Live on the App Store. Actively shipping — camera, social features, and StoryBook mode are in active development.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 3 · PROBLEM
+  ═══════════════════════════════════════════════════ -->
+  <div class="slide" id="s2">
+    <div class="waves">
+      <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" fill="none">
+        <path d="M-100,250 C300,150 700,350 1000,250 C1200,180 1350,320 1540,250" stroke="rgba(79,195,247,0.07)" stroke-width="1.5"/>
+        <path d="M-100,290 C300,190 700,390 1000,290 C1200,220 1350,360 1540,290" stroke="rgba(79,195,247,0.05)" stroke-width="1.5"/>
+        <path d="M-100,600 C300,500 700,700 1000,600 C1200,530 1350,670 1540,600" stroke="rgba(79,195,247,0.04)" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <div class="brand"><div class="brand-text" style="text-align:right;"><div class="brand-name">Bloggo</div><div class="brand-sub">YB STUDIO LLC</div></div><div class="brand-icon">B</div></div>
+    <div class="slide-label">NEXT <span></span></div>
+    <div class="slide-inner">
+      <div class="split">
+        <div class="split-left">
+          <div class="eyebrow">Problems &amp; Pain Points</div>
+          <div class="med-title">Memories get buried and forgotten.</div>
+          <div class="body-md">Travellers lose track of visited places due to disorganised photos — resulting in frustration when trying to recall meaningful experiences.</div>
+          <ul class="blist">
+            <li><strong>Information overload:</strong> Special places get lost among thousands of other photos</li>
+            <li><strong>Fragmented memories:</strong> No centralised way to capture and revisit places intuitively</li>
+            <li><strong>No personalisation:</strong> Existing platforms lack tailored suggestions based on user history</li>
+            <li><strong>Manual processes:</strong> Creating blogs or albums takes hours of sorting and writing</li>
+            <li><strong>Privacy:</strong> Lack of control and relevance on mainstream social platforms</li>
+          </ul>
+          <div class="stat-pill">The average person takes 2,000+ photos per year — and revisits maybe 10.</div>
+        </div>
+        <div class="split-right">
+          <div class="visual-panel" style="gap:12px;">
+            <div class="vp-title">The Gap</div>
+            <div class="ov-block" style="border-color:rgba(255,80,80,.2);background:rgba(255,80,80,.06);">
+              <div class="ov-block-title" style="color:#FF6B6B;">📸 Camera Roll</div>
+              <div class="ov-block-body">Flat grid. No story. No order. Buried in thousands of shots from daily life.</div>
+            </div>
+            <div style="text-align:center;font-size:22px;color:var(--t3);">↓</div>
+            <div class="ov-block" style="border-color:rgba(255,180,50,.2);background:rgba(255,180,50,.06);">
+              <div class="ov-block-title" style="color:#FFB347;">😔 Nothing Happens</div>
+              <div class="ov-block-body">Most people intend to make an album. Almost nobody does. The moment passes.</div>
+            </div>
+            <div style="text-align:center;font-size:22px;color:var(--t3);">↓</div>
+            <div class="ov-block" style="border-color:rgba(166,242,183,.2);background:rgba(166,242,183,.06);">
+              <div class="ov-block-title" style="color:var(--green);">✨ Bloggo fixes this</div>
+              <div class="ov-block-body">Zero effort. Open the app. Your trip is already a beautiful blog.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 4 · OUR SOLUTION
+  ═══════════════════════════════════════════════════ -->
+  <div class="slide" id="s3sol">
+    <div class="waves">
+      <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" fill="none">
+        <path d="M-100,240 C300,140 700,340 1000,220 C1200,140 1350,280 1540,200" stroke="rgba(79,195,247,0.07)" stroke-width="1.5"/>
+        <path d="M-100,280 C300,180 700,380 1000,260 C1200,180 1350,320 1540,240" stroke="rgba(79,195,247,0.05)" stroke-width="1.5"/>
+        <path d="M-100,620 C300,520 700,720 1000,600 C1200,520 1350,660 1540,580" stroke="rgba(79,195,247,0.04)" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <div class="brand"><div class="brand-text" style="text-align:right;"><div class="brand-name">Bloggo</div><div class="brand-sub">YB STUDIO LLC</div></div><div class="brand-icon">B</div></div>
+    <div class="slide-label">NEXT <span></span></div>
+    <div class="slide-inner">
+      <div class="split">
+        <div class="split-left">
+          <div class="eyebrow">Our Solution</div>
+          <div class="med-title">Your trip, already a blog.</div>
+          <div class="body-md">Bloggo does the work you never get around to. The moment you open the app, your photos are already clustered by day, scored for quality, and assembled into a beautiful travel narrative — automatically, privately, on-device.</div>
+          <div class="steps">
+            <div class="step-row">
+              <div class="step-num">1</div>
+              <div class="step-icon">📸</div>
+              <div class="step-info">
+                <div class="step-title">Detect &amp; Group</div>
+                <div class="step-body">AI reads GPS and timestamps to cluster photos by location and day — separating your trip from everyday life at home.</div>
+              </div>
+            </div>
+            <div class="step-row">
+              <div class="step-num">2</div>
+              <div class="step-icon">⭐</div>
+              <div class="step-info">
+                <div class="step-title">Score &amp; Surface</div>
+                <div class="step-body">On-device Vision rates every photo for aesthetic quality. Your best shots rise to the top — no manual picking needed.</div>
+              </div>
+            </div>
+            <div class="step-row">
+              <div class="step-num">3</div>
+              <div class="step-icon">📖</div>
+              <div class="step-info">
+                <div class="step-title">Publish &amp; Share</div>
+                <div class="step-body">A polished, day-by-day travel blog is ready instantly — shareable as a link, exportable as a PDF, or kept private forever.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="split-right">
+          <div class="visual-panel" style="gap:12px;">
+            <div class="vp-title">Before &amp; After</div>
+            <div class="ov-block" style="border-color:rgba(255,80,80,.2);background:rgba(255,80,80,.06);">
+              <div class="ov-block-title" style="color:#FF6B6B;">😩 Before Bloggo</div>
+              <div class="ov-block-body">2,000+ unorganised photos. A trip you meant to document. Memories already fading. Nothing to show anyone.</div>
+            </div>
+            <div style="text-align:center;font-size:22px;color:var(--t3);">↓</div>
+            <div class="ov-block" style="border-color:rgba(166,242,183,.2);background:rgba(166,242,183,.06);">
+              <div class="ov-block-title" style="color:var(--green);">✨ After Bloggo</div>
+              <div class="ov-block-body">A beautiful, shareable travel blog — built automatically from the photos already on your phone. Zero effort. Instant.</div>
+            </div>
+            <div class="ov-block" style="margin-top:4px;border-color:rgba(79,195,247,.18);background:rgba(79,195,247,.06);">
+              <div class="ov-block-title" style="color:var(--cyan);">🔒 Private by Default</div>
+              <div class="ov-block-body">All AI runs on-device. Your photos never leave your phone unless you choose to share.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 5 · FEATURES
+  ═══════════════════════════════════════════════════ -->
+  <div class="slide" id="s3">
+    <div class="waves">
+      <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" fill="none">
+        <path d="M-100,200 C400,100 800,300 1100,180 C1300,100 1400,200 1540,150" stroke="rgba(79,195,247,0.07)" stroke-width="1.5"/>
+        <path d="M-100,700 C400,600 800,800 1100,680 C1300,600 1400,700 1540,650" stroke="rgba(79,195,247,0.05)" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <div class="brand"><div class="brand-text" style="text-align:right;"><div class="brand-name">Bloggo</div><div class="brand-sub">YB STUDIO LLC</div></div><div class="brand-icon">B</div></div>
+    <div class="slide-label">NEXT <span></span></div>
+    <div class="slide-inner" style="padding-top:88px;">
+      <div class="full-center">
+        <div class="eyebrow">Core Features</div>
+        <div class="med-title" style="margin-bottom:36px;">What we ship</div>
+        <div class="feat-grid">
+          <div class="feat-card">
+            <div class="feat-icon">🔍</div>
+            <div class="feat-name">Auto Trip Detection</div>
+            <div class="feat-desc">Scans the last 90 days, filters home activity, clusters photos into distinct trips automatically.</div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">⭐</div>
+            <div class="feat-name">AI Photo Scoring</div>
+            <div class="feat-desc">Apple Vision rates every photo by aesthetic quality — your best shots surface without you picking them.</div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">📖</div>
+            <div class="feat-name">StoryBook Mode</div>
+            <div class="feat-desc">Swipeable cover, day-by-day pages, and interactive map — your trip as a beautiful narrative.</div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">🎬</div>
+            <div class="feat-name">Reel Creation</div>
+            <div class="feat-desc">Auto-generates short video reels from trip photos with music, transitions, and captions.</div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">📄</div>
+            <div class="feat-name">PDF Export</div>
+            <div class="feat-desc">Export as a print-ready PDF — dark or light mode, full photo quality, sharable anywhere.</div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">📷</div>
+            <div class="feat-name">In-App Camera</div>
+            <div class="feat-desc">Capture directly in Bloggo — trip mode or daily mode — with automatic tagging and sorting.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 5 · HOW IT WORKS (PIPELINE)
+  ═══════════════════════════════════════════════════ -->
+  <div class="slide" id="s4">
+    <div class="waves">
+      <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" fill="none">
+        <path d="M-100,250 C300,150 700,350 1100,220 C1300,150 1400,280 1540,200" stroke="rgba(79,195,247,0.07)" stroke-width="1.5"/>
+        <path d="M-100,680 C300,580 700,780 1100,650 C1300,580 1400,710 1540,630" stroke="rgba(79,195,247,0.05)" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <div class="brand"><div class="brand-text" style="text-align:right;"><div class="brand-name">Bloggo</div><div class="brand-sub">YB STUDIO LLC</div></div><div class="brand-icon">B</div></div>
+    <div class="slide-label">NEXT <span></span></div>
+    <div class="slide-inner">
+      <div class="split">
+        <div class="split-left">
+          <div class="eyebrow">Key Technologies</div>
+          <div class="med-title">How Bloggo actually works.</div>
+          <div class="body-md">Three layers of intelligence turn your raw photo library into a structured, beautiful blog — all on-device, all automatic.</div>
+          <ul class="blist" style="margin-top:4px;">
+            <li><strong>Photo Clustering:</strong> Groups by GPS + time into trips, days, and PlaceStops</li>
+            <li><strong>On-Device AI/ML:</strong> Extracts sentiment, quality scores, and metadata from photos</li>
+            <li><strong>Smart POI Detection:</strong> Automatically finds and names the places you visited</li>
+            <li><strong>Blog Generation:</strong> Assembles RecapBlogDetail with ranked photos and narrative</li>
+          </ul>
+        </div>
+        <div class="split-right">
+          <div class="visual-panel" style="min-width:280px;">
+            <div class="vp-title">The Pipeline</div>
+            <div class="pipe-vis">
+              <div class="pv-box">📚 Photo Library (90 days)</div>
+              <div class="pv-arrow">↓</div>
+              <div class="pv-box">🏠 Home Filter (50 mi radius)</div>
+              <div class="pv-arrow">↓</div>
+              <div class="pv-box">📅 Day Clustering</div>
+              <div class="pv-arrow">↓</div>
+              <div class="pv-box">✈️ Trip Merge + Flight Split</div>
+              <div class="pv-arrow">↓</div>
+              <div class="pv-box">📍 Place Detection (PlaceStops)</div>
+              <div class="pv-arrow">↓</div>
+              <div class="pv-box highlight">✨ Blog Generated</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 6 · TECH STACK
+  ═══════════════════════════════════════════════════ -->
+  <div class="slide" id="s5">
+    <div class="waves">
+      <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" fill="none">
+        <path d="M-100,200 C300,120 700,280 1000,180 C1200,120 1380,240 1540,160" stroke="rgba(79,195,247,0.07)" stroke-width="1.5"/>
+        <path d="M-100,660 C300,560 700,760 1000,640 C1200,560 1380,700 1540,620" stroke="rgba(79,195,247,0.05)" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <div class="brand"><div class="brand-text" style="text-align:right;"><div class="brand-name">Bloggo</div><div class="brand-sub">YB STUDIO LLC</div></div><div class="brand-icon">B</div></div>
+    <div class="slide-label">NEXT <span></span></div>
+    <div class="slide-inner" style="padding-top:88px;">
+      <div class="full-center">
+        <div class="eyebrow">The Stack</div>
+        <div class="med-title" style="margin-bottom:36px;">What powers Bloggo</div>
+        <div class="stack-grid">
+          <div class="glass-card stack-card">
+            <div class="stack-label">Frontend</div>
+            <div class="stack-pills">
+              <span class="stack-pill">Swift</span>
+              <span class="stack-pill">SwiftUI</span>
+              <span class="stack-pill">MapKit</span>
+              <span class="stack-pill">AVFoundation</span>
+              <span class="stack-pill">PhotoKit</span>
+            </div>
+          </div>
+          <div class="glass-card stack-card">
+            <div class="stack-label">AI &amp; Vision</div>
+            <div class="stack-pills">
+              <span class="stack-pill">Apple Vision</span>
+              <span class="stack-pill">VNImageAesthetics</span>
+              <span class="stack-pill">VNFaceDetect</span>
+              <span class="stack-pill">CoreML</span>
+            </div>
+          </div>
+          <div class="glass-card stack-card">
+            <div class="stack-label">Backend &amp; Auth</div>
+            <div class="stack-pills">
+              <span class="stack-pill">REST API</span>
+              <span class="stack-pill">JWT</span>
+              <span class="stack-pill">Google OAuth</span>
+              <span class="stack-pill">CloudKit</span>
+            </div>
+          </div>
+          <div class="glass-card stack-card">
+            <div class="stack-label">Architecture</div>
+            <div class="stack-pills">
+              <span class="stack-pill">MVVM</span>
+              <span class="stack-pill">async/await</span>
+              <span class="stack-pill">@MainActor</span>
+              <span class="stack-pill">@EnvironmentObject</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 7 · CODEBASE
+  ═══════════════════════════════════════════════════ -->
+  <div class="slide" id="s6">
+    <div class="waves">
+      <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" fill="none">
+        <path d="M-100,180 C300,100 700,260 1100,160 C1300,100 1400,220 1540,140" stroke="rgba(79,195,247,0.07)" stroke-width="1.5"/>
+        <path d="M-100,220 C300,140 700,300 1100,200 C1300,140 1400,260 1540,180" stroke="rgba(79,195,247,0.05)" stroke-width="1.5"/>
+        <path d="M-100,680 C300,580 700,780 1100,660 C1300,580 1400,720 1540,640" stroke="rgba(79,195,247,0.04)" stroke-width="1.5"/>
+        <!-- right side -->
+        <path d="M1100,-50 C1060,200 1180,450 1120,700 C1060,900 1180,950 1120,1100" stroke="rgba(0,122,255,0.07)" stroke-width="1.5"/>
+        <path d="M1160,-50 C1120,200 1240,450 1180,700 C1120,900 1240,950 1180,1100" stroke="rgba(0,122,255,0.05)" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <div class="brand"><div class="brand-text" style="text-align:right;"><div class="brand-name">Bloggo</div><div class="brand-sub">YB STUDIO LLC</div></div><div class="brand-icon">B</div></div>
+    <div class="slide-label">NEXT <span></span></div>
+    <div class="slide-inner">
+      <div class="split">
+        <div class="split-left">
+          <div class="eyebrow">The Codebase</div>
+          <div class="med-title">MVVM — four strict layers.</div>
+          <div class="body-md">Every file in Bloggo lives in one of four layers. Understanding the boundary is your most important first job here.</div>
+          <ul class="blist">
+            <li>Views <strong>never</strong> call Services directly — always through a ViewModel</li>
+            <li>ViewModels are <strong>@MainActor</strong> — all @Published updates are thread-safe</li>
+            <li>Services are <strong>singletons</strong> — use <code style="font-family:monospace;font-size:12px;background:rgba(255,255,255,.08);padding:2px 6px;border-radius:4px;">.shared</code>, don't recreate them</li>
+            <li>Models are <strong>plain structs</strong> — Codable, Equatable, Identifiable</li>
+          </ul>
+          <div style="margin-top:24px;font-size:13px;color:var(--t3);font-style:italic;">
+            Not sure where code belongs?<br/>
+            Ask: "does this know about the UI?" → push it down a layer.
+          </div>
+        </div>
+        <div class="split-right">
+          <div style="display:flex;flex-direction:column;gap:0;width:100%;max-width:380px;">
+            <div class="mvvm">
+              <div class="mvvm-row">
+                <div class="mvvm-lbl v">View</div>
+                <div>
+                  <div class="chips"><span class="code-chip">TripsView</span><span class="code-chip">StoryBookView</span><span class="code-chip">PlaceCardView</span></div>
+                  <div class="mvvm-rule">SwiftUI — renders @Published state only</div>
+                </div>
+              </div>
+              <div class="mvvm-row">
+                <div class="mvvm-lbl vm">ViewModel</div>
+                <div>
+                  <div class="chips"><span class="code-chip">TripsViewModel</span><span class="code-chip">StoryBookViewModel</span></div>
+                  <div class="mvvm-rule">@MainActor — transforms results to View state</div>
+                </div>
+              </div>
+              <div class="mvvm-row">
+                <div class="mvvm-lbl s">Service</div>
+                <div>
+                  <div class="chips"><span class="code-chip">AuthService.shared</span><span class="code-chip">APIManager.shared</span></div>
+                  <div class="mvvm-rule">Singletons — business logic, no UI imports</div>
+                </div>
+              </div>
+              <div class="mvvm-row">
+                <div class="mvvm-lbl m">Model</div>
+                <div>
+                  <div class="chips"><span class="code-chip">RecapBlogDetail</span><span class="code-chip">PlaceStop</span><span class="code-chip">RecapPhoto</span></div>
+                  <div class="mvvm-rule">Structs — Codable · Equatable · Identifiable</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /deck -->
+
+<!-- Chrome -->
+<div class="nav-dots" id="navDots"></div>
+<button class="arrow-btn prev" onclick="navigate(-1)" aria-label="Previous">&#8592;</button>
+<button class="arrow-btn next" onclick="navigate(1)"  aria-label="Next">&#8594;</button>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total  = slides.length;
+  let cur = 0;
+
+  const dotsEl = document.getElementById('navDots');
+  slides.forEach((_,i) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i===0?' active':'');
+    d.onclick = () => goTo(i);
+    dotsEl.appendChild(d);
+  });
+
+  function goTo(next) {
+    if(next === cur) return;
+    const prev = cur;
+    slides[cur].classList.remove('active');
+    slides[cur].classList.add('out-left');
+    cur = ((next % total) + total) % total;
+    slides[cur].classList.remove('out-left');
+    slides[cur].classList.add('active');
+    setTimeout(() => slides[prev].classList.remove('out-left'), 550);
+    document.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('active', i===cur));
+  }
+
+  function navigate(dir) { goTo(cur + dir); }
+
+  document.addEventListener('keydown', e => {
+    if(e.key==='ArrowRight'||e.key==='ArrowDown') navigate(1);
+    if(e.key==='ArrowLeft' ||e.key==='ArrowUp')   navigate(-1);
+  });
+
+  let tx = 0;
+  document.addEventListener('touchstart', e=>{ tx=e.touches[0].clientX; },{passive:true});
+  document.addEventListener('touchend',   e=>{
+    const dx = e.changedTouches[0].clientX - tx;
+    if(Math.abs(dx)>50) navigate(dx<0?1:-1);
+  },{passive:true});
+</script>
+</body>
+</html>
