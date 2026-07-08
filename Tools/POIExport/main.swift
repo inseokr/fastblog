@@ -39,6 +39,7 @@ print("Extracted metadata from \(records.count) photo(s). Starting geocoding…"
 var mutableRecords = records
 var allLog = extractLog
 await ReverseGeocoder.geocode(records: &mutableRecords, log: &allLog)
+await MapKitGeocoder.geocode(records: &mutableRecords, log: &allLog)
 
 let exporter = DatasetExporter(outputDir: outputURL)
 do {
