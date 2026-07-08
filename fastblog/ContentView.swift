@@ -323,6 +323,7 @@ struct ContentView: View {
                                 selectedCreatedRecap = blog
                             }
                         },
+                        onReplayOnboarding: replayOnboardingForTesting,
                         homeBottomNavRevealed: nil,
                         isTabActive: true
                     )
@@ -453,6 +454,7 @@ struct ContentView: View {
     }
 
     private func replayOnboardingForTesting() {
+        showCameraOverlay = false
         showSettingsFromNav = false
         showPostOnboardingWelcome = false
         showTripScanSetupFlow = false

@@ -203,13 +203,14 @@ extension View {
     @ViewBuilder
     func homeSettingsToolbar(
         onShowSettings: (() -> Void)?,
-        onReplayOnboarding: (() -> Void)? = nil
+        onReplayOnboarding: (() -> Void)? = nil,
+        tint: Color = .black
     ) -> some View {
         if let onShowSettings {
             toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     HomeSettingsGearButton(
-                        tint: .black,
+                        tint: tint,
                         action: onShowSettings,
                         onLongPress: onReplayOnboarding
                     )

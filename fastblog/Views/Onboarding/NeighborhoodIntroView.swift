@@ -16,7 +16,7 @@ struct NeighborhoodIntroView: View {
     
     @State private var stage: Stage = .choose
     private var settingsBackground: Color {
-        Color(uiColor: .systemGroupedBackground)
+        OnboardingConstants.Colors.background
     }
 
     var body: some View {
@@ -50,13 +50,13 @@ struct NeighborhoodIntroView: View {
                 Text("Choose Your\nNeighborhood")
                     .font(.system(size: 32, weight: .bold))
                     .multilineTextAlignment(.center)
-                    .foregroundColor(.white)
+                    .foregroundColor(OnboardingConstants.Colors.primaryText)
                     .padding(.bottom, 16)
 
                 Text("This helps us organize your trips and\npersonalize your experience.")
                     .font(.body)
                     .multilineTextAlignment(.center)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(OnboardingConstants.Colors.secondaryText)
                     .padding(.horizontal, 32)
                     .padding(.bottom, 48)
 
@@ -79,7 +79,7 @@ struct NeighborhoodIntroView: View {
 
                 Text("You can change this anytime.")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(OnboardingConstants.Colors.tertiaryText)
                     .padding(.bottom, 32)
             }
         }

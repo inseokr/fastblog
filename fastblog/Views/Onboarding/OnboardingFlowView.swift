@@ -109,10 +109,10 @@ struct ProblemStatementView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Your story starts with")
                             .font(.system(size: 28, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(OnboardingConstants.Colors.primaryText)
                         Text("your photos.")
                             .font(.system(size: 34, weight: .black))
-                            .foregroundColor(.white)
+                            .foregroundColor(OnboardingConstants.Colors.primaryText)
                     }
                     .opacity(showHeadline ? 1 : 0)
                     .offset(y: showHeadline ? 0 : 8)
@@ -120,7 +120,7 @@ struct ProblemStatementView: View {
                     // Phase 2: Body
                     Text("From camera roll to blog. Instantly.")
                         .font(.body)
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 20)
                         .opacity(showBody ? 1 : 0)
@@ -136,7 +136,7 @@ struct ProblemStatementView: View {
                     // Phase 4: Punchline
                     (Text("Turn any moment ")
                         .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.85))
+                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                     + Text("into a story.")
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(.blue))
@@ -166,21 +166,21 @@ struct ProblemStatementView: View {
 
                     VStack(spacing: 4) {
                         Text("By continuing, you agree to Bloggo's")
-                            .foregroundColor(.white.opacity(0.35))
+                            .foregroundColor(OnboardingConstants.Colors.tertiaryText)
 
                         HStack(spacing: 4) {
                             Button("Privacy Policy") {
                                 showPrivacyPolicy = true
                             }
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundColor(OnboardingConstants.Colors.secondaryText)
 
                             Text("and")
-                                .foregroundColor(.white.opacity(0.35))
+                                .foregroundColor(OnboardingConstants.Colors.tertiaryText)
 
                             Button("Terms of Service") {
                                 showTermsOfService = true
                             }
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundColor(OnboardingConstants.Colors.secondaryText)
                         }
                     }
                     .font(.caption)
@@ -190,7 +190,7 @@ struct ProblemStatementView: View {
                 .offset(y: showButton ? 0 : 8)
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .onAppear {
             startStaggeredAnimation()
         }
@@ -207,13 +207,13 @@ struct ProblemStatementView: View {
             Text(emoji).font(.system(size: 14))
             Text(label)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.white.opacity(0.75))
+                .foregroundColor(OnboardingConstants.Colors.secondaryText)
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 7)
-        .background(Color.white.opacity(0.1))
+        .background(OnboardingConstants.Colors.controlBackground)
         .clipShape(Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+        .overlay(Capsule().stroke(OnboardingConstants.Colors.hairline, lineWidth: 0.5))
     }
 
     private var marqueePillsRow: some View {

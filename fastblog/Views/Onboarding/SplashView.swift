@@ -23,13 +23,13 @@ struct SplashView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Welcome")
                         .font(.system(size: 44, weight: .heavy))
-                        .foregroundColor(.white)
+                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                     Text("to")
                         .font(.system(size: 44, weight: .heavy))
-                        .foregroundColor(.white)
+                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                     Text("Bloggo")
                         .font(.system(size: 44, weight: .heavy))
-                        .foregroundColor(Color(red: 200/255, green: 235/255, blue: 255/255))
+                        .foregroundColor(OnboardingConstants.Colors.doneButtonBlue)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.horizontal, 32)
@@ -50,22 +50,22 @@ struct SplashView: View {
 
                     Text("By continuing you agree to Bloggo’s")
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.35))
+                        .foregroundColor(OnboardingConstants.Colors.tertiaryText)
                         .padding(.bottom, 4)
 
                     HStack(spacing: 4) {
                         Button("Privacy Policy") {
                             showPrivacyPolicy = true
                         }
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
 
                         Text("and")
-                            .foregroundColor(.white.opacity(0.35))
+                            .foregroundColor(OnboardingConstants.Colors.tertiaryText)
 
                         Button("Terms of Service") {
                             showTermsOfService = true
                         }
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                     }
                     .font(.caption)
                     .padding(.bottom, 32)
@@ -74,7 +74,7 @@ struct SplashView: View {
             }
             .opacity(contentOpacity)
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .onAppear {
             withAnimation(.easeOut(duration: OnboardingConstants.Splash.fadeInDuration).delay(OnboardingConstants.Splash.fadeInDelay)) {
                 contentOpacity = 1
@@ -106,6 +106,6 @@ struct SplashView: View {
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: 140, height: 140)
-            .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+            .shadow(color: .black.opacity(0.14), radius: 10, x: 0, y: 5)
     }
 }

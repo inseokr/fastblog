@@ -61,6 +61,10 @@ struct CountryBlogsView: View {
     // Year filter support
     @State private var selectedYear: Int? = nil
 
+    @AppStorage(AppStyle.storageKey) private var appStyleRawValue = AppStyle.auto.rawValue
+    @State private var backgroundPhase = HomeBackdropPhase.current()
+    private let backgroundRefreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+
     /// Live blogs for this country, read from the store so edits (title, cover) propagate immediately.
     private var liveBlogs: [CreatedRecapBlog] {
         if let summary = createdRecapStore.countrySummaries.first(where: { $0.countryName == section.countryName }) {
@@ -70,8 +74,17 @@ struct CountryBlogsView: View {
     }
 
     private let pageBackgroundCream = Color(red: 0.98, green: 0.96, blue: 0.91)
+    /// Matches Create page's night background so drilling into a country after dark doesn't flash to cream.
+    private let pageBackgroundNight = Color(red: 0.04, green: 0.06, blue: 0.16)
     /// Swipe delete: explicit colors so parent `.tint(.primary)` (white in dark mode) does not wash out the icon.
     private let swipeDeleteRed = Color(red: 0.88, green: 0.38, blue: 0.40)
+
+    private var pageBackground: Color {
+        switch backgroundPhase {
+        case .day: return pageBackgroundCream
+        case .night: return pageBackgroundNight
+        }
+    }
 
     // Search filter (driven by parent's shared search bar)
     // searchText is a @Binding — no local @State needed
@@ -144,7 +157,7 @@ struct CountryBlogsView: View {
                         .padding(.horizontal)
                         .padding(.vertical, 12)
                     }
-                    .background(pageBackgroundCream)
+                    .background(pageBackground)
 
                     Divider()
                 }
@@ -184,7 +197,7 @@ struct CountryBlogsView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .background(pageBackgroundCream)
+                .background(pageBackground)
                 .padding(.top, 4)
                 .coordinateSpace(name: "countryList")
                 .onPreferenceChange(CountryListScrollOffsetKey.self) { scrollOffset = $0 }
@@ -223,8 +236,23 @@ struct CountryBlogsView: View {
         }
         } // end ZStack
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showUndoBanner)
-        .background(pageBackgroundCream)
+        .background(pageBackground)
         .background(InteractivePopGestureDisabler())
+        .preferredColorScheme(backgroundPhase.preferredColorScheme)
+        .onReceive(backgroundRefreshTimer) { date in
+            guard AppStyle(rawValue: appStyleRawValue) == .auto else { return }
+            let nextPhase = HomeBackdropPhase(date: date)
+            guard nextPhase != backgroundPhase else { return }
+            withAnimation(.easeInOut(duration: 0.6)) {
+                backgroundPhase = nextPhase
+            }
+        }
+        .onChange(of: appStyleRawValue) { _, _ in
+            updateBackgroundPhaseForAppStyle()
+        }
+        .onAppear {
+            updateBackgroundPhaseForAppStyle(animated: false)
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if isCountrySearchInteractionActive {
@@ -310,6 +338,18 @@ struct CountryBlogsView: View {
             }
             commitDelete(blog: pending, includeCloud: includeCloud)
             pendingDeleteBlog = nil
+        }
+    }
+
+    private func updateBackgroundPhaseForAppStyle(animated: Bool = true) {
+        let nextPhase = HomeBackdropPhase.current(appStyleRawValue: appStyleRawValue)
+        guard nextPhase != backgroundPhase else { return }
+        if animated {
+            withAnimation(.easeInOut(duration: 0.6)) {
+                backgroundPhase = nextPhase
+            }
+        } else {
+            backgroundPhase = nextPhase
         }
     }
 

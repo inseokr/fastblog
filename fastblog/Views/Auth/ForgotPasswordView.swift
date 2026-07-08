@@ -34,10 +34,10 @@ struct ForgotPasswordView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Recover Password")
                             .font(.system(size: 26, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundColor(OnboardingConstants.Colors.primaryText)
                         Text("Enter your username and email address and we'll send you a reset link.")
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.65))
+                            .foregroundColor(OnboardingConstants.Colors.secondaryText)
                             .lineSpacing(2)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -61,10 +61,10 @@ struct ForgotPasswordView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                 }
             }
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(.light)
             .onAppear {
                 if let prefill = initialUsername, !prefill.isEmpty {
                     username = prefill
@@ -83,14 +83,14 @@ struct ForgotPasswordView: View {
                 .autocapitalization(.none)
                 .autocorrectionDisabled()
                 .padding()
-                .background(Color.white.opacity(0.1))
+                .background(OnboardingConstants.Colors.controlBackground)
                 .overlay(
                     RoundedRectangle(appChromeBaseRadius: 12)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        .stroke(OnboardingConstants.Colors.hairline, lineWidth: 1)
                 )
                 .appChromeCornerRadius(12)
-                .foregroundColor(.white)
-                .tint(.white)
+                .foregroundColor(OnboardingConstants.Colors.primaryText)
+                .tint(OnboardingConstants.Colors.doneButtonBlue)
 
             TextField("Email Address", text: $email)
                 .keyboardType(.emailAddress)
@@ -98,14 +98,14 @@ struct ForgotPasswordView: View {
                 .autocapitalization(.none)
                 .autocorrectionDisabled()
                 .padding()
-                .background(Color.white.opacity(0.1))
+                .background(OnboardingConstants.Colors.controlBackground)
                 .overlay(
                     RoundedRectangle(appChromeBaseRadius: 12)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        .stroke(OnboardingConstants.Colors.hairline, lineWidth: 1)
                 )
                 .appChromeCornerRadius(12)
-                .foregroundColor(.white)
-                .tint(.white)
+                .foregroundColor(OnboardingConstants.Colors.primaryText)
+                .tint(OnboardingConstants.Colors.doneButtonBlue)
         }
 
         if let err = errorMessage {
@@ -124,7 +124,7 @@ struct ForgotPasswordView: View {
             showForgotUsername = true
         }
         .font(.subheadline)
-        .foregroundColor(.white.opacity(0.55))
+        .foregroundColor(OnboardingConstants.Colors.secondaryText)
         .padding(.top, 4)
         .sheet(isPresented: $showForgotUsername) {
             ForgotUsernameView()
@@ -141,11 +141,11 @@ struct ForgotPasswordView: View {
 
             Text("Check Your Inbox")
                 .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundColor(OnboardingConstants.Colors.primaryText)
 
             Text("If an account with those details exists, you'll receive a password reset email shortly.")
                 .font(.subheadline)
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundColor(OnboardingConstants.Colors.secondaryText)
                 .multilineTextAlignment(.center)
                 .lineSpacing(2)
 
@@ -196,18 +196,25 @@ struct ForgotPasswordView: View {
                     .fontWeight(.semibold)
             }
             .font(.system(size: 17))
-            .foregroundColor(Color(red: 0.05, green: 0.08, blue: 0.22))
+            .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .frame(height: 54)
-            .background(Color.white)
+            .background(OnboardingConstants.Colors.doneButtonBlue)
             .appChromeCornerRadius(14)
-            .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+            .shadow(color: OnboardingConstants.Colors.doneButtonBlue.opacity(0.28), radius: 8, y: 4)
         }
         .buttonStyle(.plain)
     }
 
     private var backgroundGradient: some View {
-        Color(red: 5/255, green: 10/255, blue: 48/255)
+        LinearGradient(
+            colors: [
+                OnboardingConstants.Colors.backgroundGradientTop,
+                OnboardingConstants.Colors.backgroundGradientBottom
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 
     private var loadingOverlay: some View {

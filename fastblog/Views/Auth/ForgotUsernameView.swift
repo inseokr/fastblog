@@ -28,10 +28,10 @@ struct ForgotUsernameView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Find Your Username")
                             .font(.system(size: 26, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundColor(OnboardingConstants.Colors.primaryText)
                         Text("Enter the email address you signed up with and we'll send your username to it.")
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.65))
+                            .foregroundColor(OnboardingConstants.Colors.secondaryText)
                             .lineSpacing(2)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -55,10 +55,10 @@ struct ForgotUsernameView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                 }
             }
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(.light)
             .onAppear { emailFocused = true }
         }
     }
@@ -75,14 +75,14 @@ struct ForgotUsernameView: View {
                 .autocorrectionDisabled()
                 .focused($emailFocused)
                 .padding()
-                .background(Color.white.opacity(0.1))
+                .background(OnboardingConstants.Colors.controlBackground)
                 .overlay(
                     RoundedRectangle(appChromeBaseRadius: 12)
-                        .stroke(emailFocused ? Color.white.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
+                        .stroke(emailFocused ? OnboardingConstants.Colors.doneButtonBlue : OnboardingConstants.Colors.hairline, lineWidth: 1)
                 )
                 .appChromeCornerRadius(12)
-                .foregroundColor(.white)
-                .tint(.white)
+                .foregroundColor(OnboardingConstants.Colors.primaryText)
+                .tint(OnboardingConstants.Colors.doneButtonBlue)
                 .submitLabel(.send)
                 .onSubmit { sendReminder() }
                 .onChange(of: email) { _, _ in
@@ -110,11 +110,11 @@ struct ForgotUsernameView: View {
 
             Text("Check Your Inbox")
                 .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundColor(OnboardingConstants.Colors.primaryText)
 
             Text("If an account is registered with that email, we've sent the username to it.")
                 .font(.subheadline)
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundColor(OnboardingConstants.Colors.secondaryText)
                 .multilineTextAlignment(.center)
                 .lineSpacing(2)
 
@@ -171,18 +171,25 @@ struct ForgotUsernameView: View {
                     .fontWeight(.semibold)
             }
             .font(.system(size: 17))
-            .foregroundColor(Color(red: 0.05, green: 0.08, blue: 0.22))
+            .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .frame(height: 54)
-            .background(Color.white)
+            .background(OnboardingConstants.Colors.doneButtonBlue)
             .appChromeCornerRadius(14)
-            .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+            .shadow(color: OnboardingConstants.Colors.doneButtonBlue.opacity(0.28), radius: 8, y: 4)
         }
         .buttonStyle(.plain)
     }
 
     private var backgroundGradient: some View {
-        Color(red: 5/255, green: 10/255, blue: 48/255)
+        LinearGradient(
+            colors: [
+                OnboardingConstants.Colors.backgroundGradientTop,
+                OnboardingConstants.Colors.backgroundGradientBottom
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 
     private var loadingOverlay: some View {

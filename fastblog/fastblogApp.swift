@@ -103,6 +103,7 @@ struct fastblogApp: App {
         var hasCheckedExistingUser = false
     @AppStorage("blogify.hasSkippedPhotoPermission") private
         var hasSkippedPhotoPermission = false
+    @AppStorage(AppStyle.storageKey) private var appStyleRawValue = AppStyle.auto.rawValue
     @Environment(\.scenePhase) private var scenePhase
     @State private var isAppReady = false
     @State private var pendingResetToken: String?
@@ -169,6 +170,7 @@ struct fastblogApp: App {
                 .sheet(isPresented: $showPushPermissionPrompt) {
                     PushPermissionPromptView(isPresented: $showPushPermissionPrompt)
                 }
+                .preferredColorScheme(AppStyle.value(from: appStyleRawValue).preferredColorScheme)
         }
     }
 

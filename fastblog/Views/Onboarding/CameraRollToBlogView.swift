@@ -164,7 +164,7 @@ struct CameraRollToBlogView: View {
                     .transition(.opacity)
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .task { await startAnimation() }
         .sheet(isPresented: $showPrivacyPolicy) {
             PrivacyPolicyView()
@@ -180,10 +180,10 @@ struct CameraRollToBlogView: View {
         VStack(spacing: 10) {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 36, weight: .medium))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(OnboardingConstants.Colors.secondaryText)
             Text("Your Camera Roll")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(OnboardingConstants.Colors.tertiaryText)
                 .tracking(0.5)
         }
         .opacity(showCameraLabel ? 1 : 0)
@@ -560,7 +560,7 @@ struct CameraRollToBlogView: View {
                     Text(label)
                         .font(.subheadline)
                         .fontWeight(label == "Day 1" ? .semibold : .regular)
-                        .foregroundColor(label == "Day 1" ? .white : .secondary)
+                        .foregroundColor(label == "Day 1" ? .white : .white.opacity(0.65))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                         .background(label == "Day 1" ? Color.blue : Color(white: 0.2))
@@ -580,23 +580,23 @@ struct CameraRollToBlogView: View {
 
     private var taglineOverlay: some View {
         ZStack {
-            // Full-screen frosted dark background
+            // Full-screen frosted background
             Rectangle()
                 .fill(.ultraThinMaterial)
-                .overlay(Color.black.opacity(0.72))
+                .overlay(OnboardingConstants.Colors.background.opacity(0.9))
                 .ignoresSafeArea()
 
             // Tagline — centered in safe-area bounds (ZStack default)
             VStack(spacing: 14) {
                 Text("✦")
                     .font(.system(size: 36))
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(OnboardingConstants.Colors.doneButtonBlue)
                     .scaleEffect(showTagline ? 1 : 0.5)
                     .animation(.spring(response: 0.4, dampingFraction: 0.7).delay(0.1), value: showTagline)
 
                 Text("INTRODUCING BLOGGO")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundColor(OnboardingConstants.Colors.tertiaryText)
                     .tracking(2)
                     .opacity(showTagline ? 1 : 0)
                     .offset(y: showTagline ? 0 : 8)
@@ -604,9 +604,9 @@ struct CameraRollToBlogView: View {
 
                 Group {
                     Text("Your camera roll,\norganized into\na ")
-                        .foregroundColor(.white)
+                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                     + Text("Blog.")
-                        .foregroundColor(Color(red: 200/255, green: 235/255, blue: 1.0))
+                        .foregroundColor(OnboardingConstants.Colors.doneButtonBlue)
                 }
                 .font(.system(size: 30, weight: .bold))
                 .multilineTextAlignment(.center)
@@ -618,7 +618,7 @@ struct CameraRollToBlogView: View {
 
                 Text("Automatically sorted by day,\nplace & moment.")
                     .font(.system(size: 15))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(OnboardingConstants.Colors.secondaryText)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
                     .opacity(showTagline ? 1 : 0)
@@ -648,23 +648,23 @@ struct CameraRollToBlogView: View {
 
                 VStack(spacing: 4) {
                     Text("By continuing, you agree to Bloggo's")
-                        .foregroundColor(.white.opacity(0.35))
+                        .foregroundColor(OnboardingConstants.Colors.tertiaryText)
 
                     HStack(spacing: 4) {
                         Button("Privacy Policy") {
                             showPrivacyPolicy = true
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
 
                         Text("and")
-                            .foregroundColor(.white.opacity(0.35))
+                            .foregroundColor(OnboardingConstants.Colors.tertiaryText)
 
                         Button("Terms of Service") {
                             showTermsOfService = true
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                     }
                 }
                 .font(.caption)

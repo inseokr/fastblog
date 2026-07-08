@@ -84,12 +84,12 @@ struct NeighborhoodSelectionView: View {
             }
         }
         .background(settingsBackground)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         // Settings → NeighborhoodIntroView passes `onBack: nil` and relies on the **system** nav bar
         // back control. Putting "Set Home" only in the bar row avoids a second title line below the back button.
         .navigationTitle(navigationBarTitleOverride)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(.light, for: .navigationBar)
         .onAppear {
             locationManager.refreshAuthorizationStatus()
             searchHelper.onRegionSelected = { region, name in
@@ -141,7 +141,7 @@ struct NeighborhoodSelectionView: View {
             if isResolvingPlace {
                 Text("Finding area…")
                     .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(OnboardingConstants.Colors.secondaryText)
             }
         }
         .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
@@ -156,7 +156,7 @@ struct NeighborhoodSelectionView: View {
                     Button(action: onBack) {
                         Image(systemName: "chevron.left")
                             .font(.title3.weight(.bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(OnboardingConstants.Colors.primaryText)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Back")
@@ -168,7 +168,7 @@ struct NeighborhoodSelectionView: View {
 
             Text("Set Home")
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(OnboardingConstants.Colors.primaryText)
                 .lineLimit(1)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
@@ -262,7 +262,7 @@ struct NeighborhoodSelectionView: View {
                     } label: {
                         Text(suggestionDisplayText(completion))
                             .font(.body)
-                            .foregroundColor(.white)
+                            .foregroundColor(OnboardingConstants.Colors.primaryText)
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -276,7 +276,7 @@ struct NeighborhoodSelectionView: View {
             .appChromeCornerRadius(OnboardingConstants.Layout.searchCornerRadius)
             .overlay(
                 RoundedRectangle(appChromeBaseRadius: OnboardingConstants.Layout.searchCornerRadius)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    .stroke(OnboardingConstants.Colors.hairline, lineWidth: 1)
             )
         }
     }
@@ -359,15 +359,15 @@ struct NeighborhoodSelectionView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Use Current Location")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                     Text("Find neighborhood near you")
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                 }
                 Spacer()
             }
             .padding()
-            .background(Color.white.opacity(0.05))
+            .background(OnboardingConstants.Colors.controlBackground)
             .appChromeCornerRadius(16)
         }
         .padding(.top, 4)

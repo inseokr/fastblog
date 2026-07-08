@@ -67,10 +67,10 @@ struct EmailSignUpView: View {
 
     private var confirmPasswordBorderColor: Color {
         if passwordFieldFocus == .confirm {
-            return Color.white.opacity(0.6)
+            return OnboardingConstants.Colors.doneButtonBlue
         }
         if confirmPassword.isEmpty {
-            return Color.white.opacity(0.2)
+            return OnboardingConstants.Colors.hairline
         }
         return doPasswordsMatch ? Color.green.opacity(0.6) : Color.red.opacity(0.6)
     }
@@ -117,14 +117,14 @@ struct EmailSignUpView: View {
                         }
                     } label: {
                         Image(systemName: "chevron.left")
-                            .foregroundColor(.white)
+                            .foregroundColor(OnboardingConstants.Colors.primaryText)
                     }
                 }
                 ToolbarItem(placement: .principal) {
                     stepIndicator
                 }
             }
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(.light)
             .alert("Verify Your Email", isPresented: $showSpamAlert) {
                 Button("Got it") { dismiss() }
             } message: {
@@ -139,10 +139,10 @@ struct EmailSignUpView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Username")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(OnboardingConstants.Colors.primaryText)
                 Text("What should we call you?")
                     .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.65))
+                    .foregroundColor(OnboardingConstants.Colors.secondaryText)
             }
 
             VStack(spacing: 8) {
@@ -152,14 +152,14 @@ struct EmailSignUpView: View {
                     .autocorrectionDisabled()
                     .focused($usernameFocused)
                     .padding()
-                    .background(Color.white.opacity(0.1))
+                    .background(OnboardingConstants.Colors.controlBackground)
                     .overlay(
                         RoundedRectangle(appChromeBaseRadius: 12)
-                            .stroke(usernameFocused ? Color.white.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
+                            .stroke(usernameFocused ? OnboardingConstants.Colors.doneButtonBlue : OnboardingConstants.Colors.hairline, lineWidth: 1)
                     )
                     .appChromeCornerRadius(12)
-                    .foregroundColor(.white)
-                    .tint(.white)
+                    .foregroundColor(OnboardingConstants.Colors.primaryText)
+                    .tint(OnboardingConstants.Colors.doneButtonBlue)
                     .submitLabel(.continue)
                     .onSubmit { goToEmail() }
 
@@ -176,7 +176,7 @@ struct EmailSignUpView: View {
             VStack(spacing: 6) {
                 Text("By continuing, you are agreeing to Bloggo's")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.35))
+                    .foregroundColor(OnboardingConstants.Colors.tertiaryText)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
 
@@ -184,15 +184,15 @@ struct EmailSignUpView: View {
                     Button("Terms of Service") {
                         openURL(BloggoLegalWebURLs.terms)
                     }
-                    .foregroundColor(.white.opacity(0.55))
+                    .foregroundColor(OnboardingConstants.Colors.secondaryText)
 
                     Text("and")
-                        .foregroundColor(.white.opacity(0.35))
+                        .foregroundColor(OnboardingConstants.Colors.tertiaryText)
 
                     Button("Privacy Policy") {
                         openURL(BloggoLegalWebURLs.privacy)
                     }
-                    .foregroundColor(.white.opacity(0.55))
+                    .foregroundColor(OnboardingConstants.Colors.secondaryText)
                 }
                 .font(.caption)
             }
@@ -206,10 +206,10 @@ struct EmailSignUpView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("What's your email?")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(OnboardingConstants.Colors.primaryText)
                 Text("We need this for your account recovery.")
                     .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.65))
+                    .foregroundColor(OnboardingConstants.Colors.secondaryText)
             }
 
             VStack(spacing: 8) {
@@ -220,14 +220,14 @@ struct EmailSignUpView: View {
                     .autocorrectionDisabled()
                     .focused($emailFocused)
                     .padding()
-                    .background(Color.white.opacity(0.1))
+                    .background(OnboardingConstants.Colors.controlBackground)
                     .overlay(
                         RoundedRectangle(appChromeBaseRadius: 12)
-                            .stroke(emailFocused ? Color.white.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
+                            .stroke(emailFocused ? OnboardingConstants.Colors.doneButtonBlue : OnboardingConstants.Colors.hairline, lineWidth: 1)
                     )
                     .appChromeCornerRadius(12)
-                    .foregroundColor(.white)
-                    .tint(.white)
+                    .foregroundColor(OnboardingConstants.Colors.primaryText)
+                    .tint(OnboardingConstants.Colors.doneButtonBlue)
                     .submitLabel(.continue)
                     .onSubmit { goToPassword() }
                     .onChange(of: email) { _, _ in
@@ -252,10 +252,10 @@ struct EmailSignUpView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Create Password")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(OnboardingConstants.Colors.primaryText)
                 Text("Use at least 8 characters with uppercase, lowercase, number, and special character.")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.65))
+                    .foregroundColor(OnboardingConstants.Colors.secondaryText)
             }
 
             VStack(spacing: 16) {
@@ -271,20 +271,20 @@ struct EmailSignUpView: View {
                     .textContentType(.newPassword)
                     .focused($passwordFieldFocus, equals: .primary)
                     .padding()
-                    .background(Color.white.opacity(0.1))
+                    .background(OnboardingConstants.Colors.controlBackground)
                     .overlay(
                         RoundedRectangle(appChromeBaseRadius: 12)
-                            .stroke(passwordFieldFocus == .primary ? Color.white.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
+                            .stroke(passwordFieldFocus == .primary ? OnboardingConstants.Colors.doneButtonBlue : OnboardingConstants.Colors.hairline, lineWidth: 1)
                     )
                     .appChromeCornerRadius(12)
-                    .foregroundColor(.white)
-                    .tint(.white)
+                    .foregroundColor(OnboardingConstants.Colors.primaryText)
+                    .tint(OnboardingConstants.Colors.doneButtonBlue)
 
                     Button {
                         showPassword.toggle()
                     } label: {
                         Image(systemName: showPassword ? "eye" : "eye.slash")
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(OnboardingConstants.Colors.secondaryText)
                             .padding(.trailing, 16)
                     }
                 }
@@ -310,14 +310,14 @@ struct EmailSignUpView: View {
                     .textContentType(.newPassword)
                     .focused($passwordFieldFocus, equals: .confirm)
                     .padding()
-                    .background(Color.white.opacity(0.1))
+                    .background(OnboardingConstants.Colors.controlBackground)
                     .overlay(
                         RoundedRectangle(appChromeBaseRadius: 12)
                             .stroke(confirmPasswordBorderColor, lineWidth: 1)
                     )
                     .appChromeCornerRadius(12)
-                    .foregroundColor(.white)
-                    .tint(.white)
+                    .foregroundColor(OnboardingConstants.Colors.primaryText)
+                    .tint(OnboardingConstants.Colors.doneButtonBlue)
                     
                     if !confirmPassword.isEmpty && !doPasswordsMatch {
                         Text("Mismatched")
@@ -357,7 +357,7 @@ struct EmailSignUpView: View {
                 let active = step == stepValue
                 let past = stepValue.rawValue < step.rawValue
                 Capsule()
-                    .fill(active || past ? Color.white : Color.white.opacity(0.25))
+                    .fill(active || past ? OnboardingConstants.Colors.primaryText : OnboardingConstants.Colors.hairline)
                     .frame(width: active ? 28 : 8, height: 8)
                     .animation(.spring(response: 0.35), value: step)
             }
@@ -434,11 +434,11 @@ struct EmailSignUpView: View {
     private func requirementRow(_ text: String, isValid: Bool) -> some View {
         HStack {
             Image(systemName: isValid ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(isValid ? .green : .white.opacity(0.5))
+                .foregroundColor(isValid ? .green : OnboardingConstants.Colors.tertiaryText)
                 .font(.system(size: 14))
             Text(text)
                 .font(.caption)
-                .foregroundColor(isValid ? .green : .white.opacity(0.7))
+                .foregroundColor(isValid ? .green : OnboardingConstants.Colors.secondaryText)
         }
     }
 
@@ -464,18 +464,25 @@ struct EmailSignUpView: View {
                     .fontWeight(.semibold)
             }
             .font(.system(size: 17))
-            .foregroundColor(Color(red: 0.05, green: 0.08, blue: 0.22))
+            .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .frame(height: 54)
-            .background(Color.white)
+            .background(OnboardingConstants.Colors.doneButtonBlue)
             .appChromeCornerRadius(14)
-            .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+            .shadow(color: OnboardingConstants.Colors.doneButtonBlue.opacity(0.28), radius: 8, y: 4)
         }
         .buttonStyle(.plain)
     }
 
     private var backgroundGradient: some View {
-        Color(red: 5/255, green: 10/255, blue: 48/255)
+        LinearGradient(
+            colors: [
+                OnboardingConstants.Colors.backgroundGradientTop,
+                OnboardingConstants.Colors.backgroundGradientBottom
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 
     private var loadingOverlay: some View {

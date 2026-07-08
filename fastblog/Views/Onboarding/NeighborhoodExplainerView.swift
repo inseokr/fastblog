@@ -33,20 +33,20 @@ struct NeighborhoodExplainerView: View {
                 Text("Set Your Home Area")
                     .font(.system(size: 32, weight: .bold))
                     .multilineTextAlignment(.center)
-                    .foregroundColor(.white)
+                    .foregroundColor(OnboardingConstants.Colors.primaryText)
                     .padding(.bottom, 16)
 
                 VStack(spacing: 24) {
                     Text("This is your reference point for detecting trips.")
                         .font(.body)
                         .multilineTextAlignment(.center)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
 
                     Text("Private. Never shared.")
                         .font(.body)
                         .fontWeight(.medium)
                         .multilineTextAlignment(.center)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                 }
                 .padding(.horizontal, 32)
 
@@ -67,12 +67,12 @@ struct NeighborhoodExplainerView: View {
 
                 Text("You can change this anytime.")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(OnboardingConstants.Colors.tertiaryText)
                     .padding(.bottom, 32)
             }
             .opacity(contentOpacity)
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .onAppear {
             withAnimation(.easeOut(duration: 0.4)) {
                 contentOpacity = 1

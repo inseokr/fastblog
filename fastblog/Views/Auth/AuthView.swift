@@ -31,7 +31,6 @@ struct AuthView: View {
     var body: some View {
         NavigationStack {
         ZStack {
-            // Deep gradient background
             backgroundGradient
                 .ignoresSafeArea()
 
@@ -44,7 +43,7 @@ struct AuthView: View {
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.title2)
-                                .foregroundStyle(.white.opacity(0.3))
+                                .foregroundStyle(OnboardingConstants.Colors.tertiaryText)
                         }
                         .buttonStyle(.plain)
                         .padding(.leading, 20)
@@ -79,7 +78,7 @@ struct AuthView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .alert("Error", isPresented: Binding(
             get: { authService.errorMessage != nil },
             set: { if !$0 { /* errors clear on next action */ } }
@@ -143,16 +142,16 @@ struct AuthView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 100, height: 100)
-                .shadow(color: .blue.opacity(0.4), radius: 20)
+                .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
 
             Text("Create your account")
                 .font(.system(size: 26, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundColor(OnboardingConstants.Colors.primaryText)
                 .multilineTextAlignment(.center)
 
             Text("Save your blogs, access them anywhere.")
                 .font(.subheadline)
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundColor(OnboardingConstants.Colors.secondaryText)
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
         }
@@ -197,7 +196,7 @@ struct AuthView: View {
                 Text("OR")
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(OnboardingConstants.Colors.tertiaryText)
                     .padding(.horizontal, 10)
                 authDivider
             }
@@ -216,13 +215,13 @@ struct AuthView: View {
                     Text("Continue with Email")
                         .font(.system(size: 17, weight: .semibold))
                 }
-                .foregroundColor(.white)
+                .foregroundColor(OnboardingConstants.Colors.primaryText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
-                .background(Color.white.opacity(0.12))
+                .background(OnboardingConstants.Colors.controlBackground)
                 .overlay(
                     RoundedRectangle(appChromeBaseRadius: 14)
-                        .stroke(Color.white.opacity(0.25), lineWidth: 1)
+                        .stroke(OnboardingConstants.Colors.hairline, lineWidth: 1)
                 )
                 .appChromeCornerRadius(14)
             }
@@ -240,9 +239,9 @@ struct AuthView: View {
             } label: {
                 HStack(spacing: 0) {
                     Text("Already have an account? ")
-                        .foregroundColor(.white.opacity(0.55))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                     Text("Log In")
-                        .foregroundColor(.white)
+                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                         .fontWeight(.semibold)
                 }
             }
@@ -253,12 +252,19 @@ struct AuthView: View {
 
     private var authDivider: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.2))
+            .fill(OnboardingConstants.Colors.hairline)
             .frame(height: 1)
     }
 
     private var backgroundGradient: some View {
-        Color(red: 5/255, green: 10/255, blue: 48/255)
+        LinearGradient(
+            colors: [
+                OnboardingConstants.Colors.backgroundGradientTop,
+                OnboardingConstants.Colors.backgroundGradientBottom
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 
     private var loadingOverlay: some View {

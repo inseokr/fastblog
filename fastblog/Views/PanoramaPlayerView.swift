@@ -91,6 +91,10 @@ struct PanoramaPlayerView: View {
     var onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil
     /// Called with the photo's asset identifier when the user taps the paused metadata card (place name / timestamp / caption area).
     var onPausedMetadataTapped: ((String) -> Void)? = nil
+    /// Called when the user removes photos from the blog via gallery select mode. Receives asset identifiers.
+    var onPhotosRemovedFromBlog: (([String]) -> Void)? = nil
+    /// Called when the user taps "Cleanup" in the Manage menu — presents unused photos from blog settings.
+    var onCleanupUnused: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -102,7 +106,9 @@ struct PanoramaPlayerView: View {
         startInGallery: Bool = false,
         onDismiss: @escaping () -> Void,
         onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil,
-        onPausedMetadataTapped: ((String) -> Void)? = nil
+        onPausedMetadataTapped: ((String) -> Void)? = nil,
+        onPhotosRemovedFromBlog: (([String]) -> Void)? = nil,
+        onCleanupUnused: (() -> Void)? = nil
     ) {
         self.photoGroups = photoGroups
         self.blogId = blogId
@@ -112,6 +118,8 @@ struct PanoramaPlayerView: View {
         self.onDismiss = onDismiss
         self.onAppCaptureDeletedFromSlideshow = onAppCaptureDeletedFromSlideshow
         self.onPausedMetadataTapped = onPausedMetadataTapped
+        self.onPhotosRemovedFromBlog = onPhotosRemovedFromBlog
+        self.onCleanupUnused = onCleanupUnused
         _isPlaying = State(initialValue: !startInGallery)
         _showGallery = State(initialValue: startInGallery)
     }
@@ -156,6 +164,12 @@ struct PanoramaPlayerView: View {
     /// Toast when saving the current slideshow photo from the paused overlay.
     @State private var pausedSlideshowDownloadToast: String?
 
+    // MARK: - Gallery select mode
+    @State private var gallerySelectMode: Bool = false
+    @State private var gallerySelectedIds: Set<String> = []
+    /// Photo IDs removed from the blog during this session; filtered out of active display.
+    @State private var removedPhotoIds: Set<String> = []
+
     // MARK: - Music
     @State private var showMusicPicker: Bool = false
     /// Bundled track filename when slideshow has background music; `nil` = none selected.
@@ -186,7 +200,9 @@ struct PanoramaPlayerView: View {
 
     /// Groups filtered by `dayScope`; used for all slideshow navigation.
     private var activeGroups: [[PanoramaPhotoEntry]] {
-        var groups = photoGroups
+        var groups = photoGroups.map { group in
+            group.filter { !removedPhotoIds.contains($0.id) }
+        }.filter { !$0.isEmpty }
         if case .day(let idx) = dayScope {
             groups = groups.map { $0.filter { $0.dayIndex == idx } }.filter { !$0.isEmpty }
         }
@@ -758,8 +774,8 @@ struct PanoramaPlayerView: View {
     private var topBar: some View {
         HStack(alignment: .center, spacing: 8) {
 
-            // Dismiss slideshow → blog (gallery uses text "Close" in `galleryOverlay`).
-            Button(action: dismissSlideshowToBlog) {
+            // Dismiss slideshow → gallery overlay.
+            Button(action: presentSlideshowGallery) {
                 Image(systemName: "xmark")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
@@ -768,7 +784,7 @@ struct PanoramaPlayerView: View {
                     .overlay(Circle().strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Close")
+            .accessibilityLabel("Back to gallery")
 
             // Day scope pill — only when blog spans multiple days.
             if dayLabels.count > 1 {
@@ -1066,6 +1082,8 @@ struct PanoramaPlayerView: View {
     /// Resume slideshow playback from gallery mode.
     private func resumePlaybackFromGalleryCover() {
         useFadeForGalleryTransition = true
+        gallerySelectMode = false
+        gallerySelectedIds = []
         DispatchQueue.main.async {
             withAnimation(.easeInOut(duration: 0.22)) {
                 showGallery = false
@@ -1136,6 +1154,11 @@ struct PanoramaPlayerView: View {
                         onAppCaptureDeleted: { identifier in
                             loadedImages.removeValue(forKey: identifier)
                             onAppCaptureDeletedFromSlideshow?(identifier)
+                        },
+                        onPhotoRemovedFromBlog: { identifier in
+                            removedPhotoIds.insert(identifier)
+                            onPhotosRemovedFromBlog?([identifier])
+                            galleryDetailPhotoId = nil
                         }
                     )
                     .transition(.opacity)
@@ -1229,14 +1252,24 @@ struct PanoramaPlayerView: View {
                                                 GalleryThumbCell(
                                                     entry: photo,
                                                     loadedImages: loadedImages,
-                                                    isCurrentPhoto: photo.id == heroPhotoId
+                                                    isCurrentPhoto: photo.id == heroPhotoId,
+                                                    isSelectMode: gallerySelectMode,
+                                                    isSelected: gallerySelectedIds.contains(photo.id)
                                                 )
                                                 .frame(width: cellGeo.size.width, height: cellGeo.size.width)
                                                 .clipped()
                                             }
                                             .aspectRatio(1, contentMode: .fit)
                                             .onTapGesture {
-                                                galleryDetailPhotoId = photo.id
+                                                if gallerySelectMode {
+                                                    if gallerySelectedIds.contains(photo.id) {
+                                                        gallerySelectedIds.remove(photo.id)
+                                                    } else {
+                                                        gallerySelectedIds.insert(photo.id)
+                                                    }
+                                                } else {
+                                                    galleryDetailPhotoId = photo.id
+                                                }
                                             }
                                         }
                                     }
@@ -1246,12 +1279,12 @@ struct PanoramaPlayerView: View {
                         }
 
                         Color.clear
-                            .frame(height: geo.safeAreaInsets.bottom + 16)
+                            .frame(height: geo.safeAreaInsets.bottom + (gallerySelectMode ? 88 : 16))
                     }
                 }
 
                 HStack(alignment: .center, spacing: 10) {
-                    Button(action: resumePlaybackFromGalleryCover) {
+                    Button(action: dismissSlideshowToBlog) {
                         Text("Close")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(.white)
@@ -1262,9 +1295,73 @@ struct PanoramaPlayerView: View {
                     .buttonStyle(.plain)
 
                     Spacer(minLength: 0)
+
+                    if gallerySelectMode {
+                        Button {
+                            gallerySelectMode = false
+                            gallerySelectedIds = []
+                        } label: {
+                            Text("Done")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 14)
+                                .frame(minHeight: 36)
+                                .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Menu {
+                            Button {
+                                gallerySelectMode = true
+                            } label: {
+                                Label("Select", systemImage: "checkmark.circle")
+                            }
+                            if onCleanupUnused != nil {
+                                Button {
+                                    onCleanupUnused?()
+                                } label: {
+                                    Label("Cleanup", systemImage: "photo.stack")
+                                }
+                            }
+                        } label: {
+                            Text("Manage")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 14)
+                                .frame(minHeight: 36)
+                                .background(Capsule().fill(Color.black.opacity(0.5)))
+                        }
+                        .menuStyle(.automatic)
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, SlideshowGalleryLayout.chromeTopPadding())
+
+                if gallerySelectMode && !gallerySelectedIds.isEmpty {
+                    VStack {
+                        Spacer()
+                        Button {
+                            let ids = Array(gallerySelectedIds)
+                            onPhotosRemovedFromBlog?(ids)
+                            removedPhotoIds.formUnion(ids)
+                            gallerySelectedIds = []
+                            gallerySelectMode = false
+                        } label: {
+                            Text("Hide from blog (\(gallerySelectedIds.count))")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color(red: 1.0, green: 0.27, blue: 0.23))
+                                .appChromeCornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, geo.safeAreaInsets.bottom + 12)
+                    }
+                    .frame(maxHeight: .infinity)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                     }
                 }
             }
@@ -1547,10 +1644,12 @@ private struct SlideshowGalleryPhotoDetailView: View {
     let cachedImages: [String: UIImage]
     var onClose: () -> Void
     var onAppCaptureDeleted: (String) -> Void
+    var onPhotoRemovedFromBlog: ((String) -> Void)? = nil
 
     @State private var selectedPhotoId: String
     @State private var showControls = true
     @State private var showDeleteConfirm = false
+    @State private var showRemoveFromBlogConfirm = false
     @State private var downloadToast: String?
     @State private var showNavigationAppChooser = false
     @State private var navigationDoNotShowAgain = false
@@ -1562,13 +1661,15 @@ private struct SlideshowGalleryPhotoDetailView: View {
         initialPhotoId: String,
         cachedImages: [String: UIImage],
         onClose: @escaping () -> Void,
-        onAppCaptureDeleted: @escaping (String) -> Void
+        onAppCaptureDeleted: @escaping (String) -> Void,
+        onPhotoRemovedFromBlog: ((String) -> Void)? = nil
     ) {
         self.photos = photos
         self.initialPhotoId = initialPhotoId
         self.cachedImages = cachedImages
         self.onClose = onClose
         self.onAppCaptureDeleted = onAppCaptureDeleted
+        self.onPhotoRemovedFromBlog = onPhotoRemovedFromBlog
         _selectedPhotoId = State(initialValue: initialPhotoId)
     }
 
@@ -1665,6 +1766,12 @@ private struct SlideshowGalleryPhotoDetailView: View {
         } message: {
             Text("This will permanently remove the photo from your device.")
         }
+        .alert("Hide from blog?", isPresented: $showRemoveFromBlogConfirm) {
+            Button("Hide", role: .destructive) { confirmRemoveFromBlog() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The photo stays in your library - it will just be hidden from this blog.")
+        }
     }
 
     private var topChrome: some View {
@@ -1684,9 +1791,17 @@ private struct SlideshowGalleryPhotoDetailView: View {
 
                     Spacer(minLength: 0)
 
-                    // Top-trailing slot for Vibe (or other controls) when wired per-photo.
-                    Color.clear
-                        .frame(width: 36, height: 36)
+                    Button {
+                        showRemoveFromBlogConfirm = true
+                    } label: {
+                        Image(systemName: "minus.circle")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                    }
+                    .accessibilityLabel("Hide from blog")
                 }
 
                 if photos.count > 1, let idx = photos.firstIndex(where: { $0.id == selectedPhotoId }) {
@@ -1829,6 +1944,12 @@ private struct SlideshowGalleryPhotoDetailView: View {
         guard let id = currentEntry?.id, AppCapturePhotoService.uuid(from: id) != nil else { return }
         onAppCaptureDeleted(id)
         showDeleteConfirm = false
+    }
+
+    private func confirmRemoveFromBlog() {
+        guard let id = currentEntry?.id else { return }
+        onPhotoRemovedFromBlog?(id)
+        showRemoveFromBlogConfirm = false
     }
 
     private var preferredNavigationApp: NavigationMapAppPreference? {
@@ -2053,6 +2174,8 @@ private struct GalleryThumbCell: View {
     let entry: PanoramaPhotoEntry
     let loadedImages: [String: UIImage]
     let isCurrentPhoto: Bool
+    var isSelectMode: Bool = false
+    var isSelected: Bool = false
     @State private var thumb: UIImage?
 
     var body: some View {
@@ -2062,12 +2185,24 @@ private struct GalleryThumbCell: View {
                 Image(uiImage: img)
                     .resizable()
                     .scaledToFill()
+                    .opacity(isSelectMode && isSelected ? 0.55 : 1)
             } else {
                 Color.gray.opacity(0.25)
                 ProgressView().tint(.white).scaleEffect(0.7)
             }
+
         }
         .clipped()
+        .overlay(alignment: .topTrailing) {
+            if isSelectMode {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .foregroundColor(isSelected ? .blue : .white)
+                    .shadow(color: .black.opacity(0.5), radius: 2)
+                    .padding(.top, 12)
+                    .padding(.trailing, 6)
+            }
+        }
         .task(id: entry.id) {
             guard thumb == nil, loadedImages[entry.id] == nil else { return }
             thumb = await ImageLoader.shared.loadThumbnail(

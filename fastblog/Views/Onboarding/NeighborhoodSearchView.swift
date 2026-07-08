@@ -44,7 +44,7 @@ struct NeighborhoodSearchView: View {
             VStack(spacing: 0) {
                 // Pull-up handle indicator
                 Capsule()
-                    .fill(Color.white.opacity(0.3))
+                    .fill(OnboardingConstants.Colors.hairline)
                     .frame(width: 36, height: 5)
                     .padding(.top, 12)
 
@@ -54,14 +54,14 @@ struct NeighborhoodSearchView: View {
                         onDismiss()
                     } label: {
                         Text("Cancel")
-                            .foregroundColor(.white)
+                            .foregroundColor(OnboardingConstants.Colors.secondaryText)
                     }
                     .buttonStyle(.plain)
                     .frame(width: Self.navChromeSideSlot, height: 44, alignment: .leading)
 
                     Text("Set Home")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                         .lineLimit(1)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
@@ -88,11 +88,11 @@ struct NeighborhoodSearchView: View {
                 // Search field
                 HStack {
                     Image(systemName: "magnifyingglass")
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(OnboardingConstants.Colors.tertiaryText)
 
-                    TextField("", text: $searchHelper.query, prompt: Text("Search for your neighborhood").foregroundColor(.white.opacity(0.3)))
+                    TextField("", text: $searchHelper.query, prompt: Text("Search for your neighborhood").foregroundColor(OnboardingConstants.Colors.tertiaryText))
                         .textFieldStyle(.plain)
-                        .foregroundColor(.white)
+                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                         .focused($isFocused)
                         .autocorrectionDisabled()
 
@@ -105,12 +105,12 @@ struct NeighborhoodSearchView: View {
                             pendingCityName = nil
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.white.opacity(0.5))
+                                .foregroundColor(OnboardingConstants.Colors.tertiaryText)
                         }
                     }
                 }
                 .padding(12)
-                .background(Color.white.opacity(0.1))
+                .background(OnboardingConstants.Colors.controlBackground)
                 .appChromeCornerRadius(OnboardingConstants.Layout.searchCornerRadius)
                 .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
                 .padding(.top, 10)
@@ -143,17 +143,17 @@ struct NeighborhoodSearchView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(suggestion.title)
                                         .font(.body)
-                                        .foregroundColor(.white)
+                                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                                     if !suggestion.subtitle.isEmpty {
                                         Text(suggestion.subtitle)
                                             .font(.caption)
-                                            .foregroundColor(.white.opacity(0.6))
+                                            .foregroundColor(OnboardingConstants.Colors.secondaryText)
                                     }
                                 }
                                 .padding(.vertical, 4)
                             }
                             .listRowBackground(Color.clear)
-                            .listRowSeparatorTint(Color.white.opacity(0.1))
+                            .listRowSeparatorTint(OnboardingConstants.Colors.hairline)
                         }
                     }
                     .listStyle(.plain)
@@ -177,15 +177,15 @@ struct NeighborhoodSearchView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Use Current Location")
                                         .font(.headline)
-                                        .foregroundColor(.white)
+                                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                                     Text("Find neighborhood near you")
                                         .font(.caption)
-                                        .foregroundColor(.white.opacity(0.6))
+                                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                                 }
                                 Spacer()
                             }
                             .padding()
-                            .background(Color.white.opacity(0.05))
+                            .background(OnboardingConstants.Colors.controlBackground)
                             .appChromeCornerRadius(16)
                         }
                         .padding(.horizontal)
@@ -194,7 +194,7 @@ struct NeighborhoodSearchView: View {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Recent Searches")
                                     .font(.subheadline)
-                                    .foregroundColor(.white.opacity(0.6))
+                                    .foregroundColor(OnboardingConstants.Colors.secondaryText)
                                     .padding(.horizontal)
 
                                 ForEach(NeighborhoodStore.recentSearches, id: \.self) { search in
@@ -203,13 +203,13 @@ struct NeighborhoodSearchView: View {
                                     } label: {
                                         HStack {
                                             Image(systemName: "clock")
-                                                .foregroundColor(.white.opacity(0.5))
+                                                .foregroundColor(OnboardingConstants.Colors.tertiaryText)
                                             Text(search)
-                                                .foregroundColor(.white)
+                                                .foregroundColor(OnboardingConstants.Colors.primaryText)
                                             Spacer()
                                         }
                                         .padding()
-                                        .background(Color.white.opacity(0.05))
+                                        .background(OnboardingConstants.Colors.controlBackground)
                                         .appChromeCornerRadius(12)
                                     }
                                     .padding(.horizontal)

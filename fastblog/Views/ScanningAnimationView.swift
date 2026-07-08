@@ -17,6 +17,8 @@ struct ScanningAnimationView: View {
     var systemIconName: String?
     /// Tint for the expanding rings. Defaults to white for dark scan surfaces.
     var ringTint: Color
+    /// Tint for the center icon when `systemIconName` is used. Defaults to the icon's own color.
+    var iconTint: Color?
 
     /// Same expansion cadence for every ring so pulses stay phase-locked (mixed speeds moiré against the center icon).
     private static let durationMultipliers: [Double] = [1.0, 1.0, 1.0, 1.0]
@@ -28,7 +30,8 @@ struct ScanningAnimationView: View {
         showIcon: Bool = true,
         iconName: String = "ScanIcon",
         systemIconName: String? = nil,
-        ringTint: Color = .white
+        ringTint: Color = .white,
+        iconTint: Color? = nil
     ) {
         self.ringCount = ringCount
         self.ringSpacing = ringSpacing
@@ -37,6 +40,7 @@ struct ScanningAnimationView: View {
         self.iconName = iconName
         self.systemIconName = systemIconName
         self.ringTint = ringTint
+        self.iconTint = iconTint
     }
 
     var body: some View {
@@ -60,7 +64,7 @@ struct ScanningAnimationView: View {
     @ViewBuilder
     private var centerIcon: some View {
         if let systemIconName {
-            RewindAnimationIcon(systemIconName: systemIconName)
+            RewindAnimationIcon(systemIconName: systemIconName, iconTint: iconTint)
         } else {
             Image(iconName)
                 .resizable()
@@ -74,6 +78,7 @@ struct RewindAnimationIcon: View {
     var systemIconName: String = "gobackward"
     var circleSide: CGFloat = 102
     var symbolSize: CGFloat = 48
+    var iconTint: Color? = nil
 
     var body: some View {
         ZStack {
@@ -85,7 +90,7 @@ struct RewindAnimationIcon: View {
             Image(systemName: systemIconName)
                 .font(.system(size: symbolSize, weight: .heavy))
                 .symbolRenderingMode(.monochrome)
-                .foregroundStyle(Color.black.opacity(0.84))
+                .foregroundStyle(iconTint ?? Color.black.opacity(0.84))
         }
     }
 }

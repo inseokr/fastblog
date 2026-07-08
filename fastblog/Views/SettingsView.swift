@@ -237,6 +237,7 @@ struct SettingsView: View {
     @State private var showNeighborhoodFlow = false
     @State private var showAuth = false
     @State private var showDeleteAccountAlert = false
+    @AppStorage(AppStyle.storageKey) private var appStyleRawValue = AppStyle.auto.rawValue
     #if DEBUG
     @AppStorage("capper.tripClustering.debugLogging") private var tripClusteringDebug = false
     #endif
@@ -261,6 +262,10 @@ struct SettingsView: View {
     @State private var showBackupFlowAlert = false
     @AppStorage("bloggo.backupImport.preferPhotoLibrary") private var preferPhotoLibraryWhenImportingBackup = true
     @State private var settingsHelpTopic: SettingsHelpTopic?
+
+    private var appStyle: AppStyle {
+        AppStyle.value(from: appStyleRawValue)
+    }
 
     private var travelStats: (countries: Int, cities: Int, places: Int) {
         let store = CreatedRecapBlogStore.shared
@@ -418,6 +423,30 @@ struct SettingsView: View {
 
                     Section {
                         Button {
+                            appStyleRawValue = appStyle.next.rawValue
+                        } label: {
+                            HStack(spacing: 14) {
+                                Label("App Style", systemImage: appStyleIconName)
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Text(appStyle.title)
+                                    .foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("App Style \(appStyle.title)")
+                        .accessibilityHint("Toggles between Light, Dark, and Auto")
+                    } header: {
+                        Text("Day time and Night time")
+                    } footer: {
+                        Text("Auto follows Bloggo’s day and night styling.")
+                    }
+
+                    Section {
+                        Button {
                             showNeighborhoodFlow = true
                         } label: {
                             HStack {
@@ -539,7 +568,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.primary)
                             } icon: {
                                 Image(systemName: "hand.raised.fill")
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(.blue)
                             }
                         }
                         NavigationLink {
@@ -550,7 +579,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.primary)
                             } icon: {
                                 Image(systemName: "doc.text.fill")
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(.blue)
                             }
                         }
                     } header: {
@@ -587,10 +616,10 @@ struct SettingsView: View {
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") { dismiss() }
-                            .foregroundColor(.white)
+                            .foregroundColor(.blue)
                     }
                 }
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(appStyle.preferredColorScheme)
                 .sheet(item: $settingsHelpTopic) { topic in
                     SettingsHelpSheet(topic: topic)
                 }
@@ -782,6 +811,14 @@ struct SettingsView: View {
         }
     }
 
+    private var appStyleIconName: String {
+        switch appStyle {
+        case .light: return "sun.max.fill"
+        case .dark: return "moon.fill"
+        case .auto: return "circle.lefthalf.filled"
+        }
+    }
+
     private func formatCloudStorageDate(_ isoString: String) -> String {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -796,4 +833,3 @@ struct SettingsView: View {
         return isoString
     }
 }
-

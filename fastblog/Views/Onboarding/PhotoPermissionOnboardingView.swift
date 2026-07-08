@@ -38,7 +38,7 @@ struct PhotoPermissionOnboardingView: View {
                             Button(action: onBack) {
                                 Image(systemName: "chevron.left")
                                     .font(.title3.weight(.bold))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(OnboardingConstants.Colors.primaryText)
                                     .padding(.leading, 8)
                             }
                             Spacer()
@@ -59,8 +59,8 @@ struct PhotoPermissionOnboardingView: View {
                 // Icon Header
                 Image(systemName: "photo.on.rectangle.angled")
                     .font(.system(size: 80))
-                    .foregroundColor(.white)
-                    .shadow(color: .white.opacity(0.2), radius: 20, y: 10)
+                    .foregroundColor(OnboardingConstants.Colors.doneButtonBlue)
+                    .shadow(color: OnboardingConstants.Colors.doneButtonBlue.opacity(0.18), radius: 20, y: 10)
                     .padding(.bottom, 40)
                     .opacity(showIcon ? 1 : 0)
                     .scaleEffect(showIcon ? 1 : 0.8)
@@ -69,14 +69,14 @@ struct PhotoPermissionOnboardingView: View {
                 VStack(spacing: 16) {
                     Text("Your photos already tell the story")
                         .font(.system(size: 32, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                         .multilineTextAlignment(.center)
                         .opacity(showHeadline ? 1 : 0)
                         .offset(y: showHeadline ? 0 : 8)
 
                     Text("Bloggo finds trips in your camera roll using date and location so you can create blogs in seconds.")
                         .font(.title3)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
                         .opacity(showBody ? 1 : 0)
@@ -84,7 +84,7 @@ struct PhotoPermissionOnboardingView: View {
                     
                     Text("Your photos stay private on your device.")
                         .font(.footnote)
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(OnboardingConstants.Colors.tertiaryText)
                         .multilineTextAlignment(.center)
                         .padding(.top, 16)
                         .padding(.horizontal, 40)
@@ -126,7 +126,7 @@ struct PhotoPermissionOnboardingView: View {
                 .offset(y: showButton ? 0 : 8)
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .onAppear {
             startStaggeredAnimation()
         }

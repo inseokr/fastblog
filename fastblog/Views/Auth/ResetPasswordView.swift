@@ -43,10 +43,10 @@ struct ResetPasswordView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Set New Password")
                             .font(.system(size: 26, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundColor(OnboardingConstants.Colors.primaryText)
                         Text("Use at least 8 characters with uppercase, lowercase, number, and special character.")
                             .font(.caption)
-                            .foregroundColor(.white.opacity(0.65))
+                            .foregroundColor(OnboardingConstants.Colors.secondaryText)
                             .lineSpacing(2)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -64,18 +64,18 @@ struct ResetPasswordView: View {
                             }
                             .textContentType(.newPassword)
                             .padding()
-                            .background(Color.white.opacity(0.1))
+                            .background(OnboardingConstants.Colors.controlBackground)
                             .overlay(
                                 RoundedRectangle(appChromeBaseRadius: 12)
-                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                    .stroke(OnboardingConstants.Colors.hairline, lineWidth: 1)
                             )
                             .appChromeCornerRadius(12)
-                            .foregroundColor(.white)
-                            .tint(.white)
+                            .foregroundColor(OnboardingConstants.Colors.primaryText)
+                            .tint(OnboardingConstants.Colors.doneButtonBlue)
 
                             Button { showPassword.toggle() } label: {
                                 Image(systemName: showPassword ? "eye" : "eye.slash")
-                                    .foregroundColor(.white.opacity(0.6))
+                                    .foregroundColor(OnboardingConstants.Colors.secondaryText)
                                     .padding(.trailing, 16)
                             }
                         }
@@ -100,19 +100,19 @@ struct ResetPasswordView: View {
                             }
                             .textContentType(.newPassword)
                             .padding()
-                            .background(Color.white.opacity(0.1))
+                            .background(OnboardingConstants.Colors.controlBackground)
                             .overlay(
                                 RoundedRectangle(appChromeBaseRadius: 12)
                                     .stroke(
-                                        confirmPassword.isEmpty ? Color.white.opacity(0.2)
+                                        confirmPassword.isEmpty ? OnboardingConstants.Colors.hairline
                                             : passwordsMatch ? Color.green.opacity(0.6)
                                             : Color.red.opacity(0.6),
                                         lineWidth: 1
                                     )
                             )
                             .appChromeCornerRadius(12)
-                            .foregroundColor(.white)
-                            .tint(.white)
+                            .foregroundColor(OnboardingConstants.Colors.primaryText)
+                            .tint(OnboardingConstants.Colors.doneButtonBlue)
 
                             if !confirmPassword.isEmpty && !passwordsMatch {
                                 Text("Mismatched")
@@ -147,10 +147,10 @@ struct ResetPasswordView: View {
                     Button("Cancel") {
                         onSuccess?()
                     }
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(OnboardingConstants.Colors.secondaryText)
                 }
             }
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(.light)
             .alert("Password Reset", isPresented: $showSuccessAlert) {
                 Button("OK") {
                     showSuccessAlert = false
@@ -189,11 +189,11 @@ struct ResetPasswordView: View {
     private func requirementRow(_ text: String, isValid: Bool) -> some View {
         HStack {
             Image(systemName: isValid ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(isValid ? .green : .white.opacity(0.5))
+                .foregroundColor(isValid ? .green : OnboardingConstants.Colors.tertiaryText)
                 .font(.system(size: 14))
             Text(text)
                 .font(.caption)
-                .foregroundColor(isValid ? .green : .white.opacity(0.7))
+                .foregroundColor(isValid ? .green : OnboardingConstants.Colors.secondaryText)
         }
     }
 
@@ -217,18 +217,25 @@ struct ResetPasswordView: View {
                     .fontWeight(.semibold)
             }
             .font(.system(size: 17))
-            .foregroundColor(Color(red: 0.05, green: 0.08, blue: 0.22))
+            .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .frame(height: 54)
-            .background(Color.white)
+            .background(OnboardingConstants.Colors.doneButtonBlue)
             .appChromeCornerRadius(14)
-            .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+            .shadow(color: OnboardingConstants.Colors.doneButtonBlue.opacity(0.28), radius: 8, y: 4)
         }
         .buttonStyle(.plain)
     }
 
     private var backgroundGradient: some View {
-        Color(red: 5/255, green: 10/255, blue: 48/255)
+        LinearGradient(
+            colors: [
+                OnboardingConstants.Colors.backgroundGradientTop,
+                OnboardingConstants.Colors.backgroundGradientBottom
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 
     private var loadingOverlay: some View {

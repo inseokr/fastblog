@@ -17,13 +17,18 @@ enum OnboardingConstants {
     }
 
     enum Colors {
-        /// Deep navy background (matches landing page).
-        static let background = Color(red: 5/255, green: 10/255, blue: 48/255)
-        static let backgroundGradientTop = Color(red: 5/255, green: 10/255, blue: 48/255)
-        static let backgroundGradientBottom = Color(red: 8/255, green: 14/255, blue: 56/255)
+        /// Cream off-white onboarding background.
+        static let background = Color(red: 250/255, green: 247/255, blue: 239/255)
+        static let backgroundGradientTop = Color(red: 255/255, green: 252/255, blue: 245/255)
+        static let backgroundGradientBottom = Color(red: 244/255, green: 238/255, blue: 226/255)
+        static let primaryText = Color(red: 32/255, green: 35/255, blue: 42/255)
+        static let secondaryText = Color(red: 75/255, green: 79/255, blue: 88/255)
+        static let tertiaryText = Color(red: 112/255, green: 114/255, blue: 120/255)
+        static let hairline = Color.black.opacity(0.12)
+        static let controlBackground = Color.white.opacity(0.78)
         static let mapBackground = Color(white: 0.92)
         static let searchBackground = Color.white
-        static let selectButtonBackground = Color(white: 0.25)
+        static let selectButtonBackground = primaryText
         /// Bright blue for primary actions (e.g. Done after neighborhood select). #007AFF.
         static let doneButtonBlue = Color(red: 0, green: 122/255, blue: 1)
         /// Center circle on neighborhood map (same blue as Done; opacity range applied in view).

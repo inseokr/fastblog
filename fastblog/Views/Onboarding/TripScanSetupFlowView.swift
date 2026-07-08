@@ -48,7 +48,7 @@ struct TripScanSetupFlowView: View {
                 Button(action: onCancel) {
                     Text("Cancel")
                         .font(.subheadline.weight(.medium))
-                        .foregroundColor(.white.opacity(0.55))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
                 }

@@ -25,6 +25,7 @@ struct LandingView: View {
 
     @StateObject private var photoAuth = PhotosAuthorizationManager()
 
+    @AppStorage(AppStyle.storageKey) private var appStyleRawValue = AppStyle.auto.rawValue
     @State private var backgroundPhase = HomeBackdropPhase.current()
     private let backgroundRefreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     private let latestEditsPageSize = 5
@@ -116,11 +117,15 @@ struct LandingView: View {
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
         .preferredColorScheme(backgroundPhase.preferredColorScheme)
         .onReceive(backgroundRefreshTimer) { date in
+            guard AppStyle(rawValue: appStyleRawValue) == .auto else { return }
             let nextPhase = HomeBackdropPhase(date: date)
             guard nextPhase != backgroundPhase else { return }
             withAnimation(.easeInOut(duration: 0.5)) {
                 backgroundPhase = nextPhase
             }
+        }
+        .onChange(of: appStyleRawValue) { _, _ in
+            updateBackgroundPhaseForAppStyle()
         }
         .onReceive(textCycleTimer) { _ in
             guard isIPhoneMax else {
@@ -140,6 +145,7 @@ struct LandingView: View {
             }
         }
         .onAppear {
+            updateBackgroundPhaseForAppStyle(animated: false)
             AppAnalytics.track(.appOpen)
             if splashManager.phase == .done {
                 circlesScale = 1.0
@@ -160,6 +166,18 @@ struct LandingView: View {
                     }
                 }
             }
+        }
+    }
+
+    private func updateBackgroundPhaseForAppStyle(animated: Bool = true) {
+        let nextPhase = HomeBackdropPhase.current(appStyleRawValue: appStyleRawValue)
+        guard nextPhase != backgroundPhase else { return }
+        if animated {
+            withAnimation(.easeInOut(duration: 0.5)) {
+                backgroundPhase = nextPhase
+            }
+        } else {
+            backgroundPhase = nextPhase
         }
     }
 
@@ -241,7 +259,8 @@ struct LandingView: View {
                         ringSpacing: 28,
                         pulseDuration: 1.8,
                         showIcon: showScanIcon,
-                        systemIconName: "gobackward"
+                        systemIconName: "gobackward",
+                        iconTint: .white
                     )
                         .frame(width: 200, height: 200)
                     
@@ -346,6 +365,50 @@ struct LandingView: View {
 
 }
 
+enum AppStyle: String, CaseIterable, Equatable {
+    static let storageKey = "bloggo.appStyle"
+
+    case light
+    case dark
+    case auto
+
+    var title: String {
+        switch self {
+        case .light: return "Light"
+        case .dark: return "Dark"
+        case .auto: return "Auto"
+        }
+    }
+
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .light: return .light
+        case .dark: return .dark
+        case .auto: return nil
+        }
+    }
+
+    var next: AppStyle {
+        switch self {
+        case .auto: return .light
+        case .light: return .dark
+        case .dark: return .auto
+        }
+    }
+
+    var forcedHomeBackdropPhase: HomeBackdropPhase? {
+        switch self {
+        case .light: return .day
+        case .dark: return .night
+        case .auto: return nil
+        }
+    }
+
+    static func value(from rawValue: String) -> AppStyle {
+        AppStyle(rawValue: rawValue) ?? .auto
+    }
+}
+
 enum HomeBackdropPhase: Equatable {
     case day
     case night
@@ -357,6 +420,11 @@ enum HomeBackdropPhase: Equatable {
 
     static func current() -> HomeBackdropPhase {
         HomeBackdropPhase(date: Date())
+    }
+
+    static func current(appStyleRawValue: String) -> HomeBackdropPhase {
+        let appStyle = AppStyle.value(from: appStyleRawValue)
+        return appStyle.forcedHomeBackdropPhase ?? current()
     }
 
     var preferredColorScheme: ColorScheme {

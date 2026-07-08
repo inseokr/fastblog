@@ -2962,6 +2962,8 @@ struct CameraCaptureView: View {
     /// When set (ZStack overlay presentation), called instead of dismiss().
     var onDismissOverlay: (() -> Void)? = nil
     var onNavigateToBlog: ((UUID) -> Void)? = nil
+    /// Hidden affordance for replaying the first-run onboarding from the home camera.
+    var onReplayOnboarding: (() -> Void)? = nil
     /// When set, all captured photos are always routed to this blog regardless of date/on-the-go state.
     /// Used when the camera is opened from inside an existing blog.
     var forcedTargetBlogId: UUID? = nil
@@ -3776,6 +3778,12 @@ struct CameraCaptureView: View {
         }
 
         VStack(spacing: 16) {
+            HomeSettingsGearButton(
+                style: .cameraTopBar,
+                action: { openAppSettings() },
+                onLongPress: onReplayOnboarding
+            )
+
             Button {
                 cameraController.flipCamera()
             } label: {

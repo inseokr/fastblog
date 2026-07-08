@@ -42,25 +42,25 @@ struct ScanPhotoAccessSheet: View {
 
                 Image(systemName: "photo.on.rectangle.angled")
                     .font(.system(size: 64))
-                    .foregroundColor(.white)
-                    .shadow(color: .white.opacity(0.18), radius: 16, y: 8)
+                    .foregroundColor(OnboardingConstants.Colors.doneButtonBlue)
+                    .shadow(color: OnboardingConstants.Colors.doneButtonBlue.opacity(0.18), radius: 16, y: 8)
                     .padding(.bottom, 24)
 
                 VStack(spacing: 14) {
                     Text("Scan your camera roll")
                         .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                         .multilineTextAlignment(.center)
 
                     Text(primaryMessage)
                         .font(.body)
-                        .foregroundColor(.white.opacity(0.72))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 28)
 
                     Text("Your photos stay private on your device.")
                         .font(.footnote)
-                        .foregroundColor(.white.opacity(0.48))
+                        .foregroundColor(OnboardingConstants.Colors.tertiaryText)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 36)
                         .padding(.top, 4)
@@ -99,12 +99,12 @@ struct ScanPhotoAccessSheet: View {
                     Button(action: onUseCamera) {
                         Text("Use Camera Instead")
                             .font(.headline)
-                            .foregroundColor(.white.opacity(0.9))
+                            .foregroundColor(OnboardingConstants.Colors.primaryText)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                             .overlay(
                                 Capsule()
-                                    .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                                    .stroke(OnboardingConstants.Colors.hairline, lineWidth: 1)
                             )
                     }
 
@@ -114,7 +114,7 @@ struct ScanPhotoAccessSheet: View {
                     } label: {
                         Text("Not Now")
                             .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white.opacity(0.55))
+                            .foregroundColor(OnboardingConstants.Colors.secondaryText)
                             .padding(.vertical, 8)
                     }
                 }
@@ -122,7 +122,7 @@ struct ScanPhotoAccessSheet: View {
                 .padding(.bottom, 28)
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear {

@@ -16,12 +16,14 @@ struct BottomNavBar: View {
     let onMyBlogs: () -> Void
     let onCreate: () -> Void
     let onMyPlaces: () -> Void
+    @AppStorage(AppStyle.storageKey) private var appStyleRawValue = AppStyle.auto.rawValue
 
     private var menuIndicators: BlogMenuIndicatorStore { BlogMenuIndicatorStore.shared }
 
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 60)) { context in
-            let phase = HomeBackdropPhase(date: context.date)
+            let appStyle = AppStyle.value(from: appStyleRawValue)
+            let phase = appStyle.forcedHomeBackdropPhase ?? HomeBackdropPhase(date: context.date)
 
             VStack(spacing: 0) {
                 Rectangle()
@@ -115,7 +117,7 @@ struct BottomNavBar: View {
                     .font(.footnote)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                    .foregroundColor(tab == .myPlaces ? .black : phase.primaryText)
+                    .foregroundColor(phase.primaryText)
                     .opacity(textOpacity)
 
                 Circle()

@@ -102,6 +102,19 @@ struct PlacesVisitedStandaloneView: View {
     @State private var showPlacesMap: Bool = false
 
     private let pageBackgroundCream = Color(red: 0.98, green: 0.96, blue: 0.91)
+    /// Matches Create page's night background so switching tabs after dark doesn't flash to cream.
+    private let pageBackgroundNight = Color(red: 0.04, green: 0.06, blue: 0.16)
+
+    @AppStorage(AppStyle.storageKey) private var appStyleRawValue = AppStyle.auto.rawValue
+    @State private var backgroundPhase = HomeBackdropPhase.current()
+    private let backgroundRefreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+
+    private var pageBackground: Color {
+        switch backgroundPhase {
+        case .day: return pageBackgroundCream
+        case .night: return pageBackgroundNight
+        }
+    }
 
     var body: some View {
         PlacesVisitedView(
@@ -113,15 +126,43 @@ struct PlacesVisitedStandaloneView: View {
             standaloneOnDismiss: onDismiss,
             onShowSettings: onShowSettings
         )
-        .background(pageBackgroundCream.ignoresSafeArea())
+        .background(pageBackground.ignoresSafeArea())
+        .preferredColorScheme(backgroundPhase.preferredColorScheme)
+        .onReceive(backgroundRefreshTimer) { date in
+            guard AppStyle(rawValue: appStyleRawValue) == .auto else { return }
+            let nextPhase = HomeBackdropPhase(date: date)
+            guard nextPhase != backgroundPhase else { return }
+            withAnimation(.easeInOut(duration: 0.6)) {
+                backgroundPhase = nextPhase
+            }
+        }
+        .onChange(of: appStyleRawValue) { _, _ in
+            updateBackgroundPhaseForAppStyle()
+        }
+        .onAppear {
+            updateBackgroundPhaseForAppStyle(animated: false)
+        }
         .scrollContentBackground(.hidden)
         .navigationTitle("My Places")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .homeSettingsToolbar(
             onShowSettings: onShowSettings,
-            onReplayOnboarding: onReplayOnboarding
+            onReplayOnboarding: onReplayOnboarding,
+            tint: backgroundPhase.iconColor
         )
+    }
+
+    private func updateBackgroundPhaseForAppStyle(animated: Bool = true) {
+        let nextPhase = HomeBackdropPhase.current(appStyleRawValue: appStyleRawValue)
+        guard nextPhase != backgroundPhase else { return }
+        if animated {
+            withAnimation(.easeInOut(duration: 0.6)) {
+                backgroundPhase = nextPhase
+            }
+        } else {
+            backgroundPhase = nextPhase
+        }
     }
 }
 
@@ -167,6 +208,18 @@ struct PlacesVisitedView: View {
     @State private var showPlacesVideoShareSheet = false
     @State private var showPromoteToBlogConfirmation = false
     @State private var placePendingPromote: VisitedPlaceSummary?
+
+    @AppStorage(AppStyle.storageKey) private var appStyleRawValue = AppStyle.auto.rawValue
+    @State private var backgroundPhase = HomeBackdropPhase.current()
+    private let backgroundRefreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+    private let searchOverlayBackgroundNight = Color(red: 0.04, green: 0.06, blue: 0.16)
+
+    private var searchOverlayBackground: Color {
+        switch backgroundPhase {
+        case .day: return Color(red: 0.98, green: 0.96, blue: 0.91)
+        case .night: return searchOverlayBackgroundNight
+        }
+    }
 
     private let horizontalPadding: CGFloat = 16
 
@@ -438,7 +491,7 @@ struct PlacesVisitedView: View {
     }
 
     private var placesSearchOverlay: some View {
-        Color(red: 0.98, green: 0.96, blue: 0.91)
+        searchOverlayBackground
             .ignoresSafeArea()
             .overlay {
                 ScrollView(showsIndicators: false) {
@@ -700,8 +753,34 @@ struct PlacesVisitedView: View {
             }
             syncHomeBottomNavSuppression()
         }
-        .onAppear { syncHomeBottomNavSuppression() }
+        .onAppear {
+            updateBackgroundPhaseForAppStyle(animated: false)
+            syncHomeBottomNavSuppression()
+        }
+        .onChange(of: appStyleRawValue) { _, _ in
+            updateBackgroundPhaseForAppStyle()
+        }
         .onDisappear { suppressHomeBottomNav = false }
+        .onReceive(backgroundRefreshTimer) { date in
+            guard AppStyle(rawValue: appStyleRawValue) == .auto else { return }
+            let nextPhase = HomeBackdropPhase(date: date)
+            guard nextPhase != backgroundPhase else { return }
+            withAnimation(.easeInOut(duration: 0.6)) {
+                backgroundPhase = nextPhase
+            }
+        }
+    }
+
+    private func updateBackgroundPhaseForAppStyle(animated: Bool = true) {
+        let nextPhase = HomeBackdropPhase.current(appStyleRawValue: appStyleRawValue)
+        guard nextPhase != backgroundPhase else { return }
+        if animated {
+            withAnimation(.easeInOut(duration: 0.6)) {
+                backgroundPhase = nextPhase
+            }
+        } else {
+            backgroundPhase = nextPhase
+        }
     }
 
     @ToolbarContentBuilder

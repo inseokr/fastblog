@@ -36,7 +36,7 @@ struct TripDistanceFromHomeOnboardingView: View {
                             Button(action: onBack) {
                                 Image(systemName: "chevron.left")
                                     .font(.title3.weight(.bold))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(OnboardingConstants.Colors.primaryText)
                                     .padding(.leading, 8)
                             }
                             Spacer()
@@ -55,8 +55,8 @@ struct TripDistanceFromHomeOnboardingView: View {
 
                 Image(systemName: "location.circle.fill")
                     .font(.system(size: 72))
-                    .foregroundColor(.white)
-                    .shadow(color: .white.opacity(0.2), radius: 16, y: 8)
+                    .foregroundColor(OnboardingConstants.Colors.doneButtonBlue)
+                    .shadow(color: OnboardingConstants.Colors.doneButtonBlue.opacity(0.18), radius: 16, y: 8)
                     .padding(.bottom, 28)
                     .opacity(showIcon ? 1 : 0)
                     .scaleEffect(showIcon ? 1 : 0.85)
@@ -64,14 +64,14 @@ struct TripDistanceFromHomeOnboardingView: View {
                 VStack(spacing: 14) {
                     Text("Distance from home")
                         .font(.system(size: 30, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                         .multilineTextAlignment(.center)
                         .opacity(showHeadline ? 1 : 0)
                         .offset(y: showHeadline ? 0 : 8)
 
                     Text("Bloggo saves everyday shots to My Places. Beyond this distance, we'll ask if you want a trip blog.")
                         .font(.title3)
-                        .foregroundColor(.white.opacity(0.72))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 20)
                         .opacity(showBody ? 1 : 0)
@@ -84,11 +84,11 @@ struct TripDistanceFromHomeOnboardingView: View {
                     HStack {
                         Text("Exclude photos closer than")
                             .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white.opacity(0.9))
+                            .foregroundColor(OnboardingConstants.Colors.primaryText)
                         Spacer()
                         Text("\(Int(tripExclusionRadius)) miles")
                             .font(.subheadline.monospacedDigit().weight(.semibold))
-                            .foregroundColor(.white.opacity(0.75))
+                            .foregroundColor(OnboardingConstants.Colors.secondaryText)
                     }
 
                     TripExclusionMilesSlider(
@@ -115,7 +115,7 @@ struct TripDistanceFromHomeOnboardingView: View {
                     .padding(.top, 4)
                 }
                 .padding(20)
-                .background(Color.white.opacity(0.08))
+                .background(OnboardingConstants.Colors.controlBackground)
                 .clipShape(RoundedRectangle(appChromeBaseRadius: 16, style: .continuous))
                 .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
                 .opacity(showControls ? 1 : 0)
@@ -139,7 +139,7 @@ struct TripDistanceFromHomeOnboardingView: View {
                 .offset(y: showControls ? 0 : 10)
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .onAppear {
             tripExclusionRadius = NeighborhoodStore.tripExclusionRadiusMiles
             startStaggeredAnimation()
@@ -157,7 +157,7 @@ struct TripDistanceFromHomeOnboardingView: View {
                 .padding(.top, 2)
             Text(text)
                 .font(.footnote)
-                .foregroundColor(.white.opacity(0.55))
+                .foregroundColor(OnboardingConstants.Colors.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

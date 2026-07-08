@@ -40,12 +40,12 @@ struct PostOnboardingWelcomeView: View {
                 VStack(spacing: 10) {
                     Text("You're all set")
                         .font(.system(size: 32, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(OnboardingConstants.Colors.primaryText)
                         .multilineTextAlignment(.center)
 
                     Text("How would you like to get started?")
                         .font(.body)
-                        .foregroundColor(.white.opacity(0.68))
+                        .foregroundColor(OnboardingConstants.Colors.secondaryText)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 28)
                 }
@@ -80,7 +80,7 @@ struct PostOnboardingWelcomeView: View {
             }
             .padding(.bottom, 40)
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .onAppear {
             let duration: TimeInterval = 0.45
             withAnimation(.easeOut(duration: duration)) {
@@ -114,10 +114,10 @@ struct PostOnboardingWelcomeView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(.headline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(OnboardingConstants.Colors.primaryText)
                     Text(detail)
                         .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.62))
+                        .foregroundStyle(OnboardingConstants.Colors.secondaryText)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -125,18 +125,18 @@ struct PostOnboardingWelcomeView: View {
 
                 Image(systemName: "chevron.right")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(OnboardingConstants.Colors.tertiaryText)
             }
             .padding(16)
             .background(
                 isPrimary
                     ? tint.opacity(0.18)
-                    : Color.white.opacity(0.08)
+                    : OnboardingConstants.Colors.controlBackground
             )
             .clipShape(RoundedRectangle(appChromeBaseRadius: 16, style: .continuous))
             .overlay(
                 RoundedRectangle(appChromeBaseRadius: 16, style: .continuous)
-                    .stroke(isPrimary ? tint.opacity(0.35) : Color.white.opacity(0.1), lineWidth: 1)
+                    .stroke(isPrimary ? tint.opacity(0.35) : OnboardingConstants.Colors.hairline, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
