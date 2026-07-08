@@ -295,6 +295,8 @@
 		BBCC0003 /* EXIFExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCC0004 /* EXIFExtractor.swift */; };
 		BBCC0005 /* ReverseGeocoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCC0006 /* ReverseGeocoder.swift */; };
 		BBCC0007 /* DatasetExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCC0008 /* DatasetExporter.swift */; };
+		BBCC0013 /* MapKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BBCC0012 /* MapKit.framework */; };
+		BBCC0015 /* MapKitGeocoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCC0014 /* MapKitGeocoder.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -590,6 +592,8 @@
 		BBCC0004 /* EXIFExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EXIFExtractor.swift; sourceTree = "<group>"; };
 		BBCC0006 /* ReverseGeocoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReverseGeocoder.swift; sourceTree = "<group>"; };
 		BBCC0008 /* DatasetExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatasetExporter.swift; sourceTree = "<group>"; };
+		BBCC0012 /* MapKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MapKit.framework; path = System/Library/Frameworks/MapKit.framework; sourceTree = SDKROOT; };
+		BBCC0014 /* MapKitGeocoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapKitGeocoder.swift; sourceTree = "<group>"; };
 		BBCC000E /* poi-export */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "poi-export"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -609,6 +613,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BBCC0013 /* MapKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1015,6 +1020,7 @@
 				BBCC0004 /* EXIFExtractor.swift */,
 				BBCC0006 /* ReverseGeocoder.swift */,
 				BBCC0008 /* DatasetExporter.swift */,
+				BBCC0014 /* MapKitGeocoder.swift */,
 			);
 			path = POIExport;
 			sourceTree = "<group>";
@@ -1400,6 +1406,7 @@
 				BBCC0003 /* EXIFExtractor.swift in Sources */,
 				BBCC0005 /* ReverseGeocoder.swift in Sources */,
 				BBCC0007 /* DatasetExporter.swift in Sources */,
+				BBCC0015 /* MapKitGeocoder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
