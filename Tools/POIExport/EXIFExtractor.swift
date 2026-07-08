@@ -13,6 +13,11 @@ struct PhotoRecord {
     var suggestedCity: String?
     var suggestedCountry: String?
 
+    var mapkitPlaceName: String?
+    var mapkitCategory: String?
+    var mapkitCity: String?
+    var mapkitCountry: String?
+
     let verifiedPlaceName: String = ""
     let notes: String = ""
 }
