@@ -173,6 +173,9 @@ final class AuthService: NSObject, ObservableObject {
         // Reset guest-session intro state so a newly signed-out user sees first-time flows again.
         defaults.set(false, forKey: "blogify.tripsIntroSeen.guest")
         defaults.set(false, forKey: "blogify.captureIntroSeen.guest")
+        if !OnboardingStore.hasCompletedOnboarding {
+            OnboardingStore.hasAuthenticatedDuringOnboarding = false
+        }
         // First-save Blog Settings spotlight on recap: show again on next guest first save.
         defaults.set(false, forKey: "bloggo.hasSeenFirstSaveBlogSettingsCoachmark")
         // Vibe toggle: reset to off so guest starts with default state
@@ -726,6 +729,9 @@ extension AuthService {
         currentUser = user
         persist(user)
         AppAnalytics.shared.currentUserId = user.id
+        if !OnboardingStore.hasCompletedOnboarding {
+            OnboardingStore.hasAuthenticatedDuringOnboarding = true
+        }
         if let username = user.username {
             UserDefaults.standard.set(username, forKey: "blogify.lastLoginUsername")
         }

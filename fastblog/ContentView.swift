@@ -54,6 +54,8 @@ struct ContentView: View {
     @State private var showSettingsFromNav = false
     /// My Places place viewer / share studio — hides the shared home tab bar.
     @State private var suppressHomeBottomNav = false
+    /// Hide shared home nav while the in-app camera is showing its post-capture save page.
+    @State private var isCameraSavePageActive = false
 
     // On-the-go new-moments banner (camera home)
     @State private var showNewMomentsBanner = false
@@ -291,6 +293,9 @@ struct ContentView: View {
                     onWillCaptureMoment: {
                         dismissPostCameraToast()
                     },
+                    onSavePageActiveChanged: { active in
+                        isCameraSavePageActive = active
+                    },
                     onDismissOverlay: nil,
                     onNavigateToBlog: { sourceTripId in
                         if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == sourceTripId }) {
@@ -439,9 +444,8 @@ struct ContentView: View {
         !showTrips && !pendingShowTripsWhenIdle && selectedCreatedRecap == nil && tripsViewModel.scanState == .idle
     }
 
-    /// Tab bar: hidden on default camera, My Places place viewer, and share studio; optional on camera after back chevron.
     private var isHomeBottomNavVisible: Bool {
-        showsHomeChrome && !suppressHomeBottomNav && (homeTab != .camera || isHomeBottomNavRevealed)
+        showsHomeChrome && !suppressHomeBottomNav && !isCameraSavePageActive
     }
 
     private var isCameraHomeVisible: Bool {

@@ -337,16 +337,17 @@ extension MapDayView {
 
 /// Full-screen map for one day: same markers, route, labels; bottom place cards scroll one-by-one and drive map center.
 struct FullScreenMapView: View {
-    let day: RecapBlogDay
+    let allDays: [RecapBlogDay]
     var onDismiss: () -> Void
-    /// Called when a photo caption is saved inside the modal. Receives (stopId, photoId, newCaption).
-    var onCaptionSaved: ((UUID, UUID, String) -> Void)? = nil
+    /// Called when a photo caption is saved inside the modal. Receives (dayId, stopId, photoId, newCaption).
+    var onCaptionSaved: ((UUID, UUID, UUID, String) -> Void)? = nil
     /// Called when a place name is saved from the modal kebab menu.
     /// Receives (stopId, newName, category, coordinate, subtitleLine).
     var onPlaceNameSaved: ((UUID, String, String?, CLLocationCoordinate2D?, String) -> Void)? = nil
     /// When set, opens focused on this place marker.
     var initialFocusedPlaceId: UUID? = nil
 
+    @State private var selectedDayIndex: Int
     @State private var selectedPlaceIndex: Int = 0
     @State private var didApplyInitialFocus = false
     // Photo modal
@@ -355,26 +356,33 @@ struct FullScreenMapView: View {
     @State private var photoModalCaptions: [UUID: String] = [:]
     /// Captions at the moment the modal was opened — used to diff on dismiss.
     @State private var photoModalCaptionsSnapshot: [UUID: String] = [:]
-    
+
     @State private var selectedCategory: String? = nil
     @State private var scrolledPlaceID: UUID?
     @State private var editablePlaceStops: [PlaceStop]
     @State private var activePOIFeature: MapFeature?
     @State private var showPOISheet: Bool = false
 
+    private var currentDay: RecapBlogDay {
+        allDays[safe: selectedDayIndex] ?? allDays[0]
+    }
+
     init(
-        day: RecapBlogDay,
+        allDays: [RecapBlogDay],
+        initialDayIndex: Int = 0,
         onDismiss: @escaping () -> Void,
-        onCaptionSaved: ((UUID, UUID, String) -> Void)? = nil,
+        onCaptionSaved: ((UUID, UUID, UUID, String) -> Void)? = nil,
         onPlaceNameSaved: ((UUID, String, String?, CLLocationCoordinate2D?, String) -> Void)? = nil,
         initialFocusedPlaceId: UUID? = nil
     ) {
-        self.day = day
+        self.allDays = allDays
         self.onDismiss = onDismiss
         self.onCaptionSaved = onCaptionSaved
         self.onPlaceNameSaved = onPlaceNameSaved
         self.initialFocusedPlaceId = initialFocusedPlaceId
-        _editablePlaceStops = State(initialValue: day.placeStops)
+        let safeIndex = max(0, min(initialDayIndex, allDays.count - 1))
+        _selectedDayIndex = State(initialValue: safeIndex)
+        _editablePlaceStops = State(initialValue: allDays[safe: safeIndex]?.placeStops ?? [])
     }
 
     private var availableCategories: [String] {
@@ -414,10 +422,11 @@ struct FullScreenMapView: View {
     }
 
     private func flushCaptionChanges(stop: PlaceStop) {
+        let dayId = currentDay.id
         for (photoId, newCaption) in photoModalCaptions {
             let original = photoModalCaptionsSnapshot[photoId] ?? ""
             if newCaption != original {
-                onCaptionSaved?(stop.id, photoId, newCaption)
+                onCaptionSaved?(dayId, stop.id, photoId, newCaption)
             }
         }
     }
@@ -492,18 +501,19 @@ struct FullScreenMapView: View {
                             Spacer()
 
                             VStack(spacing: 2) {
-                                Text("Day \(day.dayIndex)")
+                                Text("Day \(currentDay.dayIndex)")
                                     .font(.headline)
                                     .fontWeight(.bold)
                                     .foregroundColor(.white)
                                     .shadow(color: .black.opacity(0.8), radius: 2)
 
-                                Text(day.shortDateText)
+                                Text(currentDay.shortDateText)
                                     .font(.subheadline)
                                     .fontWeight(.medium)
                                     .foregroundColor(.white.opacity(0.9))
                                     .shadow(color: .black.opacity(0.8), radius: 2)
                             }
+                            .animation(.easeInOut(duration: 0.2), value: selectedDayIndex)
                             .padding(.top, 4) // Slight visual tweak to center with the 40 height button
 
                             Spacer()
@@ -536,11 +546,19 @@ struct FullScreenMapView: View {
                         .frame(maxWidth: .infinity, alignment: .top)
                         .zIndex(1)
 
-                        if !filteredStops.isEmpty {
-                            VStack {
+                        let showDayFilter = allDays.count > 1
+                        let showMoments = !filteredStops.isEmpty
+                        if showMoments || showDayFilter {
+                            VStack(spacing: 0) {
                                 Spacer()
-                                placeCardsStrip(in: geo)
-                                    .padding(.bottom, geo.safeAreaInsets.bottom + 12)
+                                if showMoments {
+                                    placeCardsStrip(in: geo)
+                                        .padding(.bottom, showDayFilter ? 8 : geo.safeAreaInsets.bottom + 12)
+                                }
+                                if showDayFilter {
+                                    dayFilterStrip()
+                                        .padding(.bottom, geo.safeAreaInsets.bottom + 8)
+                                }
                             }
                         }
                     }
@@ -622,6 +640,13 @@ struct FullScreenMapView: View {
             }
         }
         .animation(.easeInOut(duration: 0.38), value: photoModalStop?.id)
+        .onChange(of: selectedDayIndex) { _, newIdx in
+            guard let newDay = allDays[safe: newIdx] else { return }
+            withAnimation { selectedCategory = nil }
+            editablePlaceStops = newDay.placeStops
+            selectedPlaceIndex = 0
+            scrolledPlaceID = nil
+        }
         .onAppear {
             applyInitialFocusIfNeeded()
         }
@@ -723,6 +748,56 @@ struct FullScreenMapView: View {
             scrolledPlaceID = filteredStops.first?.id
         }
         .frame(height: cardHeight + 20)
+    }
+
+    private func dayFilterStrip() -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(allDays.enumerated()), id: \.element.id) { index, day in
+                        mapDayPill(title: "Day \(day.dayIndex)", index: index)
+                            .id(day.id)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 2)
+            }
+            .frame(maxWidth: .infinity)
+            .background {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .ignoresSafeArea(edges: .bottom)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .onChange(of: selectedDayIndex) { _, newIndex in
+                guard let day = allDays[safe: newIndex] else { return }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    proxy.scrollTo(day.id, anchor: nil)
+                }
+            }
+        }
+    }
+
+    private func mapDayPill(title: String, index: Int) -> some View {
+        let isSelected = selectedDayIndex == index
+        return Button {
+            guard index != selectedDayIndex else { return }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                selectedDayIndex = index
+            }
+        } label: {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(isSelected ? .semibold : .regular)
+                .foregroundColor(isSelected ? .white : .white.opacity(0.7))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(isSelected ? Color.blue : Color.white.opacity(0.15))
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(isSelected ? 0.25 : 0.12), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 }
 

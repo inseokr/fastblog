@@ -2068,6 +2068,32 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         }
     }
 
+    /// Focuses and meters exposure at the normalized capture-device point from the preview layer.
+    func focusAndExpose(at devicePoint: CGPoint) {
+        sessionQueue.async {
+            guard let device = self.videoDevice else { return }
+            do {
+                try device.lockForConfiguration()
+                if device.isFocusPointOfInterestSupported {
+                    device.focusPointOfInterest = devicePoint
+                    if device.isFocusModeSupported(.autoFocus) {
+                        device.focusMode = .autoFocus
+                    }
+                }
+                if device.isExposurePointOfInterestSupported {
+                    device.exposurePointOfInterest = devicePoint
+                    if device.isExposureModeSupported(.autoExpose) {
+                        device.exposureMode = .autoExpose
+                    }
+                }
+                if device.isSubjectAreaChangeMonitoringEnabled == false {
+                    device.isSubjectAreaChangeMonitoringEnabled = true
+                }
+                device.unlockForConfiguration()
+            } catch {}
+        }
+    }
+
     /// Capture a single still photo. The completion is called on the main queue.
     func capturePhoto(completion: @escaping (UIImage?, String?) -> Void) {
         sessionQueue.async {
@@ -2606,26 +2632,54 @@ extension CameraController: CLLocationManagerDelegate {
 /// UIKit-backed preview layer for the capture session.
 struct CameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession
+    var onTapToFocus: ((CGPoint, CGPoint) -> Void)?
+    var onDoubleTapToFlip: (() -> Void)?
 
     func makeUIView(context: Context) -> UIView {
-        return CameraPreviewContainer(session: session)
+        return CameraPreviewContainer(
+            session: session,
+            onTapToFocus: onTapToFocus,
+            onDoubleTapToFlip: onDoubleTapToFlip
+        )
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
         guard let container = uiView as? CameraPreviewContainer else { return }
         container.updateSession(session)
+        container.onTapToFocus = onTapToFocus
+        container.onDoubleTapToFlip = onDoubleTapToFlip
     }
 }
 
 /// UIView that owns an AVCaptureVideoPreviewLayer and keeps it sized to its bounds.
 private final class CameraPreviewContainer: UIView {
     private let previewLayer: AVCaptureVideoPreviewLayer
+    var onTapToFocus: ((CGPoint, CGPoint) -> Void)?
+    var onDoubleTapToFlip: (() -> Void)?
 
-    init(session: AVCaptureSession) {
+    init(
+        session: AVCaptureSession,
+        onTapToFocus: ((CGPoint, CGPoint) -> Void)?,
+        onDoubleTapToFlip: (() -> Void)?
+    ) {
         self.previewLayer = AVCaptureVideoPreviewLayer(session: session)
+        self.onTapToFocus = onTapToFocus
+        self.onDoubleTapToFlip = onDoubleTapToFlip
         super.init(frame: .zero)
         previewLayer.videoGravity = .resizeAspectFill
         layer.addSublayer(previewLayer)
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTapToFocus(_:)))
+        tap.cancelsTouchesInView = false
+        tap.numberOfTapsRequired = 1
+
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTapToFlip(_:)))
+        doubleTap.cancelsTouchesInView = false
+        doubleTap.numberOfTapsRequired = 2
+
+        tap.require(toFail: doubleTap)
+        addGestureRecognizer(tap)
+        addGestureRecognizer(doubleTap)
     }
 
     required init?(coder: NSCoder) {
@@ -2640,17 +2694,35 @@ private final class CameraPreviewContainer: UIView {
     func updateSession(_ session: AVCaptureSession) {
         previewLayer.session = session
     }
+
+    @objc private func handleTapToFocus(_ recognizer: UITapGestureRecognizer) {
+        guard recognizer.state == .ended else { return }
+        let viewPoint = recognizer.location(in: self)
+        let devicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: viewPoint)
+        onTapToFocus?(viewPoint, devicePoint)
+    }
+
+    @objc private func handleDoubleTapToFlip(_ recognizer: UITapGestureRecognizer) {
+        guard recognizer.state == .ended else { return }
+        onDoubleTapToFlip?()
+    }
 }
 
 /// Full-screen preview (`AVCaptureVideoPreviewLayer` uses `resizeAspectFill`).
 /// Saved stills are center-cropped to the device portrait aspect via `croppedToWidescreenAspect()`.
 private struct FullScreenCameraPreview: View {
     let session: AVCaptureSession
+    var onTapToFocus: ((CGPoint, CGPoint) -> Void)?
+    var onDoubleTapToFlip: (() -> Void)?
 
     var body: some View {
         ZStack {
             Color.black
-            CameraPreviewView(session: session)
+            CameraPreviewView(
+                session: session,
+                onTapToFocus: onTapToFocus,
+                onDoubleTapToFlip: onDoubleTapToFlip
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
@@ -2671,6 +2743,22 @@ private enum CameraCaptureMode: String, CaseIterable, Identifiable {
         case .vibe: return "Vibe"
         case .reel: return "Reel"
         }
+    }
+}
+
+// MARK: - Curved arc text (orbit mode labels)
+
+private struct CurvedText: View {
+    let text: String
+    let fontSize: CGFloat
+    let isActive: Bool
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: fontSize, weight: .semibold))
+            .foregroundColor(isActive ? .white : .white.opacity(0.42))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
     }
 }
 
@@ -2959,6 +3047,8 @@ struct CameraCaptureView: View {
     var postDismissToast: ((String) -> Void)? = nil
     /// When set, called as a new in-app capture begins (dismisses any parent-level capture toast).
     var onWillCaptureMoment: (() -> Void)? = nil
+    /// Reports the post-capture save page so parent chrome can hide while the user saves/discards.
+    var onSavePageActiveChanged: ((Bool) -> Void)? = nil
     /// When set (ZStack overlay presentation), called instead of dismiss().
     var onDismissOverlay: (() -> Void)? = nil
     var onNavigateToBlog: ((UUID) -> Void)? = nil
@@ -3023,8 +3113,18 @@ struct CameraCaptureView: View {
     @State private var zoomBaseScale: CGFloat = 1.0
     @State private var showZoomIndicator: Bool = false
     @State private var zoomIndicatorTask: Task<Void, Never>? = nil
+    @State private var focusReticlePoint: CGPoint?
+    @State private var showFocusReticle: Bool = false
+    @State private var focusReticleTask: Task<Void, Never>? = nil
     @State private var captureDestinationOverlayMode: CaptureDestinationMode?
     @State private var captureDestinationOverlayTask: Task<Void, Never>? = nil
+    // Orbit mode wheel
+    @State private var modeWheelAngle: Double = 0
+    @State private var orbitDragPreviousTouchAngle: Double? = nil
+    @State private var orbitDragAccumulatedDelta: Double = 0
+    @State private var orbitDragStartWheelAngle: Double = 0
+    @State private var orbitSuppressModeLabelTap: Bool = false
+    @State private var orbitModeLabelTapSuppressionTask: Task<Void, Never>? = nil
     // Vibe recording
     @StateObject private var vibeRecorder = VibeRecorder()
     /// Photo / Vibe / Reel — persisted across camera sessions.
@@ -3094,6 +3194,9 @@ struct CameraCaptureView: View {
         let id = UUID()
         let url: URL
     }
+    private static let orbitSpinHitboxSize: CGFloat = 224
+    private static let orbitModeStepAngle: Double = 120
+    private static let orbitMinimumStepDelta: Double = 28
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
 
@@ -3247,6 +3350,7 @@ struct CameraCaptureView: View {
         // SwiftUI evaluates those relentlessly during layout/animations).
         refreshPreviewChromeAttachmentFlags(for: moment)
         homeBottomNavRevealed?.wrappedValue = false
+        onSavePageActiveChanged?(true)
 
         captionModeMomentId = moment.id
         captionModeFrozenImage = frozen
@@ -3304,6 +3408,7 @@ struct CameraCaptureView: View {
         previewVibePlayer.stop()
         previewVoiceMemoPlayer.stop()
         momentVideoPreviewItem = nil
+        onSavePageActiveChanged?(false)
         cameraController.startRunning()
         syncInAppCameraAudioSession()
 
@@ -3534,7 +3639,15 @@ struct CameraCaptureView: View {
                 Color.black
                     .ignoresSafeArea()
             } else {
-                FullScreenCameraPreview(session: cameraController.session)
+                FullScreenCameraPreview(
+                    session: cameraController.session,
+                    onTapToFocus: { viewPoint, devicePoint in
+                        handleTapToFocus(viewPoint: viewPoint, devicePoint: devicePoint)
+                    },
+                    onDoubleTapToFlip: {
+                        cameraController.flipCamera()
+                    }
+                )
                     .gesture(cameraZoomGesture)
             }
         } else {
@@ -3563,6 +3676,39 @@ struct CameraCaptureView: View {
                     await MainActor.run { showZoomIndicator = false }
                 }
             }
+    }
+
+    private func handleTapToFocus(viewPoint: CGPoint, devicePoint: CGPoint) {
+        guard cameraController.isConfigured, !isCaptionModeActive else { return }
+        cameraController.focusAndExpose(at: devicePoint)
+        focusReticleTask?.cancel()
+        focusReticlePoint = viewPoint
+        withAnimation(.easeOut(duration: 0.12)) {
+            showFocusReticle = true
+        }
+        focusReticleTask = Task {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    showFocusReticle = false
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var focusReticleOverlay: some View {
+        if showFocusReticle, let point = focusReticlePoint {
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(Color.yellow, lineWidth: 1.6)
+                .frame(width: 74, height: 74)
+                .position(point)
+                .scaleEffect(showFocusReticle ? 1.0 : 1.15)
+                .shadow(color: .black.opacity(0.32), radius: 2, y: 1)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
     }
 
     /// Top inset for camera chrome (live + frozen preview).
@@ -3635,38 +3781,40 @@ struct CameraCaptureView: View {
     private var nonCaptionCameraOverlay: some View {
         // Overlay UI (shutter + status) on top of preview — explicit ZStack fills the display.
         ZStack {
-        VStack {
-            Spacer()
-            if cameraController.authorizationDenied {
-                Button {
-                    openAppSettings()
-                } label: {
-                    VStack(spacing: 8) {
-                        Image(systemName: "camera.slash")
-                            .font(.system(size: 34, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.9))
-                        (Text("Enable camera access in ") + Text("Settings").underline() + Text(" to capture moments."))
-                            .multilineTextAlignment(.center)
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.8))
-                            .padding(.horizontal, 24)
+            focusReticleOverlay
+
+            VStack {
+                Spacer()
+                if cameraController.authorizationDenied {
+                    Button {
+                        openAppSettings()
+                    } label: {
+                        VStack(spacing: 8) {
+                            Image(systemName: "camera.slash")
+                                .font(.system(size: 34, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.9))
+                            (Text("Enable camera access in ") + Text("Settings").underline() + Text(" to capture moments."))
+                                .multilineTextAlignment(.center)
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.8))
+                                .padding(.horizontal, 24)
+                        }
+                        .padding(.bottom, 24)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.bottom, 24)
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open Settings")
+                    .accessibilityHint("Enable camera access for this app")
+                } else if !cameraController.isConfigured {
+                    ProgressView("Preparing camera…")
+                        .tint(.white)
+                        .foregroundColor(.white)
+                        .padding(.bottom, 24)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open Settings")
-                .accessibilityHint("Enable camera access for this app")
-            } else if !cameraController.isConfigured {
-                ProgressView("Preparing camera…")
-                    .tint(.white)
-                    .foregroundColor(.white)
-                    .padding(.bottom, 24)
+                shutterBar
+                    .padding(.bottom, showsBottomNavBar ? 8 : max(cameraChromeSafeBottom, 8))
             }
-            shutterBar
-                .padding(.bottom, showsBottomNavBar ? 8 : max(cameraChromeSafeBottom, 8))
-        }
 
         // Zoom level indicator - appears while pinching, fades out (hidden when dial is open)
         if showZoomIndicator {
@@ -3738,26 +3886,7 @@ struct CameraCaptureView: View {
             .animation(.easeInOut(duration: 0.3), value: isVibeCaptureEnabled)
         }
 
-        // Top row: Back reveals home nav (chevron hides until nav auto-dismisses or user picks a tab).
-        if let navRevealed = homeBottomNavRevealed, navRevealed.wrappedValue == false, !isCaptionModeActive {
-            Button {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    navRevealed.wrappedValue = true
-                }
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
-            .padding(.top, cameraChromeSafeTop + 4)
-            .padding(.leading, 16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else if onDismissOverlay != nil || isBlogEmbeddedCamera {
+        if onDismissOverlay != nil || isBlogEmbeddedCamera {
             Button {
                 closeCamera()
             } label: {
@@ -4874,6 +5003,7 @@ struct CameraCaptureView: View {
             cameraController.cancelMomentVideoRecording()
             vibeRecorder.cancelAndDelete()
             InAppCameraAudioSession.deactivateAfterCamera()
+            onSavePageActiveChanged?(false)
             // Sync any captions typed in the gallery into the blog for real-time injected photos.
             syncSessionCaptionsToBlog()
             // If user swipes away with unsaved session moments (e.g. closed before blog creation completed), save as draft.
@@ -5693,14 +5823,7 @@ struct CameraCaptureView: View {
                 .frame(maxWidth: .infinity)
                 .disabled(cameraController.isRecordingMomentVideo)
 
-                Group {
-                    if isReelCaptureMode {
-                        reelShutterControl
-                    } else {
-                        photoShutterButton
-                    }
-                }
-                .frame(width: 88)
+                orbitShutterArea
 
                 Button {
                     isShowingSessionGallery = true
@@ -5710,8 +5833,6 @@ struct CameraCaptureView: View {
                 .frame(maxWidth: .infinity)
                 .disabled(cameraController.isRecordingMomentVideo)
             }
-
-            captureModePicker
         }
         .padding(.horizontal, 24)
         .animation(.easeInOut(duration: 0.2), value: cameraController.isRecordingMomentVideo)
@@ -5740,6 +5861,234 @@ struct CameraCaptureView: View {
         }
         .disabled(cameraController.isRecordingMomentVideo)
         .accessibilityLabel(isVibeCaptureEnabled ? "Take photo with vibe" : "Take photo")
+    }
+
+    // MARK: - Orbit mode wheel
+
+    private func modeBaseAngle(_ mode: CameraCaptureMode) -> Double {
+        switch mode {
+        case .photo: return 150  // lower-left at rest
+        case .vibe:  return 270  // top at rest (12 o'clock) — initial active
+        case .reel:  return 30   // lower-right at rest
+        }
+    }
+
+    /// Mode whose label is currently closest to the 12 o'clock (top) reference.
+    private var orbitActiveMode: CameraCaptureMode {
+        let ref = 270.0
+        var closest: CameraCaptureMode = .vibe
+        var minDist = Double.infinity
+        for mode in CameraCaptureMode.allCases {
+            var eff = (modeBaseAngle(mode) + modeWheelAngle).truncatingRemainder(dividingBy: 360)
+            if eff < 0 { eff += 360 }
+            var dist = abs(eff - ref)
+            if dist > 180 { dist = 360 - dist }
+            if dist < minDist { minDist = dist; closest = mode }
+        }
+        return closest
+    }
+
+    /// Nearest wheel angle that places `mode` at the 12 o'clock reference.
+    private func snapAngle(for mode: CameraCaptureMode) -> Double {
+        snapAngle(for: mode, near: modeWheelAngle)
+    }
+
+    /// Nearest wheel angle to `referenceAngle` that places `mode` at the 12 o'clock reference.
+    private func snapAngle(for mode: CameraCaptureMode, near referenceAngle: Double) -> Double {
+        let base = 270.0 - modeBaseAngle(mode)
+        let n = ((referenceAngle - base) / 360).rounded()
+        return base + n * 360
+    }
+
+    private func nearestSnappedOrbitAngle(to angle: Double) -> Double {
+        (angle / Self.orbitModeStepAngle).rounded() * Self.orbitModeStepAngle
+    }
+
+    private func snappedOrbitAngleAfterDrag(from startAngle: Double, delta: Double) -> Double {
+        let startSnap = nearestSnappedOrbitAngle(to: startAngle)
+        guard abs(delta) >= Self.orbitMinimumStepDelta else { return startSnap }
+        return startSnap + (delta > 0 ? Self.orbitModeStepAngle : -Self.orbitModeStepAngle)
+    }
+
+    private func modeStepping(from mode: CameraCaptureMode, wheelDelta: Double) -> CameraCaptureMode {
+        let modes: [CameraCaptureMode] = [.vibe, .photo, .reel]
+        guard let index = modes.firstIndex(of: mode) else { return .vibe }
+        let offset = wheelDelta > 0 ? 1 : -1
+        let nextIndex = (index + offset + modes.count) % modes.count
+        return modes[nextIndex]
+    }
+
+    private func suppressOrbitModeLabelTapBriefly() {
+        orbitModeLabelTapSuppressionTask?.cancel()
+        orbitSuppressModeLabelTap = true
+        orbitModeLabelTapSuppressionTask = Task {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                orbitSuppressModeLabelTap = false
+                orbitModeLabelTapSuppressionTask = nil
+            }
+        }
+    }
+
+    /// Mode at top when wheel is snapped to `angle`.
+    private func modeAtSnappedAngle(_ angle: Double) -> CameraCaptureMode {
+        let step = Int((angle / 120).rounded())
+        let mod = ((step % 3) + 3) % 3
+        return [CameraCaptureMode.vibe, .photo, .reel][mod]
+    }
+
+    private func normalizedOrbitAngle(_ angle: Double) -> Double {
+        let value = angle.truncatingRemainder(dividingBy: 360)
+        return value < 0 ? value + 360 : value
+    }
+
+    private func signedOrbitAngle(_ angle: Double) -> Double {
+        var value = (angle + 180).truncatingRemainder(dividingBy: 360)
+        if value < 0 { value += 360 }
+        return value - 180
+    }
+
+    private func orbitLabelPosition(for mode: CameraCaptureMode) -> CGPoint {
+        let radius: CGFloat = 62
+        let angle = normalizedOrbitAngle(modeBaseAngle(mode))
+        let rad = angle * .pi / 180
+        let center = Self.orbitSpinHitboxSize / 2
+        return CGPoint(
+            x: center + radius * CGFloat(cos(rad)),
+            y: center + radius * CGFloat(sin(rad))
+        )
+    }
+
+    private func orbitDividerPosition(at angle: Double) -> CGPoint {
+        let radius: CGFloat = 70
+        let normalized = normalizedOrbitAngle(angle)
+        let rad = normalized * .pi / 180
+        let center = Self.orbitSpinHitboxSize / 2
+        return CGPoint(
+            x: center + radius * CGFloat(cos(rad)),
+            y: center + radius * CGFloat(sin(rad))
+        )
+    }
+
+    private func orbitLabelTextRotation(for mode: CameraCaptureMode) -> Double {
+        let effectiveAngle = modeBaseAngle(mode) + modeWheelAngle
+        var readableTangent = signedOrbitAngle(effectiveAngle + 90)
+        if readableTangent > 90 { readableTangent -= 180 }
+        if readableTangent < -90 { readableTangent += 180 }
+        return signedOrbitAngle(readableTangent - modeWheelAngle)
+    }
+
+    private var orbitSpinGesture: some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .local)
+            .onChanged { value in
+                guard !cameraController.isRecordingMomentVideo else { return }
+                let center = CGPoint(
+                    x: Self.orbitSpinHitboxSize / 2,
+                    y: Self.orbitSpinHitboxSize / 2
+                )
+                let curr = value.location
+                let currAngle = atan2(Double(curr.y - center.y), Double(curr.x - center.x)) * (180 / .pi)
+                if let previousAngle = orbitDragPreviousTouchAngle {
+                    orbitDragAccumulatedDelta += signedOrbitAngle(currAngle - previousAngle)
+                    modeWheelAngle = orbitDragStartWheelAngle + orbitDragAccumulatedDelta
+                } else {
+                    orbitDragPreviousTouchAngle = currAngle
+                    orbitDragAccumulatedDelta = 0
+                    orbitDragStartWheelAngle = modeWheelAngle
+                }
+                orbitDragPreviousTouchAngle = currAngle
+            }
+            .onEnded { _ in
+                let dragDelta = orbitDragAccumulatedDelta
+                let startAngle = orbitDragStartWheelAngle
+                orbitDragPreviousTouchAngle = nil
+                orbitDragAccumulatedDelta = 0
+                orbitDragStartWheelAngle = startAngle
+                guard !cameraController.isRecordingMomentVideo else { return }
+                let snapped = snappedOrbitAngleAfterDrag(from: startAngle, delta: dragDelta)
+                let newMode: CameraCaptureMode
+                if abs(dragDelta) >= Self.orbitMinimumStepDelta {
+                    newMode = modeStepping(from: captureMode, wheelDelta: dragDelta)
+                    suppressOrbitModeLabelTapBriefly()
+                } else {
+                    newMode = modeAtSnappedAngle(snapped)
+                }
+                let targetAngle = snapAngle(for: newMode, near: snapped)
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                    modeWheelAngle = targetAngle
+                }
+                if newMode != captureMode {
+                    if newMode == .vibe, !hasSeenVibeTooltip { showVibeTooltip = true }
+                    setCaptureMode(newMode)
+                }
+            }
+    }
+
+    private var orbitShutterArea: some View {
+        ZStack {
+            Circle()
+                .fill(Color.black.opacity(0.18))
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
+                .frame(width: 184, height: 184)
+                .allowsHitTesting(false)
+
+            ZStack {
+                ForEach([90.0, 210.0, 330.0], id: \.self) { angle in
+                    Capsule()
+                        .fill(Color.white.opacity(0.42))
+                        .frame(width: 2.5, height: 34)
+                        .rotationEffect(.degrees(angle - 90))
+                        .position(orbitDividerPosition(at: angle))
+                        .allowsHitTesting(false)
+                }
+
+                ForEach(CameraCaptureMode.allCases) { mode in
+                    Button {
+                        guard !cameraController.isRecordingMomentVideo else { return }
+                        guard !orbitSuppressModeLabelTap else { return }
+                        let target = snapAngle(for: mode)
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                            modeWheelAngle = target
+                        }
+                        if mode != captureMode {
+                            if mode == .vibe, !hasSeenVibeTooltip { showVibeTooltip = true }
+                            setCaptureMode(mode)
+                        }
+                    } label: {
+                        CurvedText(
+                            text: mode.label,
+                            fontSize: 12,
+                            isActive: orbitActiveMode == mode
+                        )
+                        .rotationEffect(.degrees(orbitLabelTextRotation(for: mode)))
+                        .frame(minWidth: 54, minHeight: 34)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .position(orbitLabelPosition(for: mode))
+                    .accessibilityLabel("\(mode.label) mode")
+                    .accessibilityAddTraits(orbitActiveMode == mode ? .isSelected : [])
+                }
+            }
+            .frame(width: Self.orbitSpinHitboxSize, height: Self.orbitSpinHitboxSize)
+            .rotationEffect(.degrees(modeWheelAngle))
+
+            if isReelCaptureMode {
+                reelShutterControl
+            } else {
+                photoShutterButton
+            }
+        }
+        .frame(width: Self.orbitSpinHitboxSize, height: Self.orbitSpinHitboxSize)
+        .contentShape(Circle())
+        .simultaneousGesture(orbitSpinGesture)
+        .onAppear {
+            modeWheelAngle = snapAngle(for: captureMode)
+        }
     }
 
     /// Red circle shutter for Reel mode (iOS-camera video style).

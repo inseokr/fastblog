@@ -9,6 +9,7 @@ import Foundation
 /// Tracks onboarding completion and neighborhood selection (50 mile radius).
 enum OnboardingStore {
     private static let hasCompletedOnboardingKey = "blogify.hasCompletedOnboarding"
+    private static let hasAuthenticatedDuringOnboardingKey = "blogify.hasAuthenticatedDuringOnboarding"
     private static let neighborhoodLatKey = "blogify.neighborhoodLat"
     private static let neighborhoodLonKey = "blogify.neighborhoodLon"
     private static let neighborhoodRadiusMilesKey = "blogify.neighborhoodRadiusMiles"
@@ -16,6 +17,11 @@ enum OnboardingStore {
     static var hasCompletedOnboarding: Bool {
         get { UserDefaults.standard.bool(forKey: hasCompletedOnboardingKey) }
         set { UserDefaults.standard.set(newValue, forKey: hasCompletedOnboardingKey) }
+    }
+
+    static var hasAuthenticatedDuringOnboarding: Bool {
+        get { UserDefaults.standard.bool(forKey: hasAuthenticatedDuringOnboardingKey) }
+        set { UserDefaults.standard.set(newValue, forKey: hasAuthenticatedDuringOnboardingKey) }
     }
 
     static var neighborhoodCenter: CLLocationCoordinate2D? {
