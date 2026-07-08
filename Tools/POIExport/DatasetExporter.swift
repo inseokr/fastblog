@@ -26,7 +26,7 @@ struct DatasetExporter {
     // MARK: - CSV
 
     private func writeCSV(records: [PhotoRecord]) throws {
-        let header = "filename,latitude,longitude,timestamp,camera_model,suggested_place_name,suggested_city,suggested_country,verified_place_name,notes"
+        let header = "filename,latitude,longitude,timestamp,camera_model,suggested_place_name,suggested_city,suggested_country,mapkit_place_name,mapkit_category,mapkit_city,mapkit_country,verified_place_name,notes"
         var lines = [header]
         for r in records {
             let row = [
@@ -38,6 +38,10 @@ struct DatasetExporter {
                 csvEscape(r.suggestedPlaceName),
                 csvEscape(r.suggestedCity),
                 csvEscape(r.suggestedCountry),
+                csvEscape(r.mapkitPlaceName),
+                csvEscape(r.mapkitCategory),
+                csvEscape(r.mapkitCity),
+                csvEscape(r.mapkitCountry),
                 csvEscape(r.verifiedPlaceName),
                 csvEscape(r.notes)
             ].joined(separator: ",")
@@ -90,6 +94,10 @@ private struct JSONRecord: Encodable {
     let suggested_place_name: String?
     let suggested_city: String?
     let suggested_country: String?
+    let mapkit_place_name: String?
+    let mapkit_category: String?
+    let mapkit_city: String?
+    let mapkit_country: String?
     let verified_place_name: String
     let notes: String
 
@@ -102,6 +110,10 @@ private struct JSONRecord: Encodable {
         suggested_place_name = r.suggestedPlaceName
         suggested_city = r.suggestedCity
         suggested_country = r.suggestedCountry
+        mapkit_place_name = r.mapkitPlaceName
+        mapkit_category = r.mapkitCategory
+        mapkit_city = r.mapkitCity
+        mapkit_country = r.mapkitCountry
         verified_place_name = r.verifiedPlaceName
         notes = r.notes
     }
@@ -117,6 +129,10 @@ private struct JSONRecord: Encodable {
         try c.encode(suggested_place_name, forKey: .suggested_place_name)
         try c.encode(suggested_city, forKey: .suggested_city)
         try c.encode(suggested_country, forKey: .suggested_country)
+        try c.encode(mapkit_place_name, forKey: .mapkit_place_name)
+        try c.encode(mapkit_category, forKey: .mapkit_category)
+        try c.encode(mapkit_city, forKey: .mapkit_city)
+        try c.encode(mapkit_country, forKey: .mapkit_country)
         try c.encode(verified_place_name, forKey: .verified_place_name)
         try c.encode(notes, forKey: .notes)
     }
@@ -124,6 +140,7 @@ private struct JSONRecord: Encodable {
     private enum CodingKeys: String, CodingKey {
         case filename, latitude, longitude, timestamp
         case camera_model, suggested_place_name, suggested_city, suggested_country
+        case mapkit_place_name, mapkit_category, mapkit_city, mapkit_country
         case verified_place_name, notes
     }
 }
