@@ -59,3 +59,6 @@ Secrets.xcconfig
 
 # Xcode test results
 TestResults/
+
+# Git worktrees for isolated agent work
+.worktrees/
