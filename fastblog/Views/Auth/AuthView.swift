@@ -127,6 +127,9 @@ struct AuthView: View {
         }
         .onAppear {
             AuthService.Analytics.track(.authCreateAccountTapped)
+            if authService.currentUser != nil {
+                onAuthenticated?()
+            }
         }
         } // NavigationStack
     }
@@ -147,7 +150,7 @@ struct AuthView: View {
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
 
-            Text("Save and export unlimited blogs.\nGuests can export one blog to try Bloggo.")
+            Text("Save your blogs, access them anywhere.")
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)

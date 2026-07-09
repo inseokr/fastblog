@@ -330,6 +330,7 @@ struct RecapBlogPageView: View {
 
     // MARK: - Panorama
     @State private var showPanorama = false
+    @State private var showCleanupFromGallery = false
 
     /// True if the user has saved this blog to the local device at least once (tap Save on recap page).
     /// We only show "X moments found" for blogs that have been saved; camera-originated trips that are still just trips use the timeline only.
@@ -553,25 +554,33 @@ struct RecapBlogPageView: View {
             }
 
             if let day = fullScreenMapDay {
-                FullScreenMapView(day: day, onDismiss: {
-                    fullScreenMapDay = nil
-                    fullScreenMapFocusedPlaceId = nil
-                }, onCaptionSaved: { stopId, photoId, newCaption in
-                    bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
-                    persistRecapBlogDetail()
-                    syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
-                }, onPlaceNameSaved: { stopId, name, category, coordinate, subtitleLine in
-                    updatePlaceTitle(
-                        stopId: stopId,
-                        to: name,
-                        category: category,
-                        coordinate: coordinate,
-                        placeSubtitleLine: subtitleLine
-                    )
-                }, initialFocusedPlaceId: fullScreenMapFocusedPlaceId)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-                    .zIndex(145)
+                let initialDayIndex = draft.days.firstIndex(where: { $0.id == day.id }) ?? 0
+                FullScreenMapView(
+                    allDays: draft.days,
+                    initialDayIndex: initialDayIndex,
+                    onDismiss: {
+                        fullScreenMapDay = nil
+                        fullScreenMapFocusedPlaceId = nil
+                    },
+                    onCaptionSaved: { dayId, stopId, photoId, newCaption in
+                        bindingForPhotoCaption(dayId: dayId, stopId: stopId, photoId: photoId).wrappedValue = newCaption
+                        persistRecapBlogDetail()
+                        syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
+                    },
+                    onPlaceNameSaved: { stopId, name, category, coordinate, subtitleLine in
+                        updatePlaceTitle(
+                            stopId: stopId,
+                            to: name,
+                            category: category,
+                            coordinate: coordinate,
+                            placeSubtitleLine: subtitleLine
+                        )
+                    },
+                    initialFocusedPlaceId: fullScreenMapFocusedPlaceId
+                )
+                .ignoresSafeArea()
+                .transition(.opacity)
+                .zIndex(145)
             }
 
             if let item = placeCaptionEditItem, let stop = placeStop(dayId: item.dayId, stopId: item.stopId) {
@@ -1358,7 +1367,7 @@ struct RecapBlogPageView: View {
                     isLimitedPhotoLibraryAccess: photoAuth.status == .limited,
                     onExpandSharedPhotoLibrary: {
                         presentLimitedLibraryPickerForManageStopImport(dayId: pair.dayId, stopId: pair.stopId)
-                    }
+                    },
                 )
             }
             .sheet(isPresented: $showLibraryImportForManageStop) {
@@ -1456,13 +1465,19 @@ struct RecapBlogPageView: View {
                 blogId: blogId,
                 blogTitle: draft.title,
                 dayLabels: dayLabels,
-                startInGallery: false,
+                startInGallery: true,
                 onDismiss: { showPanorama = false },
                 onAppCaptureDeletedFromSlideshow: { identifier in
                     removeAppCapturePhotoFromSlideshow(identifier: identifier)
                 },
                 onPausedMetadataTapped: { identifier in
                     openPlaceModalFromPanoramaCaptionTap(localIdentifier: identifier)
+                },
+                onPhotosRemovedFromBlog: { identifiers in
+                    removePhotosFromBlogViaGallery(identifiers: identifiers)
+                },
+                onCleanupUnused: {
+                    showCleanupFromGallery = true
                 }
             )
         }
@@ -1470,6 +1485,12 @@ struct RecapBlogPageView: View {
 
     private func applyFinalContentModifiers<Content: View>(to content: Content) -> some View {
         content
+            .sheet(isPresented: $showCleanupFromGallery) {
+                NavigationStack {
+                    StorageManagementView(draft: $draft, onSave: { saveDraft() })
+                }
+                .preferredColorScheme(.dark)
+            }
             .sheet(isPresented: Binding(
                 get: { unsavedSplitPromptIndex != nil },
                 set: { if !$0 { unsavedSplitPromptIndex = nil } }
@@ -2423,7 +2444,7 @@ struct RecapBlogPageView: View {
                                     Circle()
                                         .fill(Color.gray.opacity(0.55))
                                         .frame(width: 36, height: 36)
-                                    Image(systemName: "film")
+                                    Image(systemName: "square.grid.3x3.fill")
                                         .font(.body.weight(.semibold))
                                         .foregroundStyle(.white)
                                         .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
@@ -2432,7 +2453,7 @@ struct RecapBlogPageView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Slideshow")
+                            .accessibilityLabel("Gallery")
                             .padding(.trailing, 16)
                         }
                         Spacer(minLength: 0)
@@ -4440,6 +4461,19 @@ Your blog remains private unless you choose to share it.
         persistRecapBlogDetail()
         if let placeKey = stop.visitedTimeDigitized, photo.cloudURL != nil {
             Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "delete") }
+        }
+    }
+
+    /// Marks a set of photos as not included in the blog (called from the gallery select mode).
+    private func removePhotosFromBlogViaGallery(identifiers: [String]) {
+        for identifier in identifiers {
+            for day in draft.days {
+                for stop in day.placeStops {
+                    guard let photo = stop.photos.first(where: { $0.localIdentifier == identifier }) else { continue }
+                    removePhoto(dayId: day.id, stopId: stop.id, photoId: photo.id)
+                    break
+                }
+            }
         }
     }
 

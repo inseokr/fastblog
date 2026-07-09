@@ -564,8 +564,8 @@ private struct ManagePhotoGridCell: View {
                                 .frame(width: 22, height: 22)
                         }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(6)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 } else if photo.isIncluded {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 22))
