@@ -165,6 +165,13 @@ struct PlacesVisitedView: View {
     @State private var showPromoteToBlogConfirmation = false
     @State private var placePendingPromote: VisitedPlaceSummary?
 
+    @State private var isExportingPlacesData = false
+    @State private var placesDataExportProgress: Double = 0
+    @State private var placesDataExportShareURL: URL?
+    @State private var showPlacesDataExportShareSheet = false
+    @State private var placesDataExportAlertMessage: String?
+    @State private var showPlacesDataExportAlert = false
+
     private let horizontalPadding: CGFloat = 16
 
     private var visiblePlaces: [VisitedPlaceSummary] {
@@ -646,6 +653,21 @@ struct PlacesVisitedView: View {
                     ShareSheet(items: [url])
                 }
             }
+            .sheet(isPresented: $showPlacesDataExportShareSheet, onDismiss: {
+                if let u = placesDataExportShareURL {
+                    try? FileManager.default.removeItem(at: u)
+                    placesDataExportShareURL = nil
+                }
+            }) {
+                if let u = placesDataExportShareURL {
+                    ShareSheet(items: [u])
+                }
+            }
+            .alert("Export failed", isPresented: $showPlacesDataExportAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(placesDataExportAlertMessage ?? "Something went wrong.")
+            }
             .overlay {
                 if showPlacesSocialStudio, let draft = placesShareDraft {
                     SocialPostStudioSheet(
@@ -699,6 +721,56 @@ struct PlacesVisitedView: View {
         }
         .onAppear { syncHomeBottomNavSuppression() }
         .onDisappear { suppressHomeBottomNav = false }
+        .overlay {
+            if isExportingPlacesData {
+                ZStack {
+                    Color.black.opacity(0.5).ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        Text("Exporting places…")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        ProgressView(value: placesDataExportProgress, total: 1)
+                            .tint(.white)
+                            .frame(maxWidth: 220)
+                        Text("\(Int((placesDataExportProgress * 100).rounded(.down)))%")
+                            .font(.title3.monospacedDigit())
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                    .padding(28)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 16))
+                }
+                .transition(.opacity)
+                .zIndex(400)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isExportingPlacesData)
+    }
+
+    @MainActor
+    private func exportPlacesDataTapped() async {
+        isExportingPlacesData = true
+        placesDataExportProgress = 0
+        defer {
+            isExportingPlacesData = false
+            placesDataExportProgress = 0
+        }
+        do {
+            let url = try await PlacesDataExportService.exportZip(
+                places: createdRecapStore.visitedPlaces,
+                progress: { frac in
+                    Task { @MainActor in
+                        placesDataExportProgress = frac
+                    }
+                }
+            )
+            await Task.yield()
+            placesDataExportProgress = 1
+            placesDataExportShareURL = url
+            showPlacesDataExportShareSheet = true
+        } catch {
+            placesDataExportAlertMessage = error.localizedDescription
+            showPlacesDataExportAlert = true
+        }
     }
 
     @ToolbarContentBuilder
@@ -722,32 +794,29 @@ struct PlacesVisitedView: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(.primary)
                 } else {
-                    if hiddenMyPlacesStore.hiddenCount > 0 {
-                        Menu {
-                            Button {
-                                isSelectMode = true
-                            } label: {
-                                Label("Select Places", systemImage: "checkmark.circle")
-                            }
+                    Menu {
+                        Button {
+                            isSelectMode = true
+                        } label: {
+                            Label("Select Places", systemImage: "checkmark.circle")
+                        }
+                        Button {
+                            Task { await exportPlacesDataTapped() }
+                        } label: {
+                            Label("Export Places Data", systemImage: "square.and.arrow.up.on.square")
+                        }
+                        if hiddenMyPlacesStore.hiddenCount > 0 {
                             Button {
                                 showHiddenPlacesSheet = true
                             } label: {
                                 Label("Hidden Places (\(hiddenMyPlacesStore.hiddenCount))", systemImage: "eye.slash")
                             }
-                        } label: {
-                            Image(systemName: "checklist")
-                                .foregroundStyle(.primary)
                         }
-                        .accessibilityLabel("Manage places")
-                    } else {
-                        Button {
-                            isSelectMode = true
-                        } label: {
-                            Image(systemName: "checklist")
-                                .foregroundStyle(.primary)
-                        }
-                        .accessibilityLabel("Manage places")
+                    } label: {
+                        Image(systemName: "checklist")
+                            .foregroundStyle(.primary)
                     }
+                    .accessibilityLabel("Manage places")
                 }
             }
             if isSearchActive {
@@ -1120,7 +1189,11 @@ struct PlaceVisitedPhotoModalWrapper: View {
                         guard !trimmed.isEmpty else { return }
                         livePlaceTitle = trimmed
                         // Name-only fallback; full update (with category/coord/subtitle) handled by onSavePlaceName.
-                        store.updatePlaceStopName(photoId: initialPhotoId, newName: trimmed)
+                        store.updatePlaceStopName(
+                            photoId: initialPhotoId,
+                            additionalPhotoIds: photos.map(\.id),
+                            newName: trimmed
+                        )
                     }
                 ),
                 placeSubtitle: place.cityDisplay ?? place.country,
@@ -1160,6 +1233,7 @@ struct PlaceVisitedPhotoModalWrapper: View {
                     livePlaceTitle = trimmed
                     store.updatePlaceStopFromPlacesVisited(
                         photoId: initialPhotoId,
+                        additionalPhotoIds: photos.map(\.id),
                         newName: trimmed,
                         category: category,
                         coordinate: coord,

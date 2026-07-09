@@ -18,7 +18,6 @@ struct AppCaptureDetailView: View {
     let initialId: UUID
     var onDelete: (UUID) -> Void
     var onCaptionSaved: (UUID, String?) -> Void
-    var onPlaceSaved: ((UUID) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -31,7 +30,6 @@ struct AppCaptureDetailView: View {
     @State private var showDeleteConfirm = false
     @State private var isGeneratingCaption = false
 
-    @State private var showEditPlaceSheet = false
     @State private var isResolvingPlaceName = false
     @State private var pendingCaptionEditorClose = false
     @FocusState private var captionFocused: Bool
@@ -176,53 +174,6 @@ struct AppCaptureDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will permanently remove the photo from your device.")
-        }
-        .fullScreenCover(isPresented: $showEditPlaceSheet) {
-            if let item = currentItem {
-                let assetId = AppCapturePhotoService.identifier(for: item.id)
-                let photoId = CreatedRecapBlogStore.shared.recapPhotoIdForAppCapture(captureId: item.id) ?? item.id
-                EditPlaceStopNameSheet(
-                    placeTitle: $resolvedPlaceTitle,
-                    initialPlaceSubtitle: resolvedPlaceSubtitle,
-                    initialPlaceCategory: CreatedRecapBlogStore.shared.placeCategoryForAppCapture(captureId: item.id),
-                    location: CreatedRecapBlogStore.shared.mapCenterCoordinateForAppCapture(captureId: item.id)
-                        ?? item.location?.clCoordinate,
-                    photos: [RecapPhoto(
-                        id: photoId,
-                        timestamp: item.timestamp,
-                        location: item.location,
-                        imageName: "camera.fill",
-                        localIdentifier: assetId,
-                        caption: item.caption
-                    )],
-                    onSave: { name, coord, category, subtitle in
-                        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmedName.isEmpty {
-                            resolvedPlaceTitle = trimmedName
-                        }
-                        let trimmedSubtitle = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                        resolvedPlaceSubtitle = trimmedSubtitle.isEmpty ? nil : trimmedSubtitle
-                        CreatedRecapBlogStore.shared.updatePlaceStopFromAppCapture(
-                            captureId: item.id,
-                            newName: name,
-                            category: category,
-                            coordinate: coord,
-                            subtitle: subtitle
-                        )
-                        if let coord, items.indices.contains(currentIndex) {
-                            items[currentIndex].location = PhotoCoordinate(
-                                latitude: coord.latitude,
-                                longitude: coord.longitude
-                            )
-                        } else if let info = AppCapturePhotoService.shared.metadata(captureId: item.id),
-                                  let loc = info.location,
-                                  items.indices.contains(currentIndex) {
-                            items[currentIndex].location = loc
-                        }
-                        onPlaceSaved?(item.id)
-                    }
-                )
-            }
         }
         .fullScreenCover(item: $momentVideoPlaybackItem) { item in
             MomentVideoFullScreenPlayer(url: item.url) {
@@ -421,32 +372,13 @@ struct AppCaptureDetailView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Button {
-                            showEditPlaceSheet = true
-                        } label: {
-                            Text(placeTitle)
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                                .shadow(color: .black.opacity(0.4), radius: 2)
-                                .multilineTextAlignment(.leading)
-                        }
-                        .buttonStyle(.plain)
-
-                        Button {
-                            showEditPlaceSheet = true
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.white.opacity(0.22))
-                                Image(systemName: "square.and.pencil")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(.white)
-                            }
-                            .frame(width: 28, height: 28)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Edit place name and location")
+                        // Read-only — sourced from place data; edit in My Places.
+                        Text(placeTitle)
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.4), radius: 2)
+                            .multilineTextAlignment(.leading)
 
                         Spacer(minLength: 0)
                     }
@@ -636,22 +568,6 @@ struct AppCaptureDetailView: View {
                                 .font(.title3)
                                 .fontWeight(.bold)
                                 .foregroundColor(.white)
-
-                            Button {
-                                captionFocused = false
-                                showEditPlaceSheet = true
-                            } label: {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color.white.opacity(0.22))
-                                    Image(systemName: "square.and.pencil")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(.white)
-                                }
-                                .frame(width: 28, height: 28)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Edit place name and location")
                         }
 
                         if !Self.dateFormatter.string(from: item.timestamp).isEmpty {

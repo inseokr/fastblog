@@ -299,11 +299,6 @@ struct AppCaptureGalleryView: View {
                     if let idx = items.firstIndex(where: { $0.id == id }) {
                         items[idx].caption = caption
                     }
-                },
-                onPlaceSaved: { id in
-                    guard let idx = items.firstIndex(where: { $0.id == id }),
-                          let info = AppCapturePhotoService.shared.metadata(captureId: id) else { return }
-                    items[idx].location = info.location
                 }
             )
         }

@@ -3066,7 +3066,6 @@ struct CameraCaptureView: View {
     @State private var captionModePlaceSubtitle: String?
     /// Monotonic token to ignore stale async place-title refresh results.
     @State private var captionModePlaceRefreshToken: Int = 0
-    @State private var showCaptionModeEditPlaceSheet = false
     /// Inline caption editor visibility within the post-capture preview overlay.
     @State private var previewIsEditingCaption = false
     @FocusState private var previewCaptionFocused: Bool
@@ -4145,33 +4144,24 @@ struct CameraCaptureView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .center, spacing: 10) {
-                            Button {
-                                guard canOpenCaptionModePlaceEditor else {
-                                    showToast("Setting up place details…")
-                                    return
-                                }
-                                showCaptionModeEditPlaceSheet = true
-                            } label: {
-                                HStack(alignment: .center, spacing: 8) {
-                                    Text(placeTitle)
-                                        .font(.title3.weight(.bold))
-                                        .foregroundColor(.white)
-                                        .shadow(color: .black.opacity(0.4), radius: 2)
+                            // Read-only — place naming/editing lives in My Places, not capture mode.
+                            HStack(alignment: .center, spacing: 8) {
+                                Text(placeTitle)
+                                    .font(.title3.weight(.bold))
+                                    .foregroundColor(.white)
+                                    .shadow(color: .black.opacity(0.4), radius: 2)
 
-                                    Image(systemName: "mappin.and.ellipse")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .frame(width: 30, height: 30)
-                                        .background(Color.black.opacity(0.36), in: Circle())
-                                        .overlay(
-                                            Circle()
-                                                .stroke(Color.white.opacity(0.26), lineWidth: 1)
-                                        )
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                Image(systemName: "mappin.and.ellipse")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 30, height: 30)
+                                    .background(Color.black.opacity(0.36), in: Circle())
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.white.opacity(0.26), lineWidth: 1)
+                                    )
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Edit place name")
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
                         VStack(alignment: .leading, spacing: 6) {
@@ -4437,11 +4427,6 @@ struct CameraCaptureView: View {
                 previewIsEditingCaption = false
             }
         }
-    }
-
-    private var canOpenCaptionModePlaceEditor: Bool {
-        guard let moment = captionModeResolvedMoment else { return false }
-        return moment.injectedPhotoId != nil && moment.localIdentifier != nil
     }
 
     private func dismissPreviewCaptionEditor() {
@@ -4797,46 +4782,6 @@ struct CameraCaptureView: View {
                 }
                 refreshCaptionModePlaceChrome()
             }
-            }
-            .sheet(isPresented: $showCaptionModeEditPlaceSheet) {
-            Group {
-                if let moment = captionModeResolvedMoment,
-                   let photoId = moment.injectedPhotoId,
-                   let lid = moment.localIdentifier {
-                    let coord = moment.location?.clCoordinate ?? cameraController.currentLocation?.coordinate
-                    EditPlaceStopNameSheet(
-                        placeTitle: $captionModePlaceTitle,
-                        initialPlaceSubtitle: captionModePlaceSubtitle,
-                        location: coord,
-                        photos: [RecapPhoto(
-                            id: photoId,
-                            timestamp: moment.timestamp,
-                            location: moment.location,
-                            imageName: "camera.fill",
-                            localIdentifier: lid,
-                            caption: moment.caption
-                        )],
-                        onSave: { name, coord, category, subtitle in
-                            let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                            let trimmedSubtitle = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                            captionModePlaceRefreshToken += 1
-                            if !trimmedName.isEmpty {
-                                captionModePlaceTitle = trimmedName
-                            }
-                            captionModePlaceSubtitle = trimmedSubtitle.isEmpty ? nil : trimmedSubtitle
-                            createdRecapStore.updatePlaceStopFromPlacesVisited(
-                                photoId: photoId,
-                                newName: name,
-                                category: category,
-                                coordinate: coord,
-                                subtitle: subtitle
-                            )
-                        }
-                    )
-                }
-            }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
             }
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
