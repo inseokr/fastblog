@@ -742,10 +742,43 @@ final class CreatedRecapBlogStore: ObservableObject {
     }
 
     /// Creates a trip blog from everyday (My Places) captures and removes them from the everyday store.
+    /// - Note: a "My Places" card can merge in-app captures with regular Photo Library assets (see
+    ///   `isSamePlace`/`mergedWithEveryday`). `EverydayMomentsStore` only tracks `bloggo-capture:`
+    ///   identifiers, so library assets are carried over directly from `photos` here instead of being
+    ///   silently dropped — otherwise a blog created this way would lose any gallery photos merged
+    ///   into the selected place.
     @discardableResult
     func createTripBlogFromEverydayPhotos(_ photos: [RecapPhoto], preferredTitle: String? = nil) -> UUID? {
         let identifiers = Set(photos.compactMap(\.localIdentifier))
-        let mockPhotos = EverydayMomentsStore.shared.promoteCapturesToBlog(identifiers: identifiers)
+        let everydayIdentifiers = Set(identifiers.filter { AppCapturePhotoService.uuid(from: $0) != nil })
+        let libraryIdentifiers = identifiers.subtracting(everydayIdentifiers)
+
+        var mockPhotos = EverydayMomentsStore.shared.promoteCapturesToBlog(identifiers: everydayIdentifiers)
+
+        if !libraryIdentifiers.isEmpty {
+            let byIdentifier = Dictionary(
+                photos.compactMap { photo -> (String, RecapPhoto)? in
+                    guard let lid = photo.localIdentifier, libraryIdentifiers.contains(lid) else { return nil }
+                    return (lid, photo)
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let libraryMockPhotos = libraryIdentifiers.compactMap { lid -> MockPhoto? in
+                guard let photo = byIdentifier[lid] else { return nil }
+                return MockPhoto(
+                    id: photo.id,
+                    imageName: "photo",
+                    timestamp: photo.timestamp,
+                    locationName: "Captured Moment",
+                    isSelected: true,
+                    localIdentifier: lid,
+                    location: photo.location,
+                    caption: photo.caption
+                )
+            }
+            mockPhotos.append(contentsOf: libraryMockPhotos)
+        }
+
         guard !mockPhotos.isEmpty else { return nil }
 
         let cal = Calendar.current
@@ -2143,8 +2176,12 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Removes a created blog locally, but DOES NOT delete it from the cloud.
     func removeLocalCopy(sourceTripId: UUID) {
+        let deletedDetail = blogDetailsBySourceId[sourceTripId]
         recents.removeAll { $0.sourceTripId == sourceTripId }
         blogDetailsBySourceId.removeValue(forKey: sourceTripId)
+        if let deletedDetail {
+            restoreEverydayCapturesAfterBlogDeletion(deletedDetail)
+        }
         if pendingRecapCreated { pendingRecapCreated = false }
         lastDiscardedTripId = sourceTripId
         needsRescan = true
@@ -2161,6 +2198,21 @@ final class CreatedRecapBlogStore: ObservableObject {
             object: nil,
             userInfo: ["sourceTripId": sourceTripId]
         )
+    }
+
+    /// A blog's in-app captures are unlinked from `EverydayMomentsStore` the moment they're promoted
+    /// into a blog (see `promoteCapturesToBlog`) so they don't show twice in My Places. If the blog is
+    /// later deleted, that unlink is never undone, so those captures previously vanished from My Places
+    /// entirely (only a Tap to Blog rescan would resurface them). Re-register any that aren't claimed by
+    /// another surviving blog so they reappear as everyday captures.
+    private func restoreEverydayCapturesAfterBlogDeletion(_ detail: RecapBlogDetail) {
+        let stillClaimed = allInAppCaptureIdentifiersInVisibleBlogs()
+        let candidateIds = Set(detail.days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier))
+            .filter { $0.hasPrefix(AppCapturePhotoService.prefix) && !stillClaimed.contains($0) }
+        guard !candidateIds.isEmpty else { return }
+        for id in candidateIds {
+            EverydayMomentsStore.shared.registerCapture(localIdentifier: id)
+        }
     }
 
     // MARK: - Merge & Split

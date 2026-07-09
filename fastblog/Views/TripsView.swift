@@ -4274,23 +4274,11 @@ struct CameraCaptureView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .center, spacing: 10) {
                             // Read-only — place naming/editing lives in My Places, not capture mode.
-                            HStack(alignment: .center, spacing: 8) {
-                                Text(placeTitle)
-                                    .font(.title3.weight(.bold))
-                                    .foregroundColor(.white)
-                                    .shadow(color: .black.opacity(0.4), radius: 2)
-
-                                Image(systemName: "mappin.and.ellipse")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .frame(width: 30, height: 30)
-                                    .background(Color.black.opacity(0.36), in: Circle())
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color.white.opacity(0.26), lineWidth: 1)
-                                    )
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(placeTitle)
+                                .font(.title3.weight(.bold))
+                                .foregroundColor(.white)
+                                .shadow(color: .black.opacity(0.4), radius: 2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
                         VStack(alignment: .leading, spacing: 6) {
