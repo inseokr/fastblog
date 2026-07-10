@@ -81,7 +81,7 @@ struct RecapBlogPageView: View {
     }
 
     private struct BlogHighlightSlide: Identifiable {
-        let id = UUID()
+        var id: String { (assetIdentifier ?? "no-asset") + "|" + title }
         let title: String
         let subtitle: String
         let assetIdentifier: String?
@@ -1917,7 +1917,7 @@ struct RecapBlogPageView: View {
             // Always show the trip header (cover/title) on every day so swiping doesn't feel like the
             // cover "disappears" after Day 1. (Other trip-level affordances can still be Day 1 only.)
             if isHighlightsStyleEnabled {
-                cinematicHighlightsOpening(screenHeight: screenHeight)
+                cinematicHighlightsOpening(screenHeight: screenHeight, revealApplies: index == 0)
                     .id("cinematic-highlights-opening")
                     .background(
                         GeometryReader { titleGeo in
@@ -2607,8 +2607,9 @@ struct RecapBlogPageView: View {
         return "\(photos) photo\(photos == 1 ? "" : "s") · \(Int(stop.highlightMomentScore.rounded())) highlight score"
     }
 
-    private func cinematicHighlightsOpening(screenHeight: CGFloat) -> some View {
+    private func cinematicHighlightsOpening(screenHeight: CGFloat, revealApplies: Bool) -> some View {
         let slides = highlightSlides
+        let revealStage: HighlightsRevealStage = revealApplies ? highlightsRevealStage : .done
         let safeIndex = slides.indices.contains(activeHighlightSlideIndex) ? activeHighlightSlideIndex : 0
         let slide = slides[safeIndex]
         let heroHeight = min(max(screenHeight * 0.70, 560), 700)
@@ -2644,7 +2645,11 @@ struct RecapBlogPageView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .scaleEffect((reduceMotion || revealStage >= .heroPhoto) ? 1.0 : 1.06)
+            .animation(revealStage == .done ? nil : .easeOut(duration: 1.1), value: revealStage)
             .clipped()
+            .opacity(revealStage >= .heroPhoto ? 1 : 0)
+            .animation(revealStage == .done ? nil : .easeIn(duration: 0.5), value: revealStage)
             .id(slide.id)
             .transition(.opacity)
 
@@ -2695,6 +2700,7 @@ struct RecapBlogPageView: View {
                         .buttonStyle(.plain)
                     }
                 }
+                .opacity(revealStage >= .capsule ? 1 : 0)
 
                 Spacer(minLength: isCompactHero ? 86 : 126)
 
@@ -2711,6 +2717,8 @@ struct RecapBlogPageView: View {
                             heroTitleText
                         }
                     }
+                    .opacity(revealStage >= .title ? 1 : 0)
+                    .offset(y: (reduceMotion || revealStage >= .title) ? 0 : 14)
 
                     Text(openingLine)
                         .font(Font.custom("Georgia", size: isCompactHero ? 16 : 17))
@@ -2719,6 +2727,7 @@ struct RecapBlogPageView: View {
                         .lineLimit(isCompactHero ? 2 : 3)
                         .minimumScaleFactor(0.9)
                         .fixedSize(horizontal: false, vertical: true)
+                        .opacity(revealStage >= .openingLine ? 1 : 0)
                 }
                 .frame(maxWidth: 620, alignment: .leading)
 
@@ -2732,6 +2741,8 @@ struct RecapBlogPageView: View {
                 if !isCompactHero || slides.count <= 3 {
                     highlightSlideStrip(slides: slides, selectedIndex: safeIndex, compact: isCompactHero)
                         .padding(.top, 18)
+                        .opacity(revealStage >= .slideStrip ? 1 : 0)
+                        .offset(y: (reduceMotion || revealStage >= .slideStrip) ? 0 : 24)
                 }
             }
             .padding(.top, 18)
@@ -2746,8 +2757,8 @@ struct RecapBlogPageView: View {
             guard isEditMode else { return }
             showTitleChange = true
         }
-        .task(id: slides.count) {
-            guard slides.count > 1 else { return }
+        .task(id: "\(slides.count)-\(highlightsRevealStage == .done)") {
+            guard slides.count > 1, highlightsRevealStage == .done else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 2_200_000_000)
                 guard !Task.isCancelled else { return }
@@ -2755,6 +2766,10 @@ struct RecapBlogPageView: View {
                     activeHighlightSlideIndex = (activeHighlightSlideIndex + 1) % slides.count
                 }
             }
+        }
+        .onAppear {
+            guard revealApplies else { return }
+            startHighlightsRevealIfNeeded()
         }
         .onChange(of: draft.id) { _, _ in activeHighlightSlideIndex = 0 }
         .onChange(of: isHighlightsStyleEnabled) { _, _ in activeHighlightSlideIndex = 0 }
