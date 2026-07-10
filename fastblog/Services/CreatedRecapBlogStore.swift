@@ -742,43 +742,10 @@ final class CreatedRecapBlogStore: ObservableObject {
     }
 
     /// Creates a trip blog from everyday (My Places) captures and removes them from the everyday store.
-    /// - Note: a "My Places" card can merge in-app captures with regular Photo Library assets (see
-    ///   `isSamePlace`/`mergedWithEveryday`). `EverydayMomentsStore` only tracks `bloggo-capture:`
-    ///   identifiers, so library assets are carried over directly from `photos` here instead of being
-    ///   silently dropped — otherwise a blog created this way would lose any gallery photos merged
-    ///   into the selected place.
     @discardableResult
     func createTripBlogFromEverydayPhotos(_ photos: [RecapPhoto], preferredTitle: String? = nil) -> UUID? {
         let identifiers = Set(photos.compactMap(\.localIdentifier))
-        let everydayIdentifiers = Set(identifiers.filter { AppCapturePhotoService.uuid(from: $0) != nil })
-        let libraryIdentifiers = identifiers.subtracting(everydayIdentifiers)
-
-        var mockPhotos = EverydayMomentsStore.shared.promoteCapturesToBlog(identifiers: everydayIdentifiers)
-
-        if !libraryIdentifiers.isEmpty {
-            let byIdentifier = Dictionary(
-                photos.compactMap { photo -> (String, RecapPhoto)? in
-                    guard let lid = photo.localIdentifier, libraryIdentifiers.contains(lid) else { return nil }
-                    return (lid, photo)
-                },
-                uniquingKeysWith: { first, _ in first }
-            )
-            let libraryMockPhotos = libraryIdentifiers.compactMap { lid -> MockPhoto? in
-                guard let photo = byIdentifier[lid] else { return nil }
-                return MockPhoto(
-                    id: photo.id,
-                    imageName: "photo",
-                    timestamp: photo.timestamp,
-                    locationName: "Captured Moment",
-                    isSelected: true,
-                    localIdentifier: lid,
-                    location: photo.location,
-                    caption: photo.caption
-                )
-            }
-            mockPhotos.append(contentsOf: libraryMockPhotos)
-        }
-
+        let mockPhotos = EverydayMomentsStore.shared.promoteCapturesToBlog(identifiers: identifiers)
         guard !mockPhotos.isEmpty else { return nil }
 
         let cal = Calendar.current
@@ -1635,12 +1602,9 @@ final class CreatedRecapBlogStore: ObservableObject {
         )
     }
 
-    /// Mirrors a stop's place fields onto each `bloggo-capture:` meta file in that stop, so the
-    /// Bloggo Gallery (which reads the meta cache first) reflects the current name.
-    /// - Parameter force: `false` for auto-geocode passes — skips captures the user already edited
-    ///   directly so a rescan can't revert a deliberate edit. `true` for an explicit manual rename
-    ///   (e.g. from the Blog view or My Places), which should always win.
-    func syncAppCaptureMetaFromResolvedStop(_ stop: PlaceStop, force: Bool = false) {
+    /// After blog geocoding resolves a stop, mirror the name onto each `bloggo-capture:` meta file in that stop.
+    /// Skips captures the user already edited in Bloggo Gallery so a rescan/geocode pass cannot revert them.
+    private func syncAppCaptureMetaFromResolvedStop(_ stop: PlaceStop) {
         let title = stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, !PlacePlaceholderNaming.isResolvablePlaceholder(title) else { return }
         let subtitle = stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1648,7 +1612,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         for photo in stop.photos {
             guard let lid = photo.localIdentifier,
                   let captureId = AppCapturePhotoService.uuid(from: lid) else { continue }
-            if !force, AppCapturePhotoService.shared.hasUserEditedPlaceMetadata(captureId: captureId) {
+            if AppCapturePhotoService.shared.hasUserEditedPlaceMetadata(captureId: captureId) {
                 continue
             }
             try? AppCapturePhotoService.shared.updatePlaceMetadata(
@@ -1892,40 +1856,29 @@ final class CreatedRecapBlogStore: ObservableObject {
         )
     }
 
-    /// Updates the place stop name, category, coordinate, and subtitle for every stop that contains
-    /// `photoId` or any id in `additionalPhotoIds`.
+    /// Updates the place stop name, category, coordinate, and subtitle for the stop that contains the given photo.
     /// Called when the user saves a place name edit from the Places Visited photo modal (via `EditPlaceStopNameSheet`).
-    /// - Note: A single card in "My Places" can visually merge photos from *multiple* underlying
-    ///   `PlaceStop`s (different days/blogs sharing a `visitedTimeDigitized`, or a blog stop merged
-    ///   with an Everyday cluster by name+proximity in `isSamePlace`). Pass every photo id currently
-    ///   shown on that card via `additionalPhotoIds` so the rename reaches all of them — otherwise only
-    ///   the stop containing `photoId` (typically the first photo) gets renamed and its siblings keep
-    ///   showing their old auto-resolved title.
-    func updatePlaceStopFromPlacesVisited(photoId: UUID, additionalPhotoIds: [UUID] = [], newName: String, category: String?, coordinate: CLLocationCoordinate2D?, subtitle: String) {
+    func updatePlaceStopFromPlacesVisited(photoId: UUID, newName: String, category: String?, coordinate: CLLocationCoordinate2D?, subtitle: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let subTrimmed = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetIds = Set([photoId] + additionalPhotoIds)
-        var targetMomentKeys = Set<String>()
-        for detail in blogDetailsBySourceId.values {
-            for day in detail.days {
-                for stop in day.placeStops where stop.photos.contains(where: { targetIds.contains($0.id) }) {
-                    if let vtd = stop.visitedTimeDigitized, !vtd.isEmpty {
-                        targetMomentKeys.insert(vtd)
-                    }
+        var targetMomentKey: String? = nil
+        for detail in blogDetailsBySourceId.values where targetMomentKey == nil {
+            for day in detail.days where targetMomentKey == nil {
+                if let stop = day.placeStops.first(where: { $0.photos.contains(where: { $0.id == photoId }) }) {
+                    targetMomentKey = stop.visitedTimeDigitized
                 }
             }
         }
         var changed = false
-        var updatedStops: [PlaceStop] = []
         for key in blogDetailsBySourceId.keys {
             guard var detail = blogDetailsBySourceId[key] else { continue }
             var detailChanged = false
             for dayIdx in detail.days.indices {
                 for stopIdx in detail.days[dayIdx].placeStops.indices {
                     let stop = detail.days[dayIdx].placeStops[stopIdx]
-                    let containsPhoto = stop.photos.contains { targetIds.contains($0.id) }
-                    let sameMoment = stop.visitedTimeDigitized.map { targetMomentKeys.contains($0) } ?? false
+                    let containsPhoto = stop.photos.contains { $0.id == photoId }
+                    let sameMoment = targetMomentKey != nil && stop.visitedTimeDigitized == targetMomentKey
                     if containsPhoto || sameMoment {
                         detail.days[dayIdx].placeStops[stopIdx].placeTitle = trimmed
                         detail.days[dayIdx].placeStops[stopIdx].placeTitleIsManual = true
@@ -1936,7 +1889,6 @@ final class CreatedRecapBlogStore: ObservableObject {
                         }
                         detail.days[dayIdx].placeStops[stopIdx].placeSubtitle = subTrimmed.isEmpty ? nil : subTrimmed
                         detailChanged = true
-                        updatedStops.append(detail.days[dayIdx].placeStops[stopIdx])
                     }
                 }
             }
@@ -1949,23 +1901,13 @@ final class CreatedRecapBlogStore: ObservableObject {
             persistBlogDetails()
             objectWillChange.send()
         }
-        // `photoId` is a `RecapPhoto.id`, which for trip/blog photos is the capture *moment's* UUID —
-        // not the `bloggo-capture:` UUID `syncPlacesVisitedEditToAppCaptureMetadata` expects. Resolve
-        // the real capture ids via each stop's photo `localIdentifier`s instead.
-        for stop in updatedStops {
-            syncAppCaptureMetaFromResolvedStop(stop, force: true)
-        }
-        // Covers the everyday/local-capture case, where a target id genuinely is the capture UUID
-        // (these photos aren't in `blogDetailsBySourceId`, so the loop above found nothing for them).
-        for id in targetIds {
-            syncPlacesVisitedEditToAppCaptureMetadata(
-                photoId: id,
-                newName: trimmed,
-                category: category,
-                coordinate: coordinate,
-                subtitle: subTrimmed
-            )
-        }
+        syncPlacesVisitedEditToAppCaptureMetadata(
+            photoId: photoId,
+            newName: trimmed,
+            category: category,
+            coordinate: coordinate,
+            subtitle: subTrimmed
+        )
     }
 
     /// Updates only `placeCategory` for the stop that contains the given photo (Places Visited category chip / picker).
@@ -1994,35 +1936,28 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
-    /// Updates the place stop name for every stop that contains `photoId` or any id in `additionalPhotoIds`.
+    /// Updates the place stop name for the stop that contains the given photo, across all stored blog details.
     /// Called when the user edits a place name from the Places Visited photo modal.
-    /// - Note: see `updatePlaceStopFromPlacesVisited` — pass every photo id shown on the merged
-    ///   "My Places" card via `additionalPhotoIds`, or siblings from a different underlying stop keep
-    ///   their old title.
-    func updatePlaceStopName(photoId: UUID, additionalPhotoIds: [UUID] = [], newName: String) {
+    func updatePlaceStopName(photoId: UUID, newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let targetIds = Set([photoId] + additionalPhotoIds)
-        var targetMomentKeys = Set<String>()
-        for detail in blogDetailsBySourceId.values {
-            for day in detail.days {
-                for stop in day.placeStops where stop.photos.contains(where: { targetIds.contains($0.id) }) {
-                    if let vtd = stop.visitedTimeDigitized, !vtd.isEmpty {
-                        targetMomentKeys.insert(vtd)
-                    }
+        var targetMomentKey: String? = nil
+        for detail in blogDetailsBySourceId.values where targetMomentKey == nil {
+            for day in detail.days where targetMomentKey == nil {
+                if let stop = day.placeStops.first(where: { $0.photos.contains(where: { $0.id == photoId }) }) {
+                    targetMomentKey = stop.visitedTimeDigitized
                 }
             }
         }
         var changed = false
-        var updatedStops: [PlaceStop] = []
         for key in blogDetailsBySourceId.keys {
             guard var detail = blogDetailsBySourceId[key] else { continue }
             var detailChanged = false
             for dayIdx in detail.days.indices {
                 for stopIdx in detail.days[dayIdx].placeStops.indices {
                     let stop = detail.days[dayIdx].placeStops[stopIdx]
-                    let containsPhoto = stop.photos.contains { targetIds.contains($0.id) }
-                    let sameMoment = stop.visitedTimeDigitized.map { targetMomentKeys.contains($0) } ?? false
+                    let containsPhoto = stop.photos.contains { $0.id == photoId }
+                    let sameMoment = targetMomentKey != nil && stop.visitedTimeDigitized == targetMomentKey
                     if containsPhoto || sameMoment {
                         detail.days[dayIdx].placeStops[stopIdx].placeTitle = trimmed
                         let cat = detail.days[dayIdx].placeStops[stopIdx].placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -2031,7 +1966,6 @@ final class CreatedRecapBlogStore: ObservableObject {
                                 PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: trimmed)
                         }
                         detailChanged = true
-                        updatedStops.append(detail.days[dayIdx].placeStops[stopIdx])
                     }
                 }
             }
@@ -2044,14 +1978,9 @@ final class CreatedRecapBlogStore: ObservableObject {
             persistBlogDetails()
             objectWillChange.send()
         }
-        // See `updatePlaceStopFromPlacesVisited` — a target id is not the capture UUID for trip photos.
-        for stop in updatedStops {
-            syncAppCaptureMetaFromResolvedStop(stop, force: true)
-        }
-        for id in targetIds {
-            guard let meta = AppCapturePhotoService.shared.metadata(captureId: id) else { continue }
+        if let meta = AppCapturePhotoService.shared.metadata(captureId: photoId) {
             syncPlacesVisitedEditToAppCaptureMetadata(
-                photoId: id,
+                photoId: photoId,
                 newName: trimmed,
                 category: meta.placeCategory,
                 coordinate: meta.location?.clCoordinate,
@@ -2176,12 +2105,8 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Removes a created blog locally, but DOES NOT delete it from the cloud.
     func removeLocalCopy(sourceTripId: UUID) {
-        let deletedDetail = blogDetailsBySourceId[sourceTripId]
         recents.removeAll { $0.sourceTripId == sourceTripId }
         blogDetailsBySourceId.removeValue(forKey: sourceTripId)
-        if let deletedDetail {
-            restoreEverydayCapturesAfterBlogDeletion(deletedDetail)
-        }
         if pendingRecapCreated { pendingRecapCreated = false }
         lastDiscardedTripId = sourceTripId
         needsRescan = true
@@ -2198,21 +2123,6 @@ final class CreatedRecapBlogStore: ObservableObject {
             object: nil,
             userInfo: ["sourceTripId": sourceTripId]
         )
-    }
-
-    /// A blog's in-app captures are unlinked from `EverydayMomentsStore` the moment they're promoted
-    /// into a blog (see `promoteCapturesToBlog`) so they don't show twice in My Places. If the blog is
-    /// later deleted, that unlink is never undone, so those captures previously vanished from My Places
-    /// entirely (only a Tap to Blog rescan would resurface them). Re-register any that aren't claimed by
-    /// another surviving blog so they reappear as everyday captures.
-    private func restoreEverydayCapturesAfterBlogDeletion(_ detail: RecapBlogDetail) {
-        let stillClaimed = allInAppCaptureIdentifiersInVisibleBlogs()
-        let candidateIds = Set(detail.days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier))
-            .filter { $0.hasPrefix(AppCapturePhotoService.prefix) && !stillClaimed.contains($0) }
-        guard !candidateIds.isEmpty else { return }
-        for id in candidateIds {
-            EverydayMomentsStore.shared.registerCapture(localIdentifier: id)
-        }
     }
 
     // MARK: - Merge & Split

@@ -4771,9 +4771,6 @@ Your blog remains private unless you choose to share it.
                 didUpdateDay = true
                 didUpdateAnyStop = true
                 debugPrint("[Category] updatePlaceTitle stored: stopId=\(stop.id) placeTitle='\(stop.placeTitle)' placeSubtitle=\(stop.placeSubtitle ?? "nil") placeCategory=\(stop.placeCategory ?? "nil")")
-                // Bloggo Gallery reads the `bloggo-capture:` meta cache first — keep it in sync so
-                // it doesn't keep showing a stale "Near …" title after a manual rename here.
-                createdRecapStore.syncAppCaptureMetaFromResolvedStop(stop, force: true)
 
                 if apiPlaceKey == nil {
                     apiPlaceKey = stop.visitedTimeDigitized
