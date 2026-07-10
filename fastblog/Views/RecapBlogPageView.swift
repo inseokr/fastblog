@@ -66,6 +66,28 @@ private struct PlaceCategoryPickerTarget: Identifiable {
 }
 
 struct RecapBlogPageView: View {
+    private enum BlogPresentationStyle: String {
+        case classic
+        case highlights
+    }
+
+    private struct BlogHighlightFact: Identifiable {
+        let id = UUID()
+        let icon: String
+        let title: String
+        let value: String
+        let detail: String
+        let tint: Color
+    }
+
+    private struct BlogHighlightSlide: Identifiable {
+        let id = UUID()
+        let title: String
+        let subtitle: String
+        let assetIdentifier: String?
+        let fallbackSymbol: String
+    }
+
     /// Stable `ScrollViewReader` targets (strings can be unreliable across `TabView` layout passes).
     private enum RecapBlogScrollAnchor: Hashable {
         case pageTop
@@ -204,6 +226,7 @@ struct RecapBlogPageView: View {
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
     @AppStorage(DistanceUnit.storageKey) private var distanceUnitRaw: String = DistanceUnit.miles.rawValue
     @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
+    @AppStorage("bloggo.blogPresentationStyle") private var blogPresentationStyleRaw: String = BlogPresentationStyle.highlights.rawValue
     @State private var showCloudOnboardingModal = false
     @State private var newlyUploadedBlogKey: Int? = nil
     @State private var showSaveTipAlert = false
@@ -236,6 +259,15 @@ struct RecapBlogPageView: View {
     @State private var cancellables = Set<AnyCancellable>()
     @State private var visitedDayIndices: Set<Int> = [0]
     @State private var cachedDayPagerThumbnailAssetIds: [String] = []
+    @State private var activeHighlightSlideIndex = 0
+
+    private var blogPresentationStyle: BlogPresentationStyle {
+        BlogPresentationStyle(rawValue: blogPresentationStyleRaw) ?? .classic
+    }
+
+    private var isHighlightsStyleEnabled: Bool {
+        blogPresentationStyle == .highlights
+    }
 
     // Cloud Upload State
     @State private var isUploading = false
@@ -1868,7 +1900,21 @@ struct RecapBlogPageView: View {
 
             // Always show the trip header (cover/title) on every day so swiping doesn't feel like the
             // cover "disappears" after Day 1. (Other trip-level affordances can still be Day 1 only.)
-            if draft.selectedCoverPhotoIdentifier != nil {
+            if isHighlightsStyleEnabled {
+                cinematicHighlightsOpening(screenHeight: screenHeight)
+                    .id("cinematic-highlights-opening")
+                    .background(
+                        GeometryReader { titleGeo in
+                            Color.clear.preference(
+                                key: TitleMinYPreferenceKey.self,
+                                value: titleGeo.frame(in: .named("scroll")).maxY
+                            )
+                        }
+                    )
+                if index == 0 {
+                    highlightsIntelligenceSection
+                }
+            } else if draft.selectedCoverPhotoIdentifier != nil {
                 coverPhotoHero(screenHeight: screenHeight)
             } else {
                 blogTitleView
@@ -1887,7 +1933,9 @@ struct RecapBlogPageView: View {
                     }
                 }
 
-                tripNarrativeCard
+                if !isHighlightsStyleEnabled || isEditMode {
+                    tripNarrativeCard
+                }
             }
 
             // New moments card — shown once, on the latest day that has new photos.
@@ -2515,6 +2563,466 @@ struct RecapBlogPageView: View {
             }
         }
         .frame(height: heroHeight)
+    }
+
+    private var highlightSlides: [BlogHighlightSlide] {
+        let topStops = Array(draft.highlightMomentsRanked.prefix(5))
+        let slides = topStops.map { stop in
+            BlogHighlightSlide(
+                title: stop.cleanedPlaceTitle,
+                subtitle: highlightSlideSubtitle(for: stop),
+                assetIdentifier: stop.coverPhoto?.localIdentifier,
+                fallbackSymbol: "photo"
+            )
+        }
+        if !slides.isEmpty { return slides }
+        if let coverId = draft.selectedCoverPhotoIdentifier {
+            return [BlogHighlightSlide(title: draft.title, subtitle: tripDateText, assetIdentifier: coverId, fallbackSymbol: "photo")]
+        }
+        return [BlogHighlightSlide(title: draft.title, subtitle: tripDateText, assetIdentifier: nil, fallbackSymbol: "sparkles")]
+    }
+
+    private func highlightSlideSubtitle(for stop: PlaceStop) -> String {
+        let photos = stop.includedPhotos.count
+        let minutes = Int((stop.inferredVisitDurationSeconds / 60).rounded())
+        if minutes >= 15 {
+            return "\(photos) photo\(photos == 1 ? "" : "s") · \(minutes) min stay"
+        }
+        return "\(photos) photo\(photos == 1 ? "" : "s") · \(Int(stop.highlightMomentScore.rounded())) highlight score"
+    }
+
+    private func cinematicHighlightsOpening(screenHeight: CGFloat) -> some View {
+        let slides = highlightSlides
+        let safeIndex = slides.indices.contains(activeHighlightSlideIndex) ? activeHighlightSlideIndex : 0
+        let slide = slides[safeIndex]
+        let heroHeight = min(max(screenHeight * 0.70, 560), 700)
+        let isCompactHero = heroHeight < 610
+        let narrative = draft.tripNarrative?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let openingLine = narrative.isEmpty ? generatedOpeningLine : narrative
+        let coverTargetWidth = max(320, UIScreen.main.bounds.width) * UIScreen.main.scale
+        let coverTargetHeight = heroHeight * UIScreen.main.scale
+        let dayCount = draft.days.count
+        let momentCount = draft.days.flatMap(\.placeStops).count
+        let photoCount = draft.allIncludedPhotos.count
+
+        return ZStack {
+            Group {
+                if let assetIdentifier = slide.assetIdentifier {
+                    AssetPhotoView(
+                        assetIdentifier: assetIdentifier,
+                        cornerRadius: 0,
+                        targetSize: CGSize(width: coverTargetWidth, height: coverTargetHeight)
+                    )
+                    .aspectRatio(contentMode: .fill)
+                } else {
+                    ZStack {
+                        LinearGradient(
+                            colors: [Color(red: 0.08, green: 0.10, blue: 0.13), Color(red: 0.03, green: 0.13, blue: 0.17)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        Image(systemName: slide.fallbackSymbol)
+                            .font(.system(size: 72, weight: .thin))
+                            .foregroundColor(.white.opacity(0.35))
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .id(slide.id)
+            .transition(.opacity)
+
+            LinearGradient(
+                colors: [Color.black.opacity(0.18), Color.black.opacity(0.16), Color.black.opacity(0.9)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            RadialGradient(
+                colors: [Color.black.opacity(0.02), Color.black.opacity(0.42)],
+                center: .center,
+                startRadius: 80,
+                endRadius: 430
+            )
+
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .center, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Label("Blog Highlights", systemImage: "sparkles")
+                        if !tripDateText.isEmpty {
+                            Text(tripDateText)
+                        }
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.9))
+                    .lineLimit(1)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .background(Color.black.opacity(0.24), in: Capsule())
+
+                    Spacer(minLength: 10)
+
+                    if isEditMode {
+                        Button {
+                            coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
+                            showCoverPhotoPicker = true
+                        } label: {
+                            Label("Cover", systemImage: "photo")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 8)
+                                .background(Color.white.opacity(0.16), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Spacer(minLength: isCompactHero ? 86 : 126)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Group {
+                        if isEditMode {
+                            Button {
+                                showTitleChange = true
+                            } label: {
+                                heroTitleText
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            heroTitleText
+                        }
+                    }
+
+                    Text(openingLine)
+                        .font(Font.custom("Georgia", size: isCompactHero ? 16 : 17))
+                        .lineSpacing(isCompactHero ? 4 : 5)
+                        .foregroundColor(.white.opacity(0.9))
+                        .lineLimit(isCompactHero ? 2 : 3)
+                        .minimumScaleFactor(0.9)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: 620, alignment: .leading)
+
+                HStack(spacing: 8) {
+                    heroMetricPill(value: "\(dayCount)", label: "day\(dayCount == 1 ? "" : "s")")
+                    heroMetricPill(value: "\(momentCount)", label: "moments")
+                    heroMetricPill(value: "\(photoCount)", label: "photos")
+                }
+                .padding(.top, 14)
+
+                if !isCompactHero || slides.count <= 3 {
+                    highlightSlideStrip(slides: slides, selectedIndex: safeIndex, compact: isCompactHero)
+                        .padding(.top, 18)
+                }
+            }
+            .padding(.top, 18)
+            .padding(.horizontal, 18)
+            .padding(.bottom, isCompactHero ? 22 : 28)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(height: heroHeight)
+        .background(Color.black)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard isEditMode else { return }
+            showTitleChange = true
+        }
+        .task(id: slides.count) {
+            guard slides.count > 1 else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_200_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    activeHighlightSlideIndex = (activeHighlightSlideIndex + 1) % slides.count
+                }
+            }
+        }
+        .onChange(of: draft.id) { _, _ in activeHighlightSlideIndex = 0 }
+        .onChange(of: isHighlightsStyleEnabled) { _, _ in activeHighlightSlideIndex = 0 }
+    }
+
+    private var heroTitleText: some View {
+        Text(draft.title)
+            .font(.blog(selectedBlogFont, size: 36, bold: true))
+            .foregroundColor(.white)
+            .lineLimit(2)
+            .minimumScaleFactor(0.74)
+            .shadow(color: .black.opacity(0.62), radius: 10, y: 3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func heroMetricPill(value: String, label: String) -> some View {
+        HStack(spacing: 4) {
+            Text(value)
+                .font(.caption.weight(.bold))
+            Text(label)
+                .font(.caption2.weight(.medium))
+        }
+        .foregroundColor(.white.opacity(0.9))
+        .lineLimit(1)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.black.opacity(0.26), in: Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+        )
+    }
+
+    private func highlightSlideStrip(slides: [BlogHighlightSlide], selectedIndex: Int, compact: Bool = false) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: compact ? 7 : 8) {
+                ForEach(Array(slides.enumerated()), id: \.element.id) { index, slide in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            activeHighlightSlideIndex = index
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(slide.title)
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                            Text(slide.subtitle)
+                                .font(.caption2.weight(.medium))
+                                .foregroundColor(.white.opacity(0.72))
+                                .lineLimit(1)
+                        }
+                        .frame(width: compact ? 116 : 142, alignment: .leading)
+                        .padding(.horizontal, compact ? 9 : 11)
+                        .padding(.vertical, compact ? 8 : 10)
+                        .background(
+                            RoundedRectangle(appChromeBaseRadius: 8, style: .continuous)
+                                .fill(index == selectedIndex ? Color.white.opacity(0.23) : Color.black.opacity(0.30))
+                                .overlay(
+                                    RoundedRectangle(appChromeBaseRadius: 8, style: .continuous)
+                                        .stroke(Color.white.opacity(index == selectedIndex ? 0.62 : 0.18), lineWidth: 1)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var highlightsIntelligenceSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Trip Intelligence")
+                        .font(.headline.weight(.semibold))
+                        .foregroundColor(recapChromeForeground)
+                    Text("Signals from your photos, places, and timing")
+                        .font(.caption)
+                        .foregroundColor(recapSecondaryOnChrome)
+                }
+                Spacer()
+                Text(primaryTravelDNA)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color(red: 0.20, green: 0.48, blue: 0.86), in: Capsule())
+            }
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                ForEach(highlightFacts) { fact in
+                    highlightFactCard(fact)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            LinearGradient(
+                colors: [
+                    colorScheme == .dark ? Color(white: 0.10) : Color(red: 0.94, green: 0.97, blue: 0.98),
+                    colorScheme == .dark ? Color(white: 0.07) : Color(uiColor: .systemBackground)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+    }
+
+    private func highlightFactCard(_ fact: BlogHighlightFact) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: fact.icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(fact.tint)
+                Text(fact.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(recapSecondaryOnChrome)
+                    .lineLimit(1)
+            }
+            Text(fact.value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(recapChromeForeground)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+            Text(fact.detail)
+                .font(.caption2)
+                .foregroundColor(recapSecondaryOnChrome)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
+        .padding(12)
+        .background(
+            RoundedRectangle(appChromeBaseRadius: 8, style: .continuous)
+                .fill(recapCardBackground.opacity(colorScheme == .dark ? 0.85 : 1))
+                .overlay(
+                    RoundedRectangle(appChromeBaseRadius: 8, style: .continuous)
+                        .stroke(fact.tint.opacity(0.22), lineWidth: 1)
+                )
+        )
+    }
+
+    private var highlightFacts: [BlogHighlightFact] {
+        var facts: [BlogHighlightFact] = []
+        if let longest = longestStayFact { facts.append(longest) }
+        if let peak = shootingPeakFact { facts.append(peak) }
+        if let distance = travelDistanceFact { facts.append(distance) }
+        if let hidden = hiddenMomentFact { facts.append(hidden) }
+        if let top = topMomentFact { facts.append(top) }
+        return Array(facts.prefix(5))
+    }
+
+    private var longestStayFact: BlogHighlightFact? {
+        guard let stop = draft.days.flatMap(\.placeStops).max(by: { $0.inferredVisitDurationSeconds < $1.inferredVisitDurationSeconds }),
+              stop.inferredVisitDurationSeconds >= 10 * 60 else { return nil }
+        return BlogHighlightFact(
+            icon: "clock",
+            title: "Longest Stay",
+            value: stop.cleanedPlaceTitle,
+            detail: durationText(seconds: stop.inferredVisitDurationSeconds),
+            tint: Color(red: 0.20, green: 0.70, blue: 0.48)
+        )
+    }
+
+    private var shootingPeakFact: BlogHighlightFact? {
+        let photos = draft.allIncludedPhotos
+        guard !photos.isEmpty else { return nil }
+        var counts: [Int: Int] = [:]
+        let calendar = Calendar.current
+        for photo in photos {
+            counts[calendar.component(.hour, from: photo.timestamp), default: 0] += 1
+        }
+        guard let peak = counts.max(by: { $0.value < $1.value }) else { return nil }
+        return BlogHighlightFact(
+            icon: "camera.aperture",
+            title: "Shooting Peak",
+            value: hourRangeText(startHour: peak.key),
+            detail: "\(peak.value) photo\(peak.value == 1 ? "" : "s") captured",
+            tint: Color(red: 0.96, green: 0.62, blue: 0.16)
+        )
+    }
+
+    private var travelDistanceFact: BlogHighlightFact? {
+        let distance = totalTravelDistanceMeters()
+        guard distance >= 100 else { return nil }
+        return BlogHighlightFact(
+            icon: "point.topleft.down.curvedto.point.bottomright.up",
+            title: "Travel Span",
+            value: formattedDistance(meters: distance),
+            detail: "Inferred between clustered places",
+            tint: Color(red: 0.35, green: 0.58, blue: 0.96)
+        )
+    }
+
+    private var hiddenMomentFact: BlogHighlightFact? {
+        let sorted = draft.allIncludedPhotos.map(\.timestamp).sorted()
+        guard sorted.count >= 2 else { return nil }
+        let gaps = zip(sorted, sorted.dropFirst()).map { $1.timeIntervalSince($0) }
+        guard let maxGap = gaps.max(), maxGap >= 45 * 60 else { return nil }
+        return BlogHighlightFact(
+            icon: "eye",
+            title: "Quiet Gap",
+            value: durationText(seconds: maxGap),
+            detail: "A stretch with no photos, probably lived off-camera",
+            tint: Color(red: 0.76, green: 0.42, blue: 0.92)
+        )
+    }
+
+    private var topMomentFact: BlogHighlightFact? {
+        guard let stop = draft.highlightMomentsRanked.first else { return nil }
+        return BlogHighlightFact(
+            icon: "star.fill",
+            title: "Top Highlight",
+            value: stop.cleanedPlaceTitle,
+            detail: "\(Int(stop.highlightMomentScore.rounded())) score · \(stop.includedPhotos.count) photo\(stop.includedPhotos.count == 1 ? "" : "s")",
+            tint: Color(red: 0.95, green: 0.36, blue: 0.52)
+        )
+    }
+
+    private var primaryTravelDNA: String {
+        let stops = draft.days.flatMap(\.placeStops)
+        let titles = stops.map { ($0.placeTitle + " " + ($0.placeCategory ?? "")).lowercased() }.joined(separator: " ")
+        if titles.contains("restaurant") || titles.contains("cafe") || titles.contains("coffee") || titles.contains("food") {
+            return "Taste Seeker"
+        }
+        if titles.contains("park") || titles.contains("beach") || titles.contains("mountain") || titles.contains("trail") {
+            return "Nature Logger"
+        }
+        if titles.contains("museum") || titles.contains("landmark") || titles.contains("temple") || titles.contains("historic") {
+            return "Culture Seeker"
+        }
+        if totalTravelDistanceMeters() > 10_000 {
+            return "Active Traveler"
+        }
+        return "Moment Collector"
+    }
+
+    private var generatedOpeningLine: String {
+        let dayCount = draft.days.count
+        let placeCount = draft.days.flatMap(\.placeStops).count
+        let photoCount = draft.allIncludedPhotos.count
+        return "\(dayCount) day\(dayCount == 1 ? "" : "s"), \(placeCount) moment\(placeCount == 1 ? "" : "s"), and \(photoCount) photo\(photoCount == 1 ? "" : "s") shaped this trip."
+    }
+
+    private func totalTravelDistanceMeters() -> CLLocationDistance {
+        let coords = draft.days
+            .flatMap(\.placeStops)
+            .compactMap { $0.representativeLocation?.clCoordinate ?? $0.photos.first?.location?.clCoordinate }
+        guard coords.count >= 2 else { return 0 }
+        return zip(coords, coords.dropFirst()).reduce(0) { total, pair in
+            let start = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
+            let end = CLLocation(latitude: pair.1.latitude, longitude: pair.1.longitude)
+            return total + end.distance(from: start)
+        }
+    }
+
+    private func formattedDistance(meters: CLLocationDistance) -> String {
+        let unit = DistanceUnit(rawValue: distanceUnitRaw) ?? .miles
+        switch unit {
+        case .miles:
+            return String(format: "%.1f mi", meters / 1609.34)
+        case .kilometers:
+            return String(format: "%.1f km", meters / 1000.0)
+        }
+    }
+
+    private func durationText(seconds: TimeInterval) -> String {
+        let minutes = max(1, Int((seconds / 60).rounded()))
+        if minutes < 60 { return "\(minutes) min" }
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if remainder == 0 { return "\(hours) hr" }
+        return "\(hours) hr \(remainder) min"
+    }
+
+    private func hourRangeText(startHour: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "ha"
+        let calendar = Calendar.current
+        let start = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: Date()) ?? Date()
+        let end = calendar.date(byAdding: .hour, value: 1, to: start) ?? start
+        return "\(formatter.string(from: start).lowercased())-\(formatter.string(from: end).lowercased())"
     }
 
     // MARK: - Photo Library Access (Limited users)
@@ -5869,16 +6377,30 @@ Your blog remains private unless you choose to share it.
         }
         ToolbarItem(placement: .topBarTrailing) {
             if isEditMode {
-                Button {
-                    performUndo()
-                } label: {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.body.weight(.semibold))
-                        .foregroundColor(lastUndoAction != nil ? recapChromeForeground : recapChromeForeground.opacity(0.3))
+                HStack(spacing: 14) {
+                    Button {
+                        blogPresentationStyleRaw = isHighlightsStyleEnabled
+                            ? BlogPresentationStyle.classic.rawValue
+                            : BlogPresentationStyle.highlights.rawValue
+                    } label: {
+                        Image(systemName: isHighlightsStyleEnabled ? "rectangle.on.rectangle" : "sparkles")
+                            .font(.body.weight(.semibold))
+                            .foregroundColor(recapChromeForeground)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isHighlightsStyleEnabled ? "Use Classic Blog Style" : "Use Highlights Blog Style")
+
+                    Button {
+                        performUndo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.body.weight(.semibold))
+                            .foregroundColor(lastUndoAction != nil ? recapChromeForeground : recapChromeForeground.opacity(0.3))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Undo")
+                    .disabled(lastUndoAction == nil)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Undo")
-                .disabled(lastUndoAction == nil)
             } else if !isExportingPDF && !showStoryMode && fullScreenMapDay == nil {
                 Button {
                     isEditMode = true
@@ -5910,6 +6432,21 @@ Your blog remains private unless you choose to share it.
                 .buttonStyle(.plain)
                 .disabled(!isToolbarSaveEnabled)
             } else if !isExportingPDF && !showStoryMode && fullScreenMapDay == nil {
+                Button {
+                    blogPresentationStyleRaw = isHighlightsStyleEnabled
+                        ? BlogPresentationStyle.classic.rawValue
+                        : BlogPresentationStyle.highlights.rawValue
+                } label: {
+                    Image(systemName: isHighlightsStyleEnabled ? "rectangle.on.rectangle" : "sparkles")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(recapChromeForeground)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isHighlightsStyleEnabled ? "Use Classic Blog Style" : "Use Highlights Blog Style")
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            if !isEditMode && !isExportingPDF && !showStoryMode && fullScreenMapDay == nil {
                 Button {
                     showBlogSettings = true
                 } label: {
