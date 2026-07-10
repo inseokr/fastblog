@@ -1,0 +1,26 @@
+[
+  {
+    "id": "fact-goldengate",
+    "kind": "placeFact",
+    "title": "Golden Gate Bridge",
+    "text": "1937년 완공된 현수교로, 여름철 안개에 자주 감싸이는 것으로 유명하다.",
+    "latitude": 37.8199,
+    "longitude": -122.4783
+  },
+  {
+    "id": "fact-gyeongbokgung",
+    "kind": "placeFact",
+    "title": "경복궁 (Gyeongbokgung Palace)",
+    "text": "1395년 창건된 조선 왕조의 법궁이다.",
+    "latitude": 37.5796,
+    "longitude": 126.9770
+  },
+  {
+    "id": "fact-tokyotower",
+    "kind": "placeFact",
+    "title": "도쿄타워 (Tokyo Tower)",
+    "text": "1958년 완공된 높이 333m의 전파탑이다.",
+    "latitude": 35.6586,
+    "longitude": 139.7454
+  }
+]
