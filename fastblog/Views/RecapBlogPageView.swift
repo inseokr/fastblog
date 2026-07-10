@@ -2732,9 +2732,9 @@ struct RecapBlogPageView: View {
                 .frame(maxWidth: 620, alignment: .leading)
 
                 HStack(spacing: 8) {
-                    heroMetricPill(value: "\(dayCount)", label: "day\(dayCount == 1 ? "" : "s")")
-                    heroMetricPill(value: "\(momentCount)", label: "moments")
-                    heroMetricPill(value: "\(photoCount)", label: "photos")
+                    heroMetricPill(value: dayCount, label: "day\(dayCount == 1 ? "" : "s")", revealStage: revealStage, staggerIndex: 0)
+                    heroMetricPill(value: momentCount, label: "moments", revealStage: revealStage, staggerIndex: 1)
+                    heroMetricPill(value: photoCount, label: "photos", revealStage: revealStage, staggerIndex: 2)
                 }
                 .padding(.top, 14)
 
@@ -2785,10 +2785,19 @@ struct RecapBlogPageView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func heroMetricPill(value: String, label: String) -> some View {
+    private func heroMetricPill(
+        value: Int,
+        label: String,
+        revealStage: HighlightsRevealStage,
+        staggerIndex: Int
+    ) -> some View {
         HStack(spacing: 4) {
-            Text(value)
-                .font(.caption.weight(.bold))
+            HeroCountUpText(
+                target: value,
+                started: revealStage >= .metrics,
+                animated: !reduceMotion && revealStage != .done
+            )
+            .font(.caption.weight(.bold))
             Text(label)
                 .font(.caption2.weight(.medium))
         }
@@ -2800,6 +2809,15 @@ struct RecapBlogPageView: View {
         .overlay(
             Capsule()
                 .stroke(Color.white.opacity(0.15), lineWidth: 1)
+        )
+        .opacity(revealStage >= .metrics ? 1 : 0)
+        .offset(y: (reduceMotion || revealStage >= .metrics) ? 0 : 8)
+        .animation(
+            revealStage == .done
+                ? nil
+                : (reduceMotion ? Animation.easeInOut(duration: 0.3) : .spring(response: 0.4, dampingFraction: 0.75))
+                    .delay(Double(staggerIndex) * 0.09),
+            value: revealStage
         )
     }
 
@@ -8809,6 +8827,38 @@ private struct HighlightsIntelligenceMinYPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = .greatestFiniteMagnitude
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = min(value, nextValue())
+    }
+}
+
+private struct HeroCountUpText: View {
+    let target: Int
+    let started: Bool
+    let animated: Bool
+
+    @State private var displayed = 0
+
+    var body: some View {
+        Text("\(displayed)")
+            .monospacedDigit()
+            .task(id: started) {
+                guard started else {
+                    displayed = animated ? 0 : target
+                    return
+                }
+                guard animated, displayed != target else {
+                    displayed = target
+                    return
+                }
+                let steps = 14
+                for step in 1...steps {
+                    guard !Task.isCancelled else { return }
+                    let progress = Double(step) / Double(steps)
+                    let eased = 1 - pow(1 - progress, 3)
+                    displayed = Int((Double(target) * eased).rounded())
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+                displayed = target
+            }
     }
 }
 
