@@ -72,7 +72,7 @@ struct RecapBlogPageView: View {
     }
 
     private struct BlogHighlightFact: Identifiable {
-        let id = UUID()
+        var id: String { title }
         let icon: String
         let title: String
         let value: String
@@ -1929,6 +1929,14 @@ struct RecapBlogPageView: View {
                     )
                 if index == 0 {
                     highlightsIntelligenceSection
+                        .background(
+                            GeometryReader { intelGeo in
+                                Color.clear.preference(
+                                    key: HighlightsIntelligenceMinYPreferenceKey.self,
+                                    value: intelGeo.frame(in: .named("scroll")).minY
+                                )
+                            }
+                        )
                 }
             } else if draft.selectedCoverPhotoIdentifier != nil {
                 coverPhotoHero(screenHeight: screenHeight)
@@ -2063,6 +2071,12 @@ struct RecapBlogPageView: View {
                 if shouldShow != showNavBarTitle {
                     showNavBarTitle = shouldShow
                 }
+            }
+            .onPreferenceChange(HighlightsIntelligenceMinYPreferenceKey.self) { minY in
+                guard index == 0, isIntelligenceCascadeEligible, !showIntelligenceCascade else { return }
+                guard minY < screenHeight * 0.82 else { return }
+                isIntelligenceCascadeEligible = false
+                showIntelligenceCascade = true
             }
             .background(recapScreenBackground)
             .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
@@ -2859,7 +2873,9 @@ struct RecapBlogPageView: View {
     }
 
     private var highlightsIntelligenceSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let facts = highlightFacts
+        let badgeDelay = Double(facts.count) * 0.08
+        return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Trip Intelligence")
@@ -2869,6 +2885,8 @@ struct RecapBlogPageView: View {
                         .font(.caption)
                         .foregroundColor(recapSecondaryOnChrome)
                 }
+                .opacity(showIntelligenceCascade ? 1 : 0)
+                .animation(cascadeAnimation(delay: 0), value: showIntelligenceCascade)
                 Spacer()
                 Text(primaryTravelDNA)
                     .font(.caption.weight(.semibold))
@@ -2876,11 +2894,17 @@ struct RecapBlogPageView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(Color(red: 0.20, green: 0.48, blue: 0.86), in: Capsule())
+                    .opacity(showIntelligenceCascade ? 1 : 0)
+                    .scaleEffect((reduceMotion || showIntelligenceCascade) ? 1.0 : 0.6)
+                    .animation(cascadeAnimation(delay: badgeDelay, pop: true), value: showIntelligenceCascade)
             }
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(highlightFacts) { fact in
+                ForEach(Array(facts.enumerated()), id: \.element.id) { index, fact in
                     highlightFactCard(fact)
+                        .opacity(showIntelligenceCascade ? 1 : 0)
+                        .offset(y: (reduceMotion || showIntelligenceCascade) ? 0 : 12)
+                        .animation(cascadeAnimation(delay: Double(index) * 0.08), value: showIntelligenceCascade)
                 }
             }
         }
@@ -2895,6 +2919,13 @@ struct RecapBlogPageView: View {
                 endPoint: .bottomTrailing
             )
         )
+    }
+
+    private func cascadeAnimation(delay: Double, pop: Bool = false) -> Animation? {
+        guard !isEditMode else { return nil }
+        if reduceMotion { return .easeInOut(duration: 0.3).delay(delay) }
+        if pop { return .spring(response: 0.35, dampingFraction: 0.55).delay(delay) }
+        return .spring(response: 0.4, dampingFraction: 0.75).delay(delay)
     }
 
     private func highlightFactCard(_ fact: BlogHighlightFact) -> some View {
