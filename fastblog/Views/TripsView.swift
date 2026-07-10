@@ -4569,8 +4569,16 @@ struct CameraCaptureView: View {
     }
 
     private var canOpenCaptionModePlaceEditor: Bool {
-        guard let moment = captionModeResolvedMoment else { return false }
-        return moment.injectedPhotoId != nil && moment.localIdentifier != nil
+        guard let moment = captionModeResolvedMoment, moment.localIdentifier != nil else { return false }
+        return captionModeEditPlacePhotoId(for: moment) != nil
+    }
+
+    /// Resolves the id to edit against: the blog's injected photo id when this moment was
+    /// added to a Trip blog, otherwise the capture id (My Places moments are never blog-injected
+    /// but already have `AppCapturePhotoService` metadata as soon as they're captured).
+    /// Mirrors the fallback `savePreviewCaptionEditing()` uses for captions.
+    private func captionModeEditPlacePhotoId(for moment: CapturedMoment) -> UUID? {
+        moment.injectedPhotoId ?? moment.localIdentifier.flatMap(AppCapturePhotoService.uuid(from:))
     }
 
     private func dismissPreviewCaptionEditor() {
@@ -4930,8 +4938,8 @@ struct CameraCaptureView: View {
             .sheet(isPresented: $showCaptionModeEditPlaceSheet) {
             Group {
                 if let moment = captionModeResolvedMoment,
-                   let photoId = moment.injectedPhotoId,
-                   let lid = moment.localIdentifier {
+                   let lid = moment.localIdentifier,
+                   let photoId = captionModeEditPlacePhotoId(for: moment) {
                     let coord = moment.location?.clCoordinate ?? cameraController.currentLocation?.coordinate
                     EditPlaceStopNameSheet(
                         placeTitle: $captionModePlaceTitle,
