@@ -260,6 +260,8 @@ struct RecapBlogPageView: View {
     @State private var visitedDayIndices: Set<Int> = [0]
     @State private var cachedDayPagerThumbnailAssetIds: [String] = []
     @State private var activeHighlightSlideIndex = 0
+    @State private var highlightAutoAdvancePaused = false
+    @State private var selectedHighlightSlide: BlogHighlightSlide?
 
     // MARK: - Highlights Reveal State
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -592,6 +594,12 @@ struct RecapBlogPageView: View {
                 panoramaOverlayLayer()
                     .transition(.opacity)
                     .zIndex(127)
+            }
+
+            if let slide = selectedHighlightSlide {
+                highlightFullScreenOverlay(slide: slide)
+                    .transition(.opacity)
+                    .zIndex(170)
             }
 
             if let day = fullScreenMapDay {
@@ -2510,34 +2518,30 @@ struct RecapBlogPageView: View {
                     .transition(.opacity)
                 }
 
-                // Slideshow — top-trailing of cover, same column as nav gear (16pt inset, 44pt target); sits just below Blog Settings.
+                // Blog highlights — top-trailing of cover, shown as swipeable cards instead of the slideshow preview.
                 if !isEditMode, !isCoverPending, displayCoverId != nil, !isExportingPDF, !showStoryMode {
+                    let slides = highlightSlides
+                    let safeIndex = slides.indices.contains(activeHighlightSlideIndex) ? activeHighlightSlideIndex : 0
                     VStack(spacing: 0) {
                         HStack(spacing: 0) {
                             Spacer(minLength: 0)
-                            Button {
-                                showPanorama = true
-                            } label: {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color.gray.opacity(0.55))
-                                        .frame(width: 36, height: 36)
-                                    Image(systemName: "square.grid.3x3.fill")
-                                        .font(.body.weight(.semibold))
-                                        .foregroundStyle(.white)
-                                        .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
-                                }
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
+                            VStack(alignment: .trailing, spacing: 6) {
+                                Text("Highlights")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.black.opacity(0.28), in: Capsule())
+
+                                highlightSlideStrip(slides: slides, selectedIndex: safeIndex, compact: true)
+                                    .frame(maxWidth: min(260, UIScreen.main.bounds.width - 42))
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Gallery")
-                            .padding(.trailing, 16)
+                            .padding(.trailing, 14)
                         }
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 12)
+                    .padding(.top, 10)
                     .allowsHitTesting(true)
                 }
             }
@@ -2771,11 +2775,15 @@ struct RecapBlogPageView: View {
             guard isEditMode else { return }
             showTitleChange = true
         }
-        .task(id: "\(slides.count)-\(highlightsRevealStage == .done)") {
+        .task(id: "\(slides.count)-\(highlightsRevealStage == .done)-\(highlightAutoAdvancePaused)") {
             guard slides.count > 1, highlightsRevealStage == .done else { return }
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 2_200_000_000)
-                guard !Task.isCancelled else { return }
+                if highlightAutoAdvancePaused {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    continue
+                }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled, !highlightAutoAdvancePaused else { return }
                 withAnimation(.easeInOut(duration: 0.45)) {
                     activeHighlightSlideIndex = (activeHighlightSlideIndex + 1) % slides.count
                 }
@@ -2785,8 +2793,14 @@ struct RecapBlogPageView: View {
             guard revealApplies else { return }
             startHighlightsRevealIfNeeded()
         }
-        .onChange(of: draft.id) { _, _ in activeHighlightSlideIndex = 0 }
-        .onChange(of: isHighlightsStyleEnabled) { _, _ in activeHighlightSlideIndex = 0 }
+        .onChange(of: draft.id) { _, _ in
+            activeHighlightSlideIndex = 0
+            highlightAutoAdvancePaused = false
+        }
+        .onChange(of: isHighlightsStyleEnabled) { _, _ in
+            activeHighlightSlideIndex = 0
+            highlightAutoAdvancePaused = false
+        }
     }
 
     private var heroTitleText: some View {
@@ -2840,9 +2854,11 @@ struct RecapBlogPageView: View {
             HStack(spacing: compact ? 7 : 8) {
                 ForEach(Array(slides.enumerated()), id: \.element.id) { index, slide in
                     Button {
+                        highlightAutoAdvancePaused = true
                         withAnimation(.easeInOut(duration: 0.25)) {
                             activeHighlightSlideIndex = index
                         }
+                        selectedHighlightSlide = slide
                     } label: {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(slide.title)
@@ -2868,6 +2884,84 @@ struct RecapBlogPageView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
+            .padding(.vertical, 2)
+        }
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onEnded { value in
+                    guard slides.count > 1 else { return }
+                    highlightAutoAdvancePaused = true
+                    if value.translation.width < -20 {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            activeHighlightSlideIndex = (selectedIndex + 1) % slides.count
+                        }
+                    } else if value.translation.width > 20 {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            activeHighlightSlideIndex = (selectedIndex - 1 + slides.count) % slides.count
+                        }
+                    }
+                }
+        )
+    }
+
+    private func highlightFullScreenOverlay(slide: BlogHighlightSlide) -> some View {
+        ZStack {
+            Color.black.opacity(0.92)
+                .ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                HStack {
+                    Spacer()
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedHighlightSlide = nil
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+
+                let assetIdentifier = slide.assetIdentifier
+                Group {
+                    if let assetIdentifier {
+                        AssetPhotoView(assetIdentifier: assetIdentifier, cornerRadius: 24, targetSize: CGSize(width: 1200, height: 900))
+                            .aspectRatio(4/5, contentMode: .fit)
+                    } else {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(Color.white.opacity(0.08))
+                            Image(systemName: slide.fallbackSymbol)
+                                .font(.system(size: 56, weight: .light))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                        .aspectRatio(4/5, contentMode: .fit)
+                    }
+                }
+                .frame(maxWidth: 440)
+                .shadow(color: .black.opacity(0.35), radius: 20, y: 10)
+
+                VStack(spacing: 8) {
+                    Text(slide.title)
+                        .font(.title2.weight(.semibold))
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                    Text(slide.subtitle)
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.78))
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 24)
+            }
+        }
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedHighlightSlide = nil
             }
         }
     }
