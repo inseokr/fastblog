@@ -261,6 +261,15 @@ struct RecapBlogPageView: View {
     @State private var cachedDayPagerThumbnailAssetIds: [String] = []
     @State private var activeHighlightSlideIndex = 0
 
+    // MARK: - Highlights Reveal State
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("bloggo.highlightsRevealSeen") private var highlightsRevealSeenRaw = ""
+    @State private var highlightsRevealStage: HighlightsRevealStage = .done
+    @State private var highlightsRevealTask: Task<Void, Never>?
+    @State private var hasStartedHighlightsRevealThisSession = false
+    @State private var isIntelligenceCascadeEligible = false
+    @State private var showIntelligenceCascade = true
+
     private var blogPresentationStyle: BlogPresentationStyle {
         BlogPresentationStyle(rawValue: blogPresentationStyleRaw) ?? .classic
     }
@@ -742,6 +751,13 @@ struct RecapBlogPageView: View {
         .onChange(of: earlyAccessSheetPresented) { _, _ in refreshMissingPhotosTooltipVisibility() }
         .onChange(of: isEditMode) { _, _ in refreshBlogReelAutoplayEnabled() }
         .onChange(of: hasFinishedInitialLoad) { _, _ in refreshBlogReelAutoplayEnabled() }
+        .onChange(of: isEditMode) { _, isEditing in
+            if isEditing {
+                cancelHighlightsReveal()
+            } else {
+                startHighlightsRevealIfNeeded()
+            }
+        }
         .onChange(of: placePhotoModalItem?.id) { _, newId in
             if newId != nil {
                 revealRecapNavigationDuringPhotoDismiss = false
@@ -8681,6 +8697,105 @@ private struct MissingPhotosTooltipOverlay: View {
     }
 }
 
+
+// MARK: - Highlights Reveal
+
+extension RecapBlogPageView {
+    enum HighlightsRevealStage: Int, Comparable {
+        case hidden
+        case heroPhoto
+        case capsule
+        case title
+        case openingLine
+        case metrics
+        case slideStrip
+        case done
+
+        static func < (lhs: HighlightsRevealStage, rhs: HighlightsRevealStage) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    private var highlightsRevealSeenIds: [String] {
+        highlightsRevealSeenRaw.isEmpty ? [] : highlightsRevealSeenRaw.components(separatedBy: ",")
+    }
+
+    private var hasSeenHighlightsReveal: Bool {
+        highlightsRevealSeenIds.contains(blogId.uuidString)
+    }
+
+    private func markHighlightsRevealSeen() {
+        var ids = highlightsRevealSeenIds
+        guard !ids.contains(blogId.uuidString) else { return }
+        ids.append(blogId.uuidString)
+        if ids.count > 120 {
+            ids.removeFirst(ids.count - 120)
+        }
+        highlightsRevealSeenRaw = ids.joined(separator: ",")
+    }
+
+    private func startHighlightsRevealIfNeeded() {
+        guard !hasStartedHighlightsRevealThisSession else { return }
+        guard hasFinishedInitialLoad,
+              isHighlightsStyleEnabled,
+              !isEditMode,
+              selectedDayIndex == 0,
+              !isExportingPDF,
+              !showStoryMode,
+              !pendingStoryOpen,
+              pendingDeepLinkStopScrollId == nil,
+              initialScrollToStopId == nil,
+              !hasSeenHighlightsReveal
+        else { return }
+
+        hasStartedHighlightsRevealThisSession = true
+        isIntelligenceCascadeEligible = true
+        showIntelligenceCascade = false
+        highlightsRevealStage = .hidden
+        let reduceMotion = self.reduceMotion
+        highlightsRevealTask?.cancel()
+        highlightsRevealTask = Task { @MainActor in
+            func advance(to stage: HighlightsRevealStage, with animation: Animation) -> Bool {
+                guard !Task.isCancelled else { return false }
+                withAnimation(reduceMotion ? .easeInOut(duration: 0.3) : animation) {
+                    highlightsRevealStage = stage
+                }
+                return true
+            }
+            guard advance(to: .heroPhoto, with: .easeIn(duration: 0.5)) else { return }
+            try? await Task.sleep(for: .milliseconds(500))
+            guard advance(to: .capsule, with: .easeInOut(duration: 0.3)) else { return }
+            try? await Task.sleep(for: .milliseconds(200))
+            guard advance(to: .title, with: .spring(response: 0.4, dampingFraction: 0.75)) else { return }
+            try? await Task.sleep(for: .milliseconds(250))
+            guard advance(to: .openingLine, with: .easeInOut(duration: 0.3)) else { return }
+            try? await Task.sleep(for: .milliseconds(250))
+            guard advance(to: .metrics, with: .easeInOut(duration: 0.3)) else { return }
+            try? await Task.sleep(for: .milliseconds(700))
+            guard advance(to: .slideStrip, with: .spring(response: 0.4, dampingFraction: 0.75)) else { return }
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            highlightsRevealStage = .done
+            markHighlightsRevealSeen()
+            highlightsRevealTask = nil
+        }
+    }
+
+    private func cancelHighlightsReveal() {
+        highlightsRevealTask?.cancel()
+        highlightsRevealTask = nil
+        highlightsRevealStage = .done
+        isIntelligenceCascadeEligible = false
+        showIntelligenceCascade = true
+    }
+}
+
+private struct HighlightsIntelligenceMinYPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = .greatestFiniteMagnitude
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = min(value, nextValue())
+    }
+}
 
 #Preview {
     NavigationStack {
