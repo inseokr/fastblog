@@ -66,11 +66,6 @@ private struct PlaceCategoryPickerTarget: Identifiable {
 }
 
 struct RecapBlogPageView: View {
-    private enum BlogPresentationStyle: String {
-        case classic
-        case highlights
-    }
-
     private struct BlogHighlightFact: Identifiable {
         var id: String { title }
         let icon: String
@@ -85,7 +80,23 @@ struct RecapBlogPageView: View {
         let title: String
         let subtitle: String
         let assetIdentifier: String?
-        let fallbackSymbol: String
+        let fallbackSymbol: String = "photo"
+        let placeStop: PlaceStop? = nil
+    }
+
+    private enum HighlightsRevealStage: Int, Comparable {
+        case hidden
+        case heroPhoto
+        case capsule
+        case title
+        case openingLine
+        case metrics
+        case slideStrip
+        case done
+
+        static func < (lhs: HighlightsRevealStage, rhs: HighlightsRevealStage) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
     }
 
     /// Stable `ScrollViewReader` targets (strings can be unreliable across `TabView` layout passes).
@@ -123,6 +134,7 @@ struct RecapBlogPageView: View {
     @EnvironmentObject private var nearbyShare: TripNearbyShareSessionController
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
 
     private var recapScreenBackground: Color {
         colorScheme == .dark ? .black : Color(uiColor: .systemGroupedBackground)
@@ -226,7 +238,6 @@ struct RecapBlogPageView: View {
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
     @AppStorage(DistanceUnit.storageKey) private var distanceUnitRaw: String = DistanceUnit.miles.rawValue
     @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
-    @AppStorage("bloggo.blogPresentationStyle") private var blogPresentationStyleRaw: String = BlogPresentationStyle.highlights.rawValue
     @State private var showCloudOnboardingModal = false
     @State private var newlyUploadedBlogKey: Int? = nil
     @State private var showSaveTipAlert = false
@@ -261,9 +272,7 @@ struct RecapBlogPageView: View {
     @State private var cachedDayPagerThumbnailAssetIds: [String] = []
     @State private var activeHighlightSlideIndex = 0
     @State private var highlightAutoAdvancePaused = false
-    @State private var selectedHighlightSlide: BlogHighlightSlide?
 
-    // MARK: - Highlights Reveal State
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("bloggo.highlightsRevealSeen") private var highlightsRevealSeenRaw = ""
     @State private var highlightsRevealStage: HighlightsRevealStage = .done
@@ -271,14 +280,6 @@ struct RecapBlogPageView: View {
     @State private var hasStartedHighlightsRevealThisSession = false
     @State private var isIntelligenceCascadeEligible = false
     @State private var showIntelligenceCascade = true
-
-    private var blogPresentationStyle: BlogPresentationStyle {
-        BlogPresentationStyle(rawValue: blogPresentationStyleRaw) ?? .classic
-    }
-
-    private var isHighlightsStyleEnabled: Bool {
-        blogPresentationStyle == .highlights
-    }
 
     // Cloud Upload State
     @State private var isUploading = false
@@ -311,6 +312,12 @@ struct RecapBlogPageView: View {
     @State private var showPDFExportOptions = false
     @State private var showStoryMode = false
     @State private var showStoryModePDFOptions = false
+    @AppStorage(BlogHighlightsStoryPendingStore.storageKey) private var highlightsStoryPendingRaw = ""
+    @State private var showHighlightsStory = false
+    @State private var highlightsStoryContent: BlogHighlightsContent?
+    @State private var highlightsStorySettleTask: Task<Void, Never>?
+    @State private var hasAutoPresentedHighlightsStoryThisSession = false
+    @State private var isHoldingInitialHighlightsStoryCurtain = false
     @State private var showShareYourBlogSheet = false
     /// Which screen is shown inside the “Share Your Blog” pull-up (menu vs guest prompts).
     @State private var shareYourBlogSheetPhase: ShareYourBlogSheetPhase = .menu
@@ -553,7 +560,127 @@ struct RecapBlogPageView: View {
         }
     }
 
+    private func handleRecapPageAppear() {
+        activeHighlightSlideIndex = 0
+        highlightAutoAdvancePaused = false
+        prepareInitialHighlightsStoryCurtainIfNeeded()
+        refreshMissingPhotosTooltipVisibility()
+        refreshBlogReelAutoplayEnabled()
+        scheduleHighlightsStoryIfPending()
+        Task { await createdRecapStore.inferTransportModesIfNeeded(for: blogId) }
+    }
+
+    private func handleRecapPageDisappear() {
+        highlightsStorySettleTask?.cancel()
+        dismissHighlightsStoryForInterruption()
+        blogReelAutoplay.setAutoplayEnabled(false)
+        // Overlay blogs dismiss entirely: do not mark "initial exit" or the next open flips to read-only.
+        if onRequestDismiss == nil {
+            createdRecapStore.markInitialRecapEditorExit(for: blogId)
+        }
+    }
+
+    private func handleBlogSettingsGearFrameChange(_ rect: CGRect) {
+        if rect.width > 0.5, rect.height > 0.5 {
+            blogSettingsGearFrameGlobal = rect
+        }
+    }
+
+    private func handleBlogSettingsPresentationChange(_ isPresented: Bool) {
+        guard isPresented, showFirstSaveBlogSettingsSpotlight else { return }
+        dismissFirstSaveBlogSettingsSpotlight(markedSeen: true)
+    }
+
+    private func handleStoryModePresentationChange(_ isPresented: Bool) {
+        if isPresented {
+            dismissHighlightsStoryForInterruption()
+        } else {
+            scheduleHighlightsStoryIfPending()
+        }
+        refreshMissingPhotosTooltipVisibility()
+        refreshBlogReelAutoplayEnabled()
+    }
+
+    private func handlePanoramaPresentationChange(_ isPresented: Bool) {
+        if isPresented {
+            dismissHighlightsStoryForInterruption()
+        } else {
+            scheduleHighlightsStoryIfPending()
+        }
+        refreshMissingPhotosTooltipVisibility()
+        refreshBlogReelAutoplayEnabled()
+    }
+
+    private func handlePDFExportChange(_ isExporting: Bool) {
+        if isExporting {
+            dismissHighlightsStoryForInterruption()
+        } else {
+            scheduleHighlightsStoryIfPending()
+        }
+        refreshMissingPhotosTooltipVisibility()
+        refreshBlogReelAutoplayEnabled()
+    }
+
+    private func handleAuthPresentationChange(_ isPresented: Bool) {
+        if isPresented {
+            dismissHighlightsStoryForInterruption()
+        }
+        refreshMissingPhotosTooltipVisibility()
+    }
+
+    private func handleGuestSecondSaveLimitChange(_ isPresented: Bool) {
+        if isPresented {
+            dismissHighlightsStoryForInterruption()
+        }
+        refreshMissingPhotosTooltipVisibility()
+    }
+
+    private func handleEarlyAccessSheetChange(_ isPresented: Bool) {
+        if isPresented {
+            dismissHighlightsStoryForInterruption()
+        }
+        refreshMissingPhotosTooltipVisibility()
+    }
+
+    private func handleInitialLoadChange() {
+        refreshBlogReelAutoplayEnabled()
+        scheduleHighlightsStoryIfPending()
+    }
+
+    private func handlePlacePhotoModalChange(_ newId: String?) {
+        if newId != nil {
+            revealRecapNavigationDuringPhotoDismiss = false
+        }
+        refreshMissingPhotosTooltipVisibility()
+        refreshBlogReelAutoplayEnabled()
+    }
+
+    private func handleFullScreenMapDayChange(_ dayId: UUID?) {
+        if dayId != nil {
+            dismissHighlightsStoryForInterruption()
+        } else {
+            scheduleHighlightsStoryIfPending()
+        }
+    }
+
+    private func handleHighlightsStoryPresentationChange() {
+        refreshMissingPhotosTooltipVisibility()
+        refreshBlogReelAutoplayEnabled()
+    }
+
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        if phase != .active {
+            dismissHighlightsStoryForInterruption()
+        } else {
+            scheduleHighlightsStoryIfPending()
+        }
+    }
+
     var body: some View {
+        pageLifecycleRoot
+    }
+
+    private var pageOverlayStack: some View {
         ZStack {
             GeometryReader { screenGeo in
                 bodyContent(screenHeight: screenGeo.size.height)
@@ -590,16 +717,42 @@ struct RecapBlogPageView: View {
                 .zIndex(200)
             }
 
+            if isHoldingInitialHighlightsStoryCurtain {
+                Color.black
+                    .ignoresSafeArea()
+                    .transition(.identity)
+                    .zIndex(215)
+            }
+
+            if showHighlightsStory, let content = highlightsStoryContent {
+                HighlightsStoryView(
+                    content: content,
+                    onDismiss: {
+                        releaseInitialHighlightsStoryCurtain()
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            showHighlightsStory = false
+                        }
+                        highlightsStoryContent = nil
+                    },
+                    onCompleted: {
+                        removeHighlightsStoryPending(for: blogId)
+                    },
+                    onOpenBlog: {
+                        releaseInitialHighlightsStoryCurtain()
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            showHighlightsStory = false
+                        }
+                        highlightsStoryContent = nil
+                    }
+                )
+                .transition(.opacity)
+                .zIndex(220)
+            }
+
             if showPanorama {
                 panoramaOverlayLayer()
                     .transition(.opacity)
                     .zIndex(127)
-            }
-
-            if let slide = selectedHighlightSlide {
-                highlightFullScreenOverlay(slide: slide)
-                    .transition(.opacity)
-                    .zIndex(170)
             }
 
             if let day = fullScreenMapDay {
@@ -702,8 +855,66 @@ struct RecapBlogPageView: View {
             }
 
         }
-        // When Story Mode is open, drive the entire hierarchy’s color scheme (including status bar) from the story.
-        .preferredColorScheme(showStoryMode ? storyStatusBarColorScheme : nil)
+
+    }
+
+    private var pageLifecycleRoot: some View {
+        pagePresentationSignalRoot
+        .onChange(of: isEditMode) { _, _ in refreshBlogReelAutoplayEnabled() }
+        .onChange(of: hasFinishedInitialLoad) { _, _ in
+            handleInitialLoadChange()
+        }
+        .onChange(of: placePhotoModalItem?.id) { _, newId in
+            handlePlacePhotoModalChange(newId)
+        }
+        .onChange(of: fullScreenMapDay?.id) { _, id in
+            handleFullScreenMapDayChange(id)
+        }
+        .onChange(of: showHighlightsStory) { _, _ in
+            handleHighlightsStoryPresentationChange()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            handleScenePhaseChange(phase)
+        }
+    }
+
+    private var pagePresentationSignalRoot: some View {
+        pageAnimatedRoot
+        .onPreferenceChange(BlogSettingsGearFramePreferenceKey.self) { rect in
+            handleBlogSettingsGearFrameChange(rect)
+        }
+        .onChange(of: showBlogSettings) { _, isPresented in
+            handleBlogSettingsPresentationChange(isPresented)
+        }
+        .onAppear(perform: handleRecapPageAppear)
+        .onDisappear(perform: handleRecapPageDisappear)
+        .onChange(of: showStoryMode) { _, isPresented in
+            handleStoryModePresentationChange(isPresented)
+        }
+        .onChange(of: showPanorama) { _, isPresented in
+            handlePanoramaPresentationChange(isPresented)
+        }
+        .onChange(of: isExportingPDF) { _, exporting in
+            handlePDFExportChange(exporting)
+        }
+        .onChange(of: showAuth) { _, isPresented in
+            handleAuthPresentationChange(isPresented)
+        }
+        .onChange(of: showGuestSecondSaveLimitModal) { _, isPresented in
+            handleGuestSecondSaveLimitChange(isPresented)
+        }
+        .onChange(of: createdRecapStore.guestSecondSaveBlockedSignal) { _, _ in
+            showGuestSecondSaveLimitModal = true
+        }
+        .onChange(of: earlyAccessSheetPresented) { _, isPresented in
+            handleEarlyAccessSheetChange(isPresented)
+        }
+    }
+
+    private var pageAnimatedRoot: some View {
+        pageOverlayStack
+        // When Story Mode or Highlights Story is open, drive modal chrome from the presentation.
+        .preferredColorScheme(showStoryMode ? storyStatusBarColorScheme : ((showHighlightsStory || isHoldingInitialHighlightsStoryCurtain) ? .dark : nil))
         .dynamicTypeSize(.large)
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
@@ -717,62 +928,7 @@ struct RecapBlogPageView: View {
         .animation(.spring(response: 0.38, dampingFraction: 0.88), value: earlyAccessSheetPresented)
         .animation(.easeInOut(duration: 0.28), value: showMissingPhotosTooltip)
         .animation(.easeOut(duration: 0.22), value: showFirstSaveBlogSettingsSpotlight)
-        .onPreferenceChange(BlogSettingsGearFramePreferenceKey.self) { rect in
-            if rect.width > 0.5, rect.height > 0.5 {
-                blogSettingsGearFrameGlobal = rect
-            }
-        }
-        .onChange(of: showBlogSettings) { _, isPresented in
-            guard isPresented, showFirstSaveBlogSettingsSpotlight else { return }
-            dismissFirstSaveBlogSettingsSpotlight(markedSeen: true)
-        }
-        .onAppear {
-            refreshMissingPhotosTooltipVisibility()
-            refreshBlogReelAutoplayEnabled()
-            Task { await createdRecapStore.inferTransportModesIfNeeded(for: blogId) }
-        }
-        .onDisappear {
-            blogReelAutoplay.setAutoplayEnabled(false)
-            // Overlay blogs dismiss entirely — do not mark "initial exit" or the next open will flip to
-            // read-only instead of dismissing back to Places visited (see toolbar back handling).
-            if onRequestDismiss == nil {
-                createdRecapStore.markInitialRecapEditorExit(for: blogId)
-            }
-        }
-        .onChange(of: showStoryMode) { _, _ in
-            refreshMissingPhotosTooltipVisibility()
-            refreshBlogReelAutoplayEnabled()
-        }
-        .onChange(of: showPanorama) { _, _ in
-            refreshMissingPhotosTooltipVisibility()
-            refreshBlogReelAutoplayEnabled()
-        }
-        .onChange(of: isExportingPDF) { _, _ in
-            refreshMissingPhotosTooltipVisibility()
-            refreshBlogReelAutoplayEnabled()
-        }
-        .onChange(of: showAuth) { _, _ in refreshMissingPhotosTooltipVisibility() }
-        .onChange(of: showGuestSecondSaveLimitModal) { _, _ in refreshMissingPhotosTooltipVisibility() }
-        .onChange(of: createdRecapStore.guestSecondSaveBlockedSignal) { _, _ in
-            showGuestSecondSaveLimitModal = true
-        }
-        .onChange(of: earlyAccessSheetPresented) { _, _ in refreshMissingPhotosTooltipVisibility() }
-        .onChange(of: isEditMode) { _, _ in refreshBlogReelAutoplayEnabled() }
-        .onChange(of: hasFinishedInitialLoad) { _, _ in refreshBlogReelAutoplayEnabled() }
-        .onChange(of: isEditMode) { _, isEditing in
-            if isEditing {
-                cancelHighlightsReveal()
-            } else {
-                startHighlightsRevealIfNeeded()
-            }
-        }
-        .onChange(of: placePhotoModalItem?.id) { _, newId in
-            if newId != nil {
-                revealRecapNavigationDuringPhotoDismiss = false
-            }
-            refreshMissingPhotosTooltipVisibility()
-            refreshBlogReelAutoplayEnabled()
-        }
+        .animation(.easeInOut(duration: 0.18), value: isHoldingInitialHighlightsStoryCurtain)
     }
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
@@ -1165,6 +1321,8 @@ struct RecapBlogPageView: View {
 
     private var shouldHideRecapNavigationBar: Bool {
         showStoryMode ||
+        showHighlightsStory ||
+        isHoldingInitialHighlightsStoryCurtain ||
         showPanorama ||
         showSocialPostStudio ||
         fullScreenMapDay != nil ||
@@ -1841,7 +1999,10 @@ struct RecapBlogPageView: View {
         }
         .onChange(of: pendingDeepLinkStopScrollId) { _, id in
             if id != nil {
+                dismissHighlightsStoryForInterruption()
                 recapDayScrollCoverMaskActive = false
+            } else {
+                scheduleHighlightsStoryIfPending()
             }
         }
         .onChange(of: draft.days.count) { _, _ in
@@ -1924,32 +2085,14 @@ struct RecapBlogPageView: View {
 
             // Always show the trip header (cover/title) on every day so swiping doesn't feel like the
             // cover "disappears" after Day 1. (Other trip-level affordances can still be Day 1 only.)
-            if isHighlightsStyleEnabled {
-                cinematicHighlightsOpening(screenHeight: screenHeight, revealApplies: index == 0)
-                    .id("cinematic-highlights-opening")
-                    .background(
-                        GeometryReader { titleGeo in
-                            Color.clear.preference(
-                                key: TitleMinYPreferenceKey.self,
-                                value: titleGeo.frame(in: .named("scroll")).maxY
-                            )
-                        }
-                    )
-                if index == 0 {
-                    highlightsIntelligenceSection
-                        .background(
-                            GeometryReader { intelGeo in
-                                Color.clear.preference(
-                                    key: HighlightsIntelligenceMinYPreferenceKey.self,
-                                    value: intelGeo.frame(in: .named("scroll")).minY
-                                )
-                            }
-                        )
-                }
-            } else if draft.selectedCoverPhotoIdentifier != nil {
+            if draft.selectedCoverPhotoIdentifier != nil {
                 coverPhotoHero(screenHeight: screenHeight)
             } else {
                 blogTitleView
+            }
+
+            if index == 0 {
+                highlightsIntelligenceSection
             }
 
             // Day 1 shows trip narrative under the cover; Day 2+ omit it in view mode. Edit mode keeps it on every day.
@@ -1965,9 +2108,7 @@ struct RecapBlogPageView: View {
                     }
                 }
 
-                if !isHighlightsStyleEnabled || isEditMode {
-                    tripNarrativeCard
-                }
+                tripNarrativeCard
             }
 
             // New moments card — shown once, on the latest day that has new photos.
@@ -2079,12 +2220,6 @@ struct RecapBlogPageView: View {
                 if shouldShow != showNavBarTitle {
                     showNavBarTitle = shouldShow
                 }
-            }
-            .onPreferenceChange(HighlightsIntelligenceMinYPreferenceKey.self) { minY in
-                guard index == 0, isIntelligenceCascadeEligible, !showIntelligenceCascade else { return }
-                guard minY < screenHeight * 0.82 else { return }
-                isIntelligenceCascadeEligible = false
-                showIntelligenceCascade = true
             }
             .background(recapScreenBackground)
             .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
@@ -2286,7 +2421,12 @@ struct RecapBlogPageView: View {
     }
 
     private func coverPhotoHero(screenHeight: CGFloat) -> some View {
-        let displayCoverId = cyclingCoverPhotoId ?? draft.selectedCoverPhotoIdentifier
+        let slides = highlightSlides
+        let safeHighlightIndex = slides.indices.contains(activeHighlightSlideIndex) ? activeHighlightSlideIndex : 0
+        let highlightedCoverId = (!isEditMode && slides.indices.contains(safeHighlightIndex))
+            ? slides[safeHighlightIndex].assetIdentifier
+            : nil
+        let displayCoverId = cyclingCoverPhotoId ?? highlightedCoverId ?? draft.selectedCoverPhotoIdentifier
         let resolvedBaseHeight = coverHeroBaseScreenHeight ?? screenHeight
         let heroHeight = Self.placeMediaTileHeight(for: resolvedBaseHeight)
         let scale = UIScreen.main.scale
@@ -2309,6 +2449,7 @@ struct RecapBlogPageView: View {
                         .animation(.easeInOut(duration: 0.6), value: isCoverPending)
                         .id(coverId)
                         .transition(.opacity)
+                        .animation(.easeInOut(duration: 0.5), value: coverId)
                 }
 
                 // Dimmed overlay — stronger in edit mode for readability
@@ -2322,6 +2463,18 @@ struct RecapBlogPageView: View {
                         endPoint: .top
                     )
                 }
+
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard !isCoverPending, displayCoverId != nil else { return }
+                        if isEditMode {
+                            coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
+                            showCoverPhotoPicker = true
+                        } else {
+                            presentHighlightsStoryReplay()
+                        }
+                    }
 
                 // Title is pinned to a stable position (center of hero).
                 // Edit mode: VStack layout so title box and Change Cover button
@@ -2432,6 +2585,7 @@ struct RecapBlogPageView: View {
                                         }
                                     )
                                     .frame(maxWidth: .infinity)
+                                    .allowsHitTesting(false)
                                     .id("hero-title-view")
 
                                 VStack(spacing: 6) {
@@ -2448,6 +2602,7 @@ struct RecapBlogPageView: View {
                                             .font(.callout)
                                             .foregroundColor(.white.opacity(0.92))
                                             .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                                            .allowsHitTesting(false)
 
                                         HStack(spacing: 8) {
                                             Text("\(dayCount) Day\(dayCount == 1 ? "" : "s")")
@@ -2459,6 +2614,7 @@ struct RecapBlogPageView: View {
                                         .font(.callout)
                                         .foregroundColor(.white.opacity(0.92))
                                         .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                                        .allowsHitTesting(false)
 
                                         Button {
                                             showShareYourBlogSheet = true
@@ -2518,41 +2674,53 @@ struct RecapBlogPageView: View {
                     .transition(.opacity)
                 }
 
-                // Blog highlights — top-trailing of cover, shown as swipeable cards instead of the slideshow preview.
+                // Gallery — top-trailing of cover; opens the photo slideshow.
                 if !isEditMode, !isCoverPending, displayCoverId != nil, !isExportingPDF, !showStoryMode {
-                    let slides = highlightSlides
-                    let safeIndex = slides.indices.contains(activeHighlightSlideIndex) ? activeHighlightSlideIndex : 0
                     VStack(spacing: 0) {
                         HStack(spacing: 0) {
                             Spacer(minLength: 0)
-                            VStack(alignment: .trailing, spacing: 6) {
-                                Text("Highlights")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundColor(.white.opacity(0.9))
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.black.opacity(0.28), in: Capsule())
-
-                                highlightSlideStrip(slides: slides, selectedIndex: safeIndex, compact: true)
-                                    .frame(maxWidth: min(260, UIScreen.main.bounds.width - 42))
+                            Button {
+                                showPanorama = true
+                            } label: {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.gray.opacity(0.55))
+                                        .frame(width: 36, height: 36)
+                                    Image(systemName: "square.grid.3x3.fill")
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.white)
+                                        .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+                                }
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                             }
-                            .padding(.trailing, 14)
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Gallery")
+                            .padding(.trailing, 16)
                         }
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 10)
+                    .padding(.top, 12)
                     .allowsHitTesting(true)
                 }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                guard !isCoverPending, displayCoverId != nil else { return }
-                if isEditMode {
-                    coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
-                    showCoverPhotoPicker = true
-                } else {
-                    showPanorama = true
+
+                // Blog highlights — anchored to the bottom of the cover and used to swap the hero photo.
+                if !isEditMode, !isCoverPending, displayCoverId != nil, !isExportingPDF, !showStoryMode {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Highlights")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundColor(.white.opacity(0.92))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(Color.black.opacity(0.34), in: Capsule())
+
+                        highlightSlideStrip(slides: slides, selectedIndex: safeHighlightIndex, compact: true)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .allowsHitTesting(true)
                 }
             }
         }
@@ -2574,6 +2742,32 @@ struct RecapBlogPageView: View {
             // Ignore transient geometry shifts while Share/QR overlays are active.
             if !showShareYourBlogSheet && !showBloggoQRSheet {
                 coverHeroBaseScreenHeight = newHeight
+            }
+        }
+        .simultaneousGesture(coverHighlightSwipeGesture(slides: slides, selectedIndex: safeHighlightIndex))
+        .task(id: highlightCoverAutoAdvanceSignature(slideCount: slides.count)) {
+            guard slides.count > 1,
+                  !isEditMode,
+                  !isCoverPending,
+                  !highlightAutoAdvancePaused,
+                  !showHighlightsStory,
+                  !isHoldingInitialHighlightsStoryCurtain,
+                  !showStoryMode else { return }
+
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled,
+                      !highlightAutoAdvancePaused,
+                      !isEditMode,
+                      !isCoverPending,
+                      !showHighlightsStory,
+                      !isHoldingInitialHighlightsStoryCurtain,
+                      !showStoryMode else { break }
+
+                let currentSlides = highlightSlides
+                guard currentSlides.count > 1 else { break }
+                let currentIndex = activeHighlightSlideIndex
+                advanceHighlightCover(by: 1, in: currentSlides, from: currentIndex)
             }
         }
         .task(id: isCoverPending) {
@@ -2605,15 +2799,14 @@ struct RecapBlogPageView: View {
             BlogHighlightSlide(
                 title: stop.cleanedPlaceTitle,
                 subtitle: highlightSlideSubtitle(for: stop),
-                assetIdentifier: stop.coverPhoto?.localIdentifier,
-                fallbackSymbol: "photo"
+                assetIdentifier: stop.coverPhoto?.localIdentifier
             )
         }
         if !slides.isEmpty { return slides }
         if let coverId = draft.selectedCoverPhotoIdentifier {
-            return [BlogHighlightSlide(title: draft.title, subtitle: tripDateText, assetIdentifier: coverId, fallbackSymbol: "photo")]
+            return [BlogHighlightSlide(title: draft.title, subtitle: tripDateText, assetIdentifier: coverId)]
         }
-        return [BlogHighlightSlide(title: draft.title, subtitle: tripDateText, assetIdentifier: nil, fallbackSymbol: "sparkles")]
+        return [BlogHighlightSlide(title: draft.title, subtitle: tripDateText, assetIdentifier: nil)]
     }
 
     private func highlightSlideSubtitle(for stop: PlaceStop) -> String {
@@ -2625,228 +2818,55 @@ struct RecapBlogPageView: View {
         return "\(photos) photo\(photos == 1 ? "" : "s") · \(Int(stop.highlightMomentScore.rounded())) highlight score"
     }
 
-    private func cinematicHighlightsOpening(screenHeight: CGFloat, revealApplies: Bool) -> some View {
-        let slides = highlightSlides
-        let revealStage: HighlightsRevealStage = revealApplies ? highlightsRevealStage : .done
-        let safeIndex = slides.indices.contains(activeHighlightSlideIndex) ? activeHighlightSlideIndex : 0
-        let slide = slides[safeIndex]
-        let heroHeight = min(max(screenHeight * 0.70, 560), 700)
-        let isCompactHero = heroHeight < 610
-        let narrative = draft.tripNarrative?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let openingLine = narrative.isEmpty ? generatedOpeningLine : narrative
-        let coverTargetWidth = max(320, UIScreen.main.bounds.width) * UIScreen.main.scale
-        let coverTargetHeight = heroHeight * UIScreen.main.scale
-        let dayCount = draft.days.count
-        let momentCount = draft.days.flatMap(\.placeStops).count
-        let photoCount = draft.allIncludedPhotos.count
+    private func highlightCoverAutoAdvanceSignature(slideCount: Int) -> String {
+        [
+            String(slideCount),
+            highlightAutoAdvancePaused ? "paused" : "playing",
+            isEditMode ? "edit" : "view",
+            isCoverPending ? "pending" : "ready",
+            showHighlightsStory ? "story" : "cover",
+            isHoldingInitialHighlightsStoryCurtain ? "curtain" : "open",
+            showStoryMode ? "storyMode" : "recap",
+        ].joined(separator: "|")
+    }
 
-        return ZStack {
-            Group {
-                if let assetIdentifier = slide.assetIdentifier {
-                    AssetPhotoView(
-                        assetIdentifier: assetIdentifier,
-                        cornerRadius: 0,
-                        targetSize: CGSize(width: coverTargetWidth, height: coverTargetHeight)
-                    )
-                    .aspectRatio(contentMode: .fill)
+    private func coverHighlightSwipeGesture(slides: [BlogHighlightSlide], selectedIndex: Int) -> some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onEnded { value in
+                guard slides.count > 1 else { return }
+                let horizontal = value.translation.width
+                let vertical = value.translation.height
+                guard abs(horizontal) > abs(vertical), abs(horizontal) > 30 else { return }
+                if horizontal < 0 {
+                    advanceHighlightCover(by: 1, in: slides, from: selectedIndex, userInitiated: true)
                 } else {
-                    ZStack {
-                        LinearGradient(
-                            colors: [Color(red: 0.08, green: 0.10, blue: 0.13), Color(red: 0.03, green: 0.13, blue: 0.17)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        Image(systemName: slide.fallbackSymbol)
-                            .font(.system(size: 72, weight: .thin))
-                            .foregroundColor(.white.opacity(0.35))
-                    }
+                    advanceHighlightCover(by: -1, in: slides, from: selectedIndex, userInitiated: true)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .scaleEffect((reduceMotion || revealStage >= .heroPhoto) ? 1.0 : 1.06)
-            .animation(revealStage == .done ? nil : .easeOut(duration: 1.1), value: revealStage)
-            .clipped()
-            .opacity(revealStage >= .heroPhoto ? 1 : 0)
-            .animation(revealStage == .done ? nil : .easeIn(duration: 0.5), value: revealStage)
-            .id(slide.id)
-            .transition(.opacity)
+    }
 
-            LinearGradient(
-                colors: [Color.black.opacity(0.18), Color.black.opacity(0.16), Color.black.opacity(0.9)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            RadialGradient(
-                colors: [Color.black.opacity(0.02), Color.black.opacity(0.42)],
-                center: .center,
-                startRadius: 80,
-                endRadius: 430
-            )
-
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .center, spacing: 10) {
-                    HStack(spacing: 8) {
-                        Label("Blog Highlights", systemImage: "sparkles")
-                        if !tripDateText.isEmpty {
-                            Text(tripDateText)
-                        }
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.white.opacity(0.9))
-                    .lineLimit(1)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .background(Color.black.opacity(0.24), in: Capsule())
-
-                    Spacer(minLength: 10)
-
-                    if isEditMode {
-                        Button {
-                            coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
-                            showCoverPhotoPicker = true
-                        } label: {
-                            Label("Cover", systemImage: "photo")
-                                .font(.caption.weight(.semibold))
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 8)
-                                .background(Color.white.opacity(0.16), in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .opacity(revealStage >= .capsule ? 1 : 0)
-
-                Spacer(minLength: isCompactHero ? 86 : 126)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Group {
-                        if isEditMode {
-                            Button {
-                                showTitleChange = true
-                            } label: {
-                                heroTitleText
-                            }
-                            .buttonStyle(.plain)
-                        } else {
-                            heroTitleText
-                        }
-                    }
-                    .opacity(revealStage >= .title ? 1 : 0)
-                    .offset(y: (reduceMotion || revealStage >= .title) ? 0 : 14)
-
-                    Text(openingLine)
-                        .font(Font.custom("Georgia", size: isCompactHero ? 16 : 17))
-                        .lineSpacing(isCompactHero ? 4 : 5)
-                        .foregroundColor(.white.opacity(0.9))
-                        .lineLimit(isCompactHero ? 2 : 3)
-                        .minimumScaleFactor(0.9)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .opacity(revealStage >= .openingLine ? 1 : 0)
-                }
-                .frame(maxWidth: 620, alignment: .leading)
-
-                HStack(spacing: 8) {
-                    heroMetricPill(value: dayCount, label: "day\(dayCount == 1 ? "" : "s")", revealStage: revealStage, staggerIndex: 0)
-                    heroMetricPill(value: momentCount, label: "moments", revealStage: revealStage, staggerIndex: 1)
-                    heroMetricPill(value: photoCount, label: "photos", revealStage: revealStage, staggerIndex: 2)
-                }
-                .padding(.top, 14)
-
-                if !isCompactHero || slides.count <= 3 {
-                    highlightSlideStrip(slides: slides, selectedIndex: safeIndex, compact: isCompactHero)
-                        .padding(.top, 18)
-                        .opacity(revealStage >= .slideStrip ? 1 : 0)
-                        .offset(y: (reduceMotion || revealStage >= .slideStrip) ? 0 : 24)
-                }
-            }
-            .padding(.top, 18)
-            .padding(.horizontal, 18)
-            .padding(.bottom, isCompactHero ? 22 : 28)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    private func selectHighlightCover(at index: Int, in slides: [BlogHighlightSlide], userInitiated: Bool = false) {
+        guard slides.indices.contains(index) else { return }
+        if userInitiated {
+            highlightAutoAdvancePaused = true
         }
-        .frame(height: heroHeight)
-        .background(Color.black)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard isEditMode else { return }
-            showTitleChange = true
-        }
-        .task(id: "\(slides.count)-\(highlightsRevealStage == .done)-\(highlightAutoAdvancePaused)") {
-            guard slides.count > 1, highlightsRevealStage == .done else { return }
-            while !Task.isCancelled {
-                if highlightAutoAdvancePaused {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    continue
-                }
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                guard !Task.isCancelled, !highlightAutoAdvancePaused else { return }
-                withAnimation(.easeInOut(duration: 0.45)) {
-                    activeHighlightSlideIndex = (activeHighlightSlideIndex + 1) % slides.count
-                }
-            }
-        }
-        .onAppear {
-            guard revealApplies else { return }
-            startHighlightsRevealIfNeeded()
-        }
-        .onChange(of: draft.id) { _, _ in
-            activeHighlightSlideIndex = 0
-            highlightAutoAdvancePaused = false
-        }
-        .onChange(of: isHighlightsStyleEnabled) { _, _ in
-            activeHighlightSlideIndex = 0
-            highlightAutoAdvancePaused = false
+        withAnimation(.easeInOut(duration: 0.25)) {
+            activeHighlightSlideIndex = index
         }
     }
 
-    private var heroTitleText: some View {
-        Text(draft.title)
-            .font(.blog(selectedBlogFont, size: 36, bold: true))
-            .foregroundColor(.white)
-            .lineLimit(2)
-            .minimumScaleFactor(0.74)
-            .shadow(color: .black.opacity(0.62), radius: 10, y: 3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func heroMetricPill(
-        value: Int,
-        label: String,
-        revealStage: HighlightsRevealStage,
-        staggerIndex: Int
-    ) -> some View {
-        HStack(spacing: 4) {
-            HeroCountUpText(
-                target: value,
-                started: revealStage >= .metrics,
-                animated: !reduceMotion && revealStage != .done
-            )
-            .font(.caption.weight(.bold))
-            Text(label)
-                .font(.caption2.weight(.medium))
+    private func advanceHighlightCover(
+        by offset: Int,
+        in slides: [BlogHighlightSlide],
+        from selectedIndex: Int,
+        userInitiated: Bool = false
+    ) {
+        guard slides.count > 1 else { return }
+        if userInitiated {
+            highlightAutoAdvancePaused = true
         }
-        .foregroundColor(.white.opacity(0.9))
-        .lineLimit(1)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(Color.black.opacity(0.26), in: Capsule())
-        .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(0.15), lineWidth: 1)
-        )
-        .opacity(revealStage >= .metrics ? 1 : 0)
-        .offset(y: (reduceMotion || revealStage >= .metrics) ? 0 : 8)
-        .animation(
-            revealStage == .done
-                ? nil
-                : (reduceMotion ? Animation.easeInOut(duration: 0.3) : .spring(response: 0.4, dampingFraction: 0.75))
-                    .delay(Double(staggerIndex) * 0.09),
-            value: revealStage
-        )
+        let nextIndex = (selectedIndex + offset + slides.count) % slides.count
+        selectHighlightCover(at: nextIndex, in: slides)
     }
 
     private func highlightSlideStrip(slides: [BlogHighlightSlide], selectedIndex: Int, compact: Bool = false) -> some View {
@@ -2854,11 +2874,7 @@ struct RecapBlogPageView: View {
             HStack(spacing: compact ? 7 : 8) {
                 ForEach(Array(slides.enumerated()), id: \.element.id) { index, slide in
                     Button {
-                        highlightAutoAdvancePaused = true
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            activeHighlightSlideIndex = index
-                        }
-                        selectedHighlightSlide = slide
+                        selectHighlightCover(at: index, in: slides, userInitiated: true)
                     } label: {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(slide.title)
@@ -2891,79 +2907,13 @@ struct RecapBlogPageView: View {
             DragGesture(minimumDistance: 20)
                 .onEnded { value in
                     guard slides.count > 1 else { return }
-                    highlightAutoAdvancePaused = true
                     if value.translation.width < -20 {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            activeHighlightSlideIndex = (selectedIndex + 1) % slides.count
-                        }
+                        advanceHighlightCover(by: 1, in: slides, from: selectedIndex, userInitiated: true)
                     } else if value.translation.width > 20 {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            activeHighlightSlideIndex = (selectedIndex - 1 + slides.count) % slides.count
-                        }
+                        advanceHighlightCover(by: -1, in: slides, from: selectedIndex, userInitiated: true)
                     }
                 }
         )
-    }
-
-    private func highlightFullScreenOverlay(slide: BlogHighlightSlide) -> some View {
-        ZStack {
-            Color.black.opacity(0.92)
-                .ignoresSafeArea()
-
-            VStack(spacing: 18) {
-                HStack {
-                    Spacer()
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedHighlightSlide = nil
-                        }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.white.opacity(0.9))
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-
-                let assetIdentifier = slide.assetIdentifier
-                Group {
-                    if let assetIdentifier {
-                        AssetPhotoView(assetIdentifier: assetIdentifier, cornerRadius: 24, targetSize: CGSize(width: 1200, height: 900))
-                            .aspectRatio(4/5, contentMode: .fit)
-                    } else {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .fill(Color.white.opacity(0.08))
-                            Image(systemName: slide.fallbackSymbol)
-                                .font(.system(size: 56, weight: .light))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-                        .aspectRatio(4/5, contentMode: .fit)
-                    }
-                }
-                .frame(maxWidth: 440)
-                .shadow(color: .black.opacity(0.35), radius: 20, y: 10)
-
-                VStack(spacing: 8) {
-                    Text(slide.title)
-                        .font(.title2.weight(.semibold))
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-                    Text(slide.subtitle)
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.78))
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.horizontal, 24)
-            }
-        }
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                selectedHighlightSlide = nil
-            }
-        }
     }
 
     private var highlightsIntelligenceSection: some View {
@@ -3056,147 +3006,31 @@ struct RecapBlogPageView: View {
         )
     }
 
+    private var highlightsContent: BlogHighlightsContent {
+        BlogHighlightsContent.build(
+            from: draft,
+            distanceUnit: DistanceUnit(rawValue: distanceUnitRaw) ?? .miles
+        )
+    }
+
     private var highlightFacts: [BlogHighlightFact] {
-        var facts: [BlogHighlightFact] = []
-        if let longest = longestStayFact { facts.append(longest) }
-        if let peak = shootingPeakFact { facts.append(peak) }
-        if let distance = travelDistanceFact { facts.append(distance) }
-        if let hidden = hiddenMomentFact { facts.append(hidden) }
-        if let top = topMomentFact { facts.append(top) }
-        return Array(facts.prefix(5))
-    }
-
-    private var longestStayFact: BlogHighlightFact? {
-        guard let stop = draft.days.flatMap(\.placeStops).max(by: { $0.inferredVisitDurationSeconds < $1.inferredVisitDurationSeconds }),
-              stop.inferredVisitDurationSeconds >= 10 * 60 else { return nil }
-        return BlogHighlightFact(
-            icon: "clock",
-            title: "Longest Stay",
-            value: stop.cleanedPlaceTitle,
-            detail: durationText(seconds: stop.inferredVisitDurationSeconds),
-            tint: Color(red: 0.20, green: 0.70, blue: 0.48)
-        )
-    }
-
-    private var shootingPeakFact: BlogHighlightFact? {
-        let photos = draft.allIncludedPhotos
-        guard !photos.isEmpty else { return nil }
-        var counts: [Int: Int] = [:]
-        let calendar = Calendar.current
-        for photo in photos {
-            counts[calendar.component(.hour, from: photo.timestamp), default: 0] += 1
+        highlightsContent.facts.map { fact in
+            BlogHighlightFact(
+                icon: fact.icon,
+                title: fact.title,
+                value: fact.value,
+                detail: fact.detail,
+                tint: fact.tint.swiftUIColor
+            )
         }
-        guard let peak = counts.max(by: { $0.value < $1.value }) else { return nil }
-        return BlogHighlightFact(
-            icon: "camera.aperture",
-            title: "Shooting Peak",
-            value: hourRangeText(startHour: peak.key),
-            detail: "\(peak.value) photo\(peak.value == 1 ? "" : "s") captured",
-            tint: Color(red: 0.96, green: 0.62, blue: 0.16)
-        )
-    }
-
-    private var travelDistanceFact: BlogHighlightFact? {
-        let distance = totalTravelDistanceMeters()
-        guard distance >= 100 else { return nil }
-        return BlogHighlightFact(
-            icon: "point.topleft.down.curvedto.point.bottomright.up",
-            title: "Travel Span",
-            value: formattedDistance(meters: distance),
-            detail: "Inferred between clustered places",
-            tint: Color(red: 0.35, green: 0.58, blue: 0.96)
-        )
-    }
-
-    private var hiddenMomentFact: BlogHighlightFact? {
-        let sorted = draft.allIncludedPhotos.map(\.timestamp).sorted()
-        guard sorted.count >= 2 else { return nil }
-        let gaps = zip(sorted, sorted.dropFirst()).map { $1.timeIntervalSince($0) }
-        guard let maxGap = gaps.max(), maxGap >= 45 * 60 else { return nil }
-        return BlogHighlightFact(
-            icon: "eye",
-            title: "Quiet Gap",
-            value: durationText(seconds: maxGap),
-            detail: "A stretch with no photos, probably lived off-camera",
-            tint: Color(red: 0.76, green: 0.42, blue: 0.92)
-        )
-    }
-
-    private var topMomentFact: BlogHighlightFact? {
-        guard let stop = draft.highlightMomentsRanked.first else { return nil }
-        return BlogHighlightFact(
-            icon: "star.fill",
-            title: "Top Highlight",
-            value: stop.cleanedPlaceTitle,
-            detail: "\(Int(stop.highlightMomentScore.rounded())) score · \(stop.includedPhotos.count) photo\(stop.includedPhotos.count == 1 ? "" : "s")",
-            tint: Color(red: 0.95, green: 0.36, blue: 0.52)
-        )
     }
 
     private var primaryTravelDNA: String {
-        let stops = draft.days.flatMap(\.placeStops)
-        let titles = stops.map { ($0.placeTitle + " " + ($0.placeCategory ?? "")).lowercased() }.joined(separator: " ")
-        if titles.contains("restaurant") || titles.contains("cafe") || titles.contains("coffee") || titles.contains("food") {
-            return "Taste Seeker"
-        }
-        if titles.contains("park") || titles.contains("beach") || titles.contains("mountain") || titles.contains("trail") {
-            return "Nature Logger"
-        }
-        if titles.contains("museum") || titles.contains("landmark") || titles.contains("temple") || titles.contains("historic") {
-            return "Culture Seeker"
-        }
-        if totalTravelDistanceMeters() > 10_000 {
-            return "Active Traveler"
-        }
-        return "Moment Collector"
+        highlightsContent.travelDNA.name
     }
 
     private var generatedOpeningLine: String {
-        let dayCount = draft.days.count
-        let placeCount = draft.days.flatMap(\.placeStops).count
-        let photoCount = draft.allIncludedPhotos.count
-        return "\(dayCount) day\(dayCount == 1 ? "" : "s"), \(placeCount) moment\(placeCount == 1 ? "" : "s"), and \(photoCount) photo\(photoCount == 1 ? "" : "s") shaped this trip."
-    }
-
-    private func totalTravelDistanceMeters() -> CLLocationDistance {
-        let coords = draft.days
-            .flatMap(\.placeStops)
-            .compactMap { $0.representativeLocation?.clCoordinate ?? $0.photos.first?.location?.clCoordinate }
-        guard coords.count >= 2 else { return 0 }
-        return zip(coords, coords.dropFirst()).reduce(0) { total, pair in
-            let start = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
-            let end = CLLocation(latitude: pair.1.latitude, longitude: pair.1.longitude)
-            return total + end.distance(from: start)
-        }
-    }
-
-    private func formattedDistance(meters: CLLocationDistance) -> String {
-        let unit = DistanceUnit(rawValue: distanceUnitRaw) ?? .miles
-        switch unit {
-        case .miles:
-            return String(format: "%.1f mi", meters / 1609.34)
-        case .kilometers:
-            return String(format: "%.1f km", meters / 1000.0)
-        }
-    }
-
-    private func durationText(seconds: TimeInterval) -> String {
-        let minutes = max(1, Int((seconds / 60).rounded()))
-        if minutes < 60 { return "\(minutes) min" }
-        let hours = minutes / 60
-        let remainder = minutes % 60
-        if remainder == 0 { return "\(hours) hr" }
-        return "\(hours) hr \(remainder) min"
-    }
-
-    private func hourRangeText(startHour: Int) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "ha"
-        let calendar = Calendar.current
-        let start = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: Date()) ?? Date()
-        let end = calendar.date(byAdding: .hour, value: 1, to: start) ?? start
-        return "\(formatter.string(from: start).lowercased())-\(formatter.string(from: end).lowercased())"
+        highlightsContent.openingLine
     }
 
     // MARK: - Photo Library Access (Limited users)
@@ -4188,7 +4022,6 @@ struct RecapBlogPageView: View {
 
     /// Appends photos newly injected in the store; propagates quality scores without overwriting manual include toggles.
     private func mergePhotosFromStore(updatedPhotos: [RecapPhoto], into draftPhotos: inout [RecapPhoto]) {
-        let existingIds = Set(draftPhotos.map(\.id))
         let existingLocalIds = Set(draftPhotos.compactMap(\.localIdentifier))
         for updatedPhoto in updatedPhotos {
             if let photoIdx = draftPhotos.firstIndex(where: { $0.id == updatedPhoto.id }) {
@@ -4233,6 +4066,7 @@ struct RecapBlogPageView: View {
         }
         Task { @MainActor in
             let detail = await createdRecapStore.buildBlogDetailFirstDayOnly(from: trip)
+            markHighlightsStoryPending(for: detail.id)
             createdRecapStore.saveBlogDetail(detail, asDraft: true)
             draft = detail
             hasFinishedInitialLoad = true
@@ -4252,6 +4086,8 @@ struct RecapBlogPageView: View {
         let enabled = hasFinishedInitialLoad
             && !isEditMode
             && !showStoryMode
+            && !showHighlightsStory
+            && !isHoldingInitialHighlightsStoryCurtain
             && !showPanorama
             && !isExportingPDF
             && placePhotoModalItem == nil
@@ -4260,7 +4096,7 @@ struct RecapBlogPageView: View {
 
     private func refreshMissingPhotosTooltipVisibility() {
         guard hasFinishedInitialLoad else { return }
-        let blockingChrome = showStoryMode || showPanorama || isExportingPDF || showAuth || showGuestSecondSaveLimitModal
+        let blockingChrome = showStoryMode || showHighlightsStory || isHoldingInitialHighlightsStoryCurtain || showPanorama || isExportingPDF || showAuth || showGuestSecondSaveLimitModal
             || placePhotoModalItem != nil || dayCaptionEditItem != nil || placeCaptionEditItem != nil
             || photoCaptionEditItem != nil || earlyAccessSheetPresented || showTripNarrativeEdit
         if blockingChrome {
@@ -6553,16 +6389,15 @@ Your blog remains private unless you choose to share it.
             if isEditMode {
                 HStack(spacing: 14) {
                     Button {
-                        blogPresentationStyleRaw = isHighlightsStyleEnabled
-                            ? BlogPresentationStyle.classic.rawValue
-                            : BlogPresentationStyle.highlights.rawValue
+                        presentHighlightsStoryReplay()
                     } label: {
-                        Image(systemName: isHighlightsStyleEnabled ? "rectangle.on.rectangle" : "sparkles")
+                        Image(systemName: "sparkles")
                             .font(.body.weight(.semibold))
                             .foregroundColor(recapChromeForeground)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(isHighlightsStyleEnabled ? "Use Classic Blog Style" : "Use Highlights Blog Style")
+                    .accessibilityLabel("Replay Highlights Story")
+                    .disabled(!highlightsContent.isPlayable)
 
                     Button {
                         performUndo()
@@ -6606,17 +6441,19 @@ Your blog remains private unless you choose to share it.
                 .buttonStyle(.plain)
                 .disabled(!isToolbarSaveEnabled)
             } else if !isExportingPDF && !showStoryMode && fullScreenMapDay == nil {
-                Button {
-                    blogPresentationStyleRaw = isHighlightsStyleEnabled
-                        ? BlogPresentationStyle.classic.rawValue
-                        : BlogPresentationStyle.highlights.rawValue
-                } label: {
-                    Image(systemName: isHighlightsStyleEnabled ? "rectangle.on.rectangle" : "sparkles")
-                        .font(.body.weight(.semibold))
-                        .foregroundColor(recapChromeForeground)
+                HStack(spacing: 14) {
+                    Button {
+                        presentHighlightsStoryReplay()
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .font(.body.weight(.semibold))
+                            .foregroundColor(recapChromeForeground)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Replay Highlights Story")
+                    .disabled(!highlightsContent.isPlayable)
+
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isHighlightsStyleEnabled ? "Use Classic Blog Style" : "Use Highlights Blog Style")
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
@@ -8856,136 +8693,116 @@ private struct MissingPhotosTooltipOverlay: View {
 }
 
 
-// MARK: - Highlights Reveal
+// MARK: - Highlights Story
 
 extension RecapBlogPageView {
-    enum HighlightsRevealStage: Int, Comparable {
-        case hidden
-        case heroPhoto
-        case capsule
-        case title
-        case openingLine
-        case metrics
-        case slideStrip
-        case done
+    private var isHighlightsStoryPendingForBlog: Bool {
+        BlogHighlightsStoryPendingStore.contains(blogId, in: highlightsStoryPendingRaw)
+    }
 
-        static func < (lhs: HighlightsRevealStage, rhs: HighlightsRevealStage) -> Bool {
-            lhs.rawValue < rhs.rawValue
+    private var canHoldInitialHighlightsStoryCurtain: Bool {
+        isHighlightsStoryPendingForBlog
+            && !hasAutoPresentedHighlightsStoryThisSession
+            && !showStoryMode
+            && !pendingStoryOpen
+            && !isExportingPDF
+            && !showPanorama
+            && fullScreenMapDay == nil
+            && !showAuth
+            && !showGuestSecondSaveLimitModal
+            && !earlyAccessSheetPresented
+            && pendingDeepLinkStopScrollId == nil
+            && initialScrollToStopId == nil
+    }
+
+    private var canAutoPresentHighlightsStory: Bool {
+        hasFinishedInitialLoad
+            && isHighlightsStoryPendingForBlog
+            && !hasAutoPresentedHighlightsStoryThisSession
+            && !showHighlightsStory
+            && !showStoryMode
+            && !pendingStoryOpen
+            && !isExportingPDF
+            && !showPanorama
+            && fullScreenMapDay == nil
+            && !showAuth
+            && !showGuestSecondSaveLimitModal
+            && !earlyAccessSheetPresented
+            && pendingDeepLinkStopScrollId == nil
+            && initialScrollToStopId == nil
+    }
+
+    private func markHighlightsStoryPending(for id: UUID) {
+        highlightsStoryPendingRaw = BlogHighlightsStoryPendingStore.appending(id, to: highlightsStoryPendingRaw)
+    }
+
+    private func removeHighlightsStoryPending(for id: UUID) {
+        highlightsStoryPendingRaw = BlogHighlightsStoryPendingStore.removing(id, from: highlightsStoryPendingRaw)
+        if id == blogId {
+            releaseInitialHighlightsStoryCurtain()
         }
     }
 
-    private var highlightsRevealSeenIds: [String] {
-        highlightsRevealSeenRaw.isEmpty ? [] : highlightsRevealSeenRaw.components(separatedBy: ",")
-    }
-
-    private var hasSeenHighlightsReveal: Bool {
-        highlightsRevealSeenIds.contains(blogId.uuidString)
-    }
-
-    private func markHighlightsRevealSeen() {
-        var ids = highlightsRevealSeenIds
-        guard !ids.contains(blogId.uuidString) else { return }
-        ids.append(blogId.uuidString)
-        if ids.count > 120 {
-            ids.removeFirst(ids.count - 120)
-        }
-        highlightsRevealSeenRaw = ids.joined(separator: ",")
-    }
-
-    private func startHighlightsRevealIfNeeded() {
-        guard !hasStartedHighlightsRevealThisSession else { return }
-        guard hasFinishedInitialLoad,
-              isHighlightsStyleEnabled,
-              !isEditMode,
-              selectedDayIndex == 0,
-              !isExportingPDF,
-              !showStoryMode,
-              !pendingStoryOpen,
-              pendingDeepLinkStopScrollId == nil,
-              initialScrollToStopId == nil,
-              !hasSeenHighlightsReveal
-        else { return }
-
-        hasStartedHighlightsRevealThisSession = true
-        isIntelligenceCascadeEligible = true
-        showIntelligenceCascade = false
-        highlightsRevealStage = .hidden
-        let reduceMotion = self.reduceMotion
-        highlightsRevealTask?.cancel()
-        highlightsRevealTask = Task { @MainActor in
-            func advance(to stage: HighlightsRevealStage, with animation: Animation) -> Bool {
-                guard !Task.isCancelled else { return false }
-                withAnimation(reduceMotion ? .easeInOut(duration: 0.3) : animation) {
-                    highlightsRevealStage = stage
-                }
-                return true
+    private func prepareInitialHighlightsStoryCurtainIfNeeded() {
+        guard canHoldInitialHighlightsStoryCurtain else {
+            if !isHighlightsStoryPendingForBlog || hasAutoPresentedHighlightsStoryThisSession {
+                releaseInitialHighlightsStoryCurtain()
             }
-            guard advance(to: .heroPhoto, with: .easeIn(duration: 0.5)) else { return }
-            try? await Task.sleep(for: .milliseconds(500))
-            guard advance(to: .capsule, with: .easeInOut(duration: 0.3)) else { return }
-            try? await Task.sleep(for: .milliseconds(200))
-            guard advance(to: .title, with: .spring(response: 0.4, dampingFraction: 0.75)) else { return }
-            try? await Task.sleep(for: .milliseconds(250))
-            guard advance(to: .openingLine, with: .easeInOut(duration: 0.3)) else { return }
-            try? await Task.sleep(for: .milliseconds(250))
-            guard advance(to: .metrics, with: .easeInOut(duration: 0.3)) else { return }
-            try? await Task.sleep(for: .milliseconds(700))
-            guard advance(to: .slideStrip, with: .spring(response: 0.4, dampingFraction: 0.75)) else { return }
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else { return }
-            highlightsRevealStage = .done
-            markHighlightsRevealSeen()
-            highlightsRevealTask = nil
+            return
+        }
+        guard !isHoldingInitialHighlightsStoryCurtain else { return }
+        isHoldingInitialHighlightsStoryCurtain = true
+    }
+
+    private func releaseInitialHighlightsStoryCurtain() {
+        guard isHoldingInitialHighlightsStoryCurtain else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            isHoldingInitialHighlightsStoryCurtain = false
         }
     }
 
-    private func cancelHighlightsReveal() {
-        highlightsRevealTask?.cancel()
-        highlightsRevealTask = nil
-        highlightsRevealStage = .done
-        isIntelligenceCascadeEligible = false
-        showIntelligenceCascade = true
-    }
-}
-
-private struct HighlightsIntelligenceMinYPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = .greatestFiniteMagnitude
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = min(value, nextValue())
-    }
-}
-
-private struct HeroCountUpText: View {
-    let target: Int
-    let started: Bool
-    let animated: Bool
-
-    @State private var displayed = 0
-
-    var body: some View {
-        Text("\(displayed)")
-            .monospacedDigit()
-            .task(id: started) {
-                guard started else {
-                    displayed = animated ? 0 : target
-                    return
-                }
-                guard animated, displayed != target else {
-                    displayed = target
-                    return
-                }
-                let steps = 14
-                for step in 1...steps {
-                    guard !Task.isCancelled else { return }
-                    let progress = Double(step) / Double(steps)
-                    let eased = 1 - pow(1 - progress, 3)
-                    displayed = Int((Double(target) * eased).rounded())
-                    try? await Task.sleep(for: .milliseconds(50))
-                }
-                displayed = target
+    private func scheduleHighlightsStoryIfPending() {
+        highlightsStorySettleTask?.cancel()
+        prepareInitialHighlightsStoryCurtainIfNeeded()
+        guard canAutoPresentHighlightsStory else { return }
+        highlightsStorySettleTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled, canAutoPresentHighlightsStory else { return }
+            let content = highlightsContent
+            guard content.isPlayable else {
+                removeHighlightsStoryPending(for: blogId)
+                return
             }
+            hasAutoPresentedHighlightsStoryThisSession = true
+            highlightsStoryContent = content
+            withAnimation(.easeInOut(duration: 0.24)) {
+                showHighlightsStory = true
+            }
+        }
+    }
+
+    private func presentHighlightsStoryReplay() {
+        highlightsStorySettleTask?.cancel()
+        highlightAutoAdvancePaused = true
+        let content = highlightsContent
+        guard content.isPlayable else { return }
+        highlightsStoryContent = content
+        withAnimation(.easeInOut(duration: 0.24)) {
+            showHighlightsStory = true
+        }
+    }
+
+    private func dismissHighlightsStoryForInterruption() {
+        highlightsStorySettleTask?.cancel()
+        releaseInitialHighlightsStoryCurtain()
+        guard showHighlightsStory || highlightsStoryContent != nil else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            showHighlightsStory = false
+        }
+        highlightsStoryContent = nil
     }
 }
+
 
 #Preview {
     NavigationStack {

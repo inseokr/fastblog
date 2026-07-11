@@ -94,6 +94,7 @@ struct CreateBlogFlowView: View {
                         try Task.checkCancellation()
 
                         // Save pre-built detail so the blog page loads instantly
+                        BlogHighlightsStoryPendingStore.markPending(detail.id)
                         createdRecapStore.saveBlogDetail(detail, asDraft: true)
                         goToLanding()
                     } catch is CancellationError {

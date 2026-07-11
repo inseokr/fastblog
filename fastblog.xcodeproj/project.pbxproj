@@ -214,6 +214,13 @@
 		BB000301 /* AdminAnalyticsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000300 /* AdminAnalyticsDashboardView.swift */; };
 		BB000303 /* MyStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000302 /* MyStatsView.swift */; };
 		BB000305 /* CameraRollPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000304 /* CameraRollPickerView.swift */; };
+		B90F10012F80000100000001 /* BlogHighlightsContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90F20012F80000100000001 /* BlogHighlightsContent.swift */; };
+		B90F10022F80000100000002 /* HighlightsStoryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90F20022F80000100000002 /* HighlightsStoryViewModel.swift */; };
+		B90F10032F80000100000003 /* HighlightsStoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90F20032F80000100000003 /* HighlightsStoryView.swift */; };
+		B90F10042F80000100000004 /* HighlightsStoryPageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90F20042F80000100000004 /* HighlightsStoryPageViews.swift */; };
+		B90F10052F80000100000005 /* HighlightsParticleField.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90F20052F80000100000005 /* HighlightsParticleField.swift */; };
+		B90F10062F80000100000006 /* HighlightsShareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90F20062F80000100000006 /* HighlightsShareCard.swift */; };
+		B90F10072F80000100000007 /* HighlightsShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = B90F20072F80000100000007 /* HighlightsShaders.metal */; };
 		BB000306 /* AtmosphericWaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000307 /* AtmosphericWaveformView.swift */; };
 		BB000309 /* TripDistanceFromHomeOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000308 /* TripDistanceFromHomeOnboardingView.swift */; };
 		BB00030B /* SlideBlockTextEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00030A /* SlideBlockTextEditView.swift */; };
@@ -525,6 +532,13 @@
 		BB0003B0 /* VisitedCitiesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesService.swift; sourceTree = "<group>"; };
 		BB0003B2 /* VisitedCitiesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesSheet.swift; sourceTree = "<group>"; };
 		BB0003B4 /* WeatherEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherEditSheet.swift; sourceTree = "<group>"; };
+		B90F20012F80000100000001 /* BlogHighlightsContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogHighlightsContent.swift; sourceTree = "<group>"; };
+		B90F20022F80000100000002 /* HighlightsStoryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightsStoryViewModel.swift; sourceTree = "<group>"; };
+		B90F20032F80000100000003 /* HighlightsStoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightsStoryView.swift; sourceTree = "<group>"; };
+		B90F20042F80000100000004 /* HighlightsStoryPageViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightsStoryPageViews.swift; sourceTree = "<group>"; };
+		B90F20052F80000100000005 /* HighlightsParticleField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightsParticleField.swift; sourceTree = "<group>"; };
+		B90F20062F80000100000006 /* HighlightsShareCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightsShareCard.swift; sourceTree = "<group>"; };
+		B90F20072F80000100000007 /* HighlightsShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = HighlightsShaders.metal; sourceTree = "<group>"; };
 		BB0003C0 /* SplitPlaceStopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPlaceStopView.swift; sourceTree = "<group>"; };
 		BB0003C4 /* AppChromeMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppChromeMetrics.swift; sourceTree = "<group>"; };
 		BB0003D2 /* BlogBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogBackupService.swift; sourceTree = "<group>"; };
@@ -628,6 +642,18 @@
 			name = StoryBook;
 			sourceTree = "<group>";
 		};
+		B90F30012F80000100000001 /* HighlightsStory */ = {
+			isa = PBXGroup;
+			children = (
+				B90F20032F80000100000003 /* HighlightsStoryView.swift */,
+				B90F20042F80000100000004 /* HighlightsStoryPageViews.swift */,
+				B90F20052F80000100000005 /* HighlightsParticleField.swift */,
+				B90F20062F80000100000006 /* HighlightsShareCard.swift */,
+				B90F20072F80000100000007 /* HighlightsShaders.metal */,
+			);
+			path = HighlightsStory;
+			sourceTree = "<group>";
+		};
 		BB0001AD /* main */ = {
 			isa = PBXGroup;
 			children = (
@@ -689,6 +715,7 @@
 				BB00010F /* MockPhoto.swift */,
 				BB000111 /* PlaceCluster.swift */,
 				BB000113 /* RecapBlogDetail.swift */,
+				B90F20012F80000100000001 /* BlogHighlightsContent.swift */,
 				BB000273 /* PlaceSuggestion.swift */,
 				BB000115 /* RecapDraft.swift */,
 				BB0001D1 /* RecallTrigger.swift */,
@@ -713,6 +740,7 @@
 				BB00010B /* TripsViewModel.swift */,
 				BB0001D2 /* MemoryRecallViewModel.swift */,
 				A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */,
+				B90F20022F80000100000002 /* HighlightsStoryViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -826,6 +854,7 @@
 				PD00PD01 /* PDFPreviewSheet.swift */,
 				EX00EX01 /* ExportingPDFView.swift */,
 				PS00PS01 /* PreparingStoryBookView.swift */,
+				B90F30012F80000100000001 /* HighlightsStory */,
 				80B209C887D886E7146C1DC1 /* StoryBook */,
 				PA00PA01 /* PanoramaPlayerView.swift */,
 			);
@@ -1310,6 +1339,13 @@
 				BB0003A1 /* PDFExportOptionsSheet.swift in Sources */,
 				BB0003B1 /* VisitedCitiesService.swift in Sources */,
 				BB0003B3 /* VisitedCitiesSheet.swift in Sources */,
+				B90F10012F80000100000001 /* BlogHighlightsContent.swift in Sources */,
+				B90F10022F80000100000002 /* HighlightsStoryViewModel.swift in Sources */,
+				B90F10032F80000100000003 /* HighlightsStoryView.swift in Sources */,
+				B90F10042F80000100000004 /* HighlightsStoryPageViews.swift in Sources */,
+				B90F10052F80000100000005 /* HighlightsParticleField.swift in Sources */,
+				B90F10062F80000100000006 /* HighlightsShareCard.swift in Sources */,
+				B90F10072F80000100000007 /* HighlightsShaders.metal in Sources */,
 				A31B7C85BABD6199A2A43BB7 /* PDFExportService.swift in Sources */,
 				F3C02E5B4D9E5867C1F2A314 /* StoryModePDFExportService.swift in Sources */,
 				0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */,
